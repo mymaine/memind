@@ -1,0 +1,121 @@
+@import 'tailwindcss';
+
+/* ---------- Design tokens (see docs/design.md) ---------- */
+@theme {
+  /* Canvas */
+  --color-bg-primary: #050507;
+  --color-bg-surface: #101010;
+  --color-bg-elevated: #181818;
+
+  /* Border */
+  --color-border-default: #3d3a39;
+  --color-border-accent: #00d992;
+
+  /* Foreground */
+  --color-fg-primary: #f2f2f2;
+  --color-fg-emphasis: #ffffff;
+  --color-fg-secondary: #b8b3b0;
+  --color-fg-tertiary: #8b949e;
+  --color-fg-muted: #bdbdbd;
+
+  /* Accent */
+  --color-accent: #00d992;
+  --color-accent-text: #2fd6a1;
+  --color-accent-subtle: #10b981;
+
+  /* Chain semantic */
+  --color-chain-bnb: #f0b90b;
+  --color-chain-base: #0052ff;
+  --color-chain-ipfs: #818cf8;
+
+  /* Status */
+  --color-success: #008b00;
+  --color-warning: #ffba00;
+  --color-danger: #fb565b;
+  --color-info: #4cb3d4;
+
+  /* Font family */
+  --font-sans-display:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue',
+    sans-serif;
+  --font-sans-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+
+  /* Radius */
+  --radius-sharp: 4px;
+  --radius-default: 6px;
+  --radius-code: 6.4px;
+  --radius-card: 8px;
+}
+
+/* ---------- Base layer ---------- */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-fg-primary);
+  font-family: var(--font-sans-body);
+  font-feature-settings:
+    'calt' 1,
+    'rlig' 1;
+  min-height: 100vh;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Focus-visible outline (accessibility §9) */
+:focus-visible {
+  outline: 2px solid rgba(47, 214, 161, 0.5);
+  outline-offset: 2px;
+  border-radius: var(--radius-default);
+}
+
+/* Scrollbar (log panels) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 9999px;
+}
+
+/* ---------- Motion tokens (see design.md §7) ---------- */
+@keyframes signal-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px var(--color-accent));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px var(--color-accent));
+  }
+}
+
+@keyframes log-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "hack-bnb-fourmeme-agent-creator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Four.Meme AI Sprint — Agent-as-Creator with x402 Service Exchange (3-agent swarm)",
+  "type": "module",
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm --filter \"./apps/*\" build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint \"{apps,packages,scripts}/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"{apps,packages,scripts}/**/*.{ts,tsx}\" --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,html}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,html}\" --ignore-path .gitignore",
+    "test": "pnpm -r test",
+    "test:watch": "pnpm -r test:watch",
+    "probe:x402": "tsx scripts/probe-x402.ts",
+    "probe:fourmeme": "tsx scripts/probe-fourmeme.ts",
+    "probe:pinata": "tsx scripts/probe-pinata.ts",
+    "clean": "pnpm -r exec rm -rf node_modules dist .next .turbo && rm -rf node_modules",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "@eslint/js": "^9.17.0",
+    "@typescript-eslint/eslint-plugin": "^8.19.0",
+    "@typescript-eslint/parser": "^8.19.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^2.1.8"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,html}": [
+      "prettier --write"
+    ]
+  }
+}
