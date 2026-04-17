@@ -62,11 +62,14 @@ const envSchema = z.object({
   AGENT_WALLET_PRIVATE_KEY: z
     .string()
     .regex(/^0x[a-fA-F0-9]{64}$/, 'must be a 0x-prefixed 64-hex-char private key'),
-  // Optional: if omitted we derive payTo from the private key (self-pay works for probe).
-  AGENT_WALLET_ADDRESS: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/)
-    .optional(),
+  // Optional: if omitted or empty we derive payTo from the private key (self-pay works for probe).
+  AGENT_WALLET_ADDRESS: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
+  ),
 });
 
 function parseEnvOrExit(): z.infer<typeof envSchema> {
