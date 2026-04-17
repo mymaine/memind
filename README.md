@@ -8,6 +8,14 @@ First agent-to-agent commerce demo on Four.Meme Agentic Mode — Creator / Narra
 - **Full spec + roadmap**: [`docs/spec.md`](./docs/spec.md)
 - **Design system**: [`docs/design.md`](./docs/design.md)
 
+## Day 1 Hard Gate — ACHIEVED (2026-04-18)
+
+| Probe                   | Result       | Evidence                                                                                                                               |
+| ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| x402 on Base Sepolia    | ✅ PASS      | real settlement tx [`0x4331…000a`](https://sepolia.basescan.org/tx/0x4331ff588b541d3a53dcdcdf89f0954e1b974d985a7e79476a04552e9bff000a) |
+| Pinata IPFS upload      | ✅ PASS      | public-gateway round-trip verified                                                                                                     |
+| four-meme TokenManager2 | ✅ diagnosed | testnet has no contract → pivoted to BSC mainnet ([decision](./docs/decisions/2026-04-18-bsc-mainnet-pivot.md))                        |
+
 ## Quick start
 
 ```bash
