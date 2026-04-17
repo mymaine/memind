@@ -2,18 +2,18 @@
  * Phase 2 Task 7 — end-to-end Creator agent demo run.
  *
  * Loads .env.local, constructs the Anthropic SDK pointed at OpenRouter
- * (the project's LLM gateway), plus Replicate / Pinata clients, registers
- * the four Creator tools, and invokes runCreatorAgent with a user-supplied
- * theme. On success prints BSC mainnet tx hash, IPFS CID, and the local
- * meme image path for judges to inspect.
+ * (the project's LLM gateway), plus Gemini (image gen) and Pinata (IPFS)
+ * clients, registers the four Creator tools, and invokes runCreatorAgent
+ * with a user-supplied theme. On success prints BSC mainnet tx hash, IPFS
+ * CID, and the local meme image path for judges to inspect.
  *
  * Usage (from repo root):
  *   pnpm --filter @hack-fourmeme/server demo:creator -- "meme about BNB 2026"
  *
- * Cost per run (approx): OpenRouter Claude $0.03 + Replicate $0.003 + BSC
- * gas $0.08. This DOES deploy a real token on BSC mainnet — the HBNB2026-
- * prefix guard in narrative + deployer zod schemas keeps the token clearly
- * labelled as a hackathon demo.
+ * Cost per run (approx): OpenRouter Claude $0.03 + Gemini Flash Image
+ * $0.04 + BSC gas $0.08. This DOES deploy a real token on BSC mainnet —
+ * the HBNB2026- prefix guard in narrative + deployer zod schemas keeps the
+ * token clearly labelled as a hackathon demo.
  */
 
 import { resolve } from 'node:path';
@@ -74,14 +74,7 @@ async function main(): Promise<void> {
   registry.register(createNarrativeTool({ client: anthropic, model: MODEL }));
   registry.register(createImageTool({ client: gemini }));
   registry.register(createLoreTool({ anthropic, pinata, model: MODEL }));
-  // four-meme-ai CLI's bundled tsx loader breaks on Node 25, so pin the
-  // subprocess to Node 22 via Homebrew's keg-only install.
-  registry.register(
-    createOnchainDeployerTool({
-      privateKey: env.BSC_DEPLOYER_PRIVATE_KEY,
-      nodeBinPath: '/opt/homebrew/opt/node@22/bin',
-    }),
-  );
+  registry.register(createOnchainDeployerTool({ privateKey: env.BSC_DEPLOYER_PRIVATE_KEY }));
 
   console.info(`[demo] theme:   ${theme}`);
   console.info(`[demo] gateway: ${OPENROUTER_BASE_URL}`);

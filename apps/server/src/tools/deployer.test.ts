@@ -9,8 +9,7 @@ import {
   createOnchainDeployerTool,
   deployerInputSchema,
   extractTokenAddressFromLogs,
-  parseCreateApiStdout,
-  parseCreateChainStdout,
+  parseInstantStdout,
   type ReceiptFetcher,
 } from './deployer.js';
 
@@ -35,7 +34,6 @@ class FakeChild extends EventEmitter {
 }
 
 function completeChild(child: FakeChild, stdout: string, exitCode = 0, stderr = ''): void {
-  // Emit asynchronously so the caller has time to attach listeners.
   queueMicrotask(() => {
     if (stdout) child.stdout.emit('data', Buffer.from(stdout));
     if (stderr) child.stderr.emit('data', Buffer.from(stderr));
@@ -43,18 +41,7 @@ function completeChild(child: FakeChild, stdout: string, exitCode = 0, stderr = 
   });
 }
 
-function createApiStdout(): string {
-  return JSON.stringify(
-    {
-      createArg: '0xdeadbeef' + 'ab'.repeat(10),
-      signature: '0xcafef00d' + 'cd'.repeat(30),
-    },
-    null,
-    2,
-  );
-}
-
-function createChainStdout(): string {
+function createInstantStdout(): string {
   return JSON.stringify({ txHash: FAKE_TX_HASH }, null, 2);
 }
 
@@ -62,11 +49,6 @@ const TOKEN_CREATE_ABI = parseAbiItem(
   'event TokenCreate(address creator, address token, uint256 requestId, string name, string symbol, uint256 totalSupply, uint256 launchTime, uint256 launchFee)',
 );
 
-/**
- * Build a real TokenCreate log using viem's own encoder. Using viem for the
- * fixture guarantees we exercise the exact topic0 + data layout that the
- * production `decodeEventLog` call will accept.
- */
 function tokenCreateLog(token: string = DEPLOYED_TOKEN): Log {
   const topics = encodeEventTopics({
     abi: [TOKEN_CREATE_ABI],
@@ -107,7 +89,6 @@ function tokenCreateLog(token: string = DEPLOYED_TOKEN): Log {
   } as unknown as Log;
 }
 
-/** ReceiptFetcher stub returning the logs provided to the constructor. */
 function fakeReceiptFetcher(logs: Log[]): ReceiptFetcher {
   return {
     waitForTransactionReceipt: async ({ hash: _hash }) => ({
@@ -173,46 +154,19 @@ describe('deployerInputSchema', () => {
   });
 });
 
-describe('parseCreateApiStdout', () => {
-  it('parses a pure JSON stdout', () => {
-    const out = parseCreateApiStdout(JSON.stringify({ createArg: '0xabc', signature: '0xdef0' }));
-    expect(out).toEqual({ createArg: '0xabc', signature: '0xdef0' });
-  });
-
-  it('parses JSON buried in progress noise', () => {
-    const noisy = [
-      'loading...',
-      'done',
-      JSON.stringify({ createArg: '0x11', signature: '0x22' }),
-    ].join('\n');
-    const out = parseCreateApiStdout(noisy);
-    expect(out.createArg).toBe('0x11');
-  });
-
-  it('throws when createArg is not hex', () => {
-    expect(() =>
-      parseCreateApiStdout(JSON.stringify({ createArg: 'notHex', signature: '0xff' })),
-    ).toThrowError(/invalid createArg/);
-  });
-
-  it('throws on empty stdout', () => {
-    expect(() => parseCreateApiStdout('')).toThrowError(/did not contain a JSON object/);
-  });
-});
-
-describe('parseCreateChainStdout', () => {
+describe('parseInstantStdout', () => {
   it('parses JSON { txHash }', () => {
-    const hash = parseCreateChainStdout(JSON.stringify({ txHash: FAKE_TX_HASH }));
+    const hash = parseInstantStdout(JSON.stringify({ txHash: FAKE_TX_HASH }));
     expect(hash).toBe(FAKE_TX_HASH);
   });
 
   it('falls back to regex when stdout is plain text', () => {
-    const hash = parseCreateChainStdout(`sent tx ${FAKE_TX_HASH} to mainnet\n`);
+    const hash = parseInstantStdout(`sent tx ${FAKE_TX_HASH} to mainnet\n`);
     expect(hash).toBe(FAKE_TX_HASH);
   });
 
   it('throws when no hash is present', () => {
-    expect(() => parseCreateChainStdout('nothing here')).toThrowError(/did not contain a tx hash/);
+    expect(() => parseInstantStdout('nothing here')).toThrowError(/did not contain a tx hash/);
   });
 });
 
@@ -253,25 +207,18 @@ describe('createOnchainDeployerTool — CLI arg assembly and stdout parsing', ()
     );
   });
 
-  it('passes name, symbol, description, and label through create-api in the documented order', async () => {
+  it('invokes `@four-meme/four-meme-ai create-instant` with named flags and never leaks PK in argv', async () => {
     const spawnFn = vi.fn((_command: string, args: readonly string[], options: SpawnOptions) => {
       const child = new FakeChild();
-      // First call = create-api. Second = create-chain.
-      const subcommand = args.includes('create-api') ? 'create-api' : 'create-chain';
-      // Assert we do NOT leak the private key through argv.
+      // Argv must never contain the private key.
       for (const arg of args) {
         expect(arg).not.toContain(VALID_PK);
         expect(arg).not.toContain(VALID_PK.slice(2));
       }
-      // Env must carry PRIVATE_KEY so the CLI can sign.
       const env = (options.env ?? {}) as Record<string, string>;
       expect(env['PRIVATE_KEY']).toBe(VALID_PK);
-      if (subcommand === 'create-chain') {
-        expect(env['BSC_RPC_URL']).toBe('https://custom.rpc');
-      }
-      queueMicrotask(() => {
-        completeChild(child, subcommand === 'create-api' ? createApiStdout() : createChainStdout());
-      });
+      expect(env['BSC_RPC_URL']).toBe('https://custom.rpc');
+      completeChild(child, createInstantStdout());
       return child as unknown as ChildProcess;
     });
 
@@ -294,24 +241,18 @@ describe('createOnchainDeployerTool — CLI arg assembly and stdout parsing', ()
       label: 'AI',
     });
 
-    // spawn called twice: create-api, then create-chain.
-    expect(spawnFn).toHaveBeenCalledTimes(2);
-    const firstArgs = spawnFn.mock.calls[0]![1];
-    expect(firstArgs).toEqual([
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+    const callArgs = spawnFn.mock.calls[0]![1];
+    expect(callArgs).toEqual([
       '-y',
-      'four-meme-ai@1.0.0',
-      'create-api',
-      imagePath,
-      'HBNB2026-Cool',
-      'HBNB2026-CT',
-      'a friendly demo token',
-      'AI',
+      '@four-meme/four-meme-ai@1.0.8',
+      'create-instant',
+      `--image=${imagePath}`,
+      '--name=HBNB2026-Cool',
+      '--short-name=HBNB2026-CT',
+      '--desc=a friendly demo token',
+      '--label=AI',
     ]);
-    const secondArgs = spawnFn.mock.calls[1]![1];
-    expect(secondArgs[2]).toBe('create-chain');
-    // createArg + signature from parsed stdout are forwarded.
-    expect(secondArgs[3]).toMatch(/^0xdeadbeef/);
-    expect(secondArgs[4]).toMatch(/^0xcafef00d/);
 
     expect(result.txHash).toBe(FAKE_TX_HASH);
     expect(result.tokenAddr.toLowerCase()).toBe(DEPLOYED_TOKEN.toLowerCase());
@@ -319,10 +260,9 @@ describe('createOnchainDeployerTool — CLI arg assembly and stdout parsing', ()
   });
 
   it('defaults the label to "AI" when the caller does not provide one', async () => {
-    const spawnFn = vi.fn((_command: string, args: readonly string[], _options: SpawnOptions) => {
+    const spawnFn = vi.fn((_command: string, _args: readonly string[], _options: SpawnOptions) => {
       const child = new FakeChild();
-      const subcommand = args.includes('create-api') ? 'create-api' : 'create-chain';
-      completeChild(child, subcommand === 'create-api' ? createApiStdout() : createChainStdout());
+      completeChild(child, createInstantStdout());
       return child as unknown as ChildProcess;
     });
     const tool = createOnchainDeployerTool({
@@ -340,11 +280,11 @@ describe('createOnchainDeployerTool — CLI arg assembly and stdout parsing', ()
       description: 'demo',
       imageLocalPath: imagePath,
     });
-    const firstCallArgs = spawnFn.mock.calls[0]![1];
-    expect(firstCallArgs[firstCallArgs.length - 1]).toBe('AI');
+    const callArgs = spawnFn.mock.calls[0]![1];
+    expect(callArgs[callArgs.length - 1]).toBe('--label=AI');
   });
 
-  it('surfaces CLI exit code and stderr tail when create-api fails', async () => {
+  it('surfaces CLI exit code and stderr tail when create-instant fails', async () => {
     const spawnFn = vi.fn(() => {
       const child = new FakeChild();
       completeChild(child, '', 1, 'boom: upstream rejected login');
@@ -371,7 +311,6 @@ describe('createOnchainDeployerTool — CLI arg assembly and stdout parsing', ()
 
   it('throws if the imageLocalPath does not exist', async () => {
     const spawnFn = vi.fn(() => {
-      // Should never be called; test asserts we fail before spawning.
       throw new Error('spawn should not be called when image is missing');
     });
     const tool = createOnchainDeployerTool({
@@ -395,10 +334,9 @@ describe('createOnchainDeployerTool — CLI arg assembly and stdout parsing', ()
   });
 
   it('throws if the tx reverted', async () => {
-    const spawnFn = vi.fn((_command: string, args: readonly string[]) => {
+    const spawnFn = vi.fn(() => {
       const child = new FakeChild();
-      const subcommand = args.includes('create-api') ? 'create-api' : 'create-chain';
-      completeChild(child, subcommand === 'create-api' ? createApiStdout() : createChainStdout());
+      completeChild(child, createInstantStdout());
       return child as unknown as ChildProcess;
     });
     const revertingFetcher: ReceiptFetcher = {

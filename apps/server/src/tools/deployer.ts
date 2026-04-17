@@ -48,7 +48,11 @@ import type { AgentTool } from '@hack-fourmeme/shared';
 const TOKEN_MANAGER2_BSC = '0x5c952063c7fc8610FFDB798152D69F0B9550762b' as const;
 const DEFAULT_BSC_RPC_URL = 'https://bsc-dataseed.binance.org';
 const DEFAULT_CLI_COMMAND = 'npx';
-const DEFAULT_CLI_BASE_ARGS: readonly string[] = ['-y', 'four-meme-ai@1.0.0'];
+// Official Four.meme CLI (scoped, maintained by lol@four.meme). The old
+// unscoped `four-meme-ai@1.0.0` is deprecated and its bundled tsx loader
+// fails to resolve modules on Node 20+; the scoped package ships a plain
+// CJS entrypoint instead.
+const DEFAULT_CLI_BASE_ARGS: readonly string[] = ['-y', '@four-meme/four-meme-ai@1.0.8'];
 
 // Canonical four.meme label set (CLI validates against the same list).
 const FOURMEME_LABELS = [
@@ -197,37 +201,32 @@ export function createOnchainDeployerTool(
       const label = parsed.label ?? 'AI';
 
       // If nodeBinPath is set, prepend it to PATH so the CLI subprocess picks
-      // up the pinned Node binary rather than the host default. Required on
-      // hosts where Node 25 breaks four-meme-ai's bundled tsx loader.
+      // up a specific Node binary (useful if the default Node has a broken
+      // library dependency on the host).
       const pathOverride: Record<string, string> =
         config.nodeBinPath !== undefined
           ? { PATH: `${config.nodeBinPath}:${process.env.PATH ?? ''}` }
           : {};
 
-      // Step 1 — create-api: login + upload + build createArg/signature.
-      const createApiArgs = [
+      // create-instant: one-shot flow that uploads metadata through four.meme's
+      // private API, signs createArg locally, and submits TokenManager2.createToken.
+      // stdout is {"txHash":"0x..."} on success.
+      const createArgs = [
         ...cliBaseArgs,
-        'create-api',
-        parsed.imageLocalPath,
-        parsed.name,
-        parsed.symbol,
-        parsed.description,
-        label,
+        'create-instant',
+        `--image=${parsed.imageLocalPath}`,
+        `--name=${parsed.name}`,
+        `--short-name=${parsed.symbol}`,
+        `--desc=${parsed.description}`,
+        `--label=${label}`,
       ];
-      const createApiRes = await runCli(spawnFn, cliCommand, createApiArgs, config.privateKey, {
-        ...pathOverride,
-      });
-      const { createArg, signature } = parseCreateApiStdout(createApiRes.stdout);
-
-      // Step 2 — create-chain: submit TokenManager2.createToken tx.
-      const createChainArgs = [...cliBaseArgs, 'create-chain', createArg, signature];
-      const createChainRes = await runCli(spawnFn, cliCommand, createChainArgs, config.privateKey, {
+      const createRes = await runCli(spawnFn, cliCommand, createArgs, config.privateKey, {
         BSC_RPC_URL: rpcUrl,
         ...pathOverride,
       });
-      const txHash = parseCreateChainStdout(createChainRes.stdout);
+      const txHash = parseInstantStdout(createRes.stdout);
 
-      // Step 3 — resolve token address from the TokenCreate event log.
+      // Resolve token address from the TokenCreate event log.
       const receipt = await receiptFetcher.waitForTransactionReceipt({
         hash: txHash,
       });
@@ -307,8 +306,10 @@ async function runCli(
  * Keeps the subcommand name + placeholder for user-provided values.
  */
 function describeArgs(args: readonly string[]): string {
-  // e.g. ['-y', 'four-meme-ai@1.0.0', 'create-api', '/tmp/img.png', 'HBNB2026-…']
-  const subcommandIdx = args.findIndex((a) => a === 'create-api' || a === 'create-chain');
+  // e.g. ['-y', '@four-meme/four-meme-ai@1.0.8', 'create-instant', '--image=...', ...]
+  const subcommandIdx = args.findIndex(
+    (a) => a === 'create-instant' || a === 'create-api' || a === 'create-chain',
+  );
   if (subcommandIdx === -1) return args.slice(0, 3).join(' ');
   return args.slice(0, subcommandIdx + 1).join(' ');
 }
@@ -324,47 +325,15 @@ function redactSecrets(text: string, privateKey: string): string {
   return text.split(privateKey).join('[REDACTED]').split(bare).join('[REDACTED]');
 }
 
-const HEX64_RE = /^0x[0-9a-fA-F]+$/;
 const TX_HASH_RE = /0x[0-9a-fA-F]{64}/;
 
 /**
- * Parse stdout of `create-api`. CLI contract: a single JSON object
- * `{ createArg, signature }` on stdout. If the CLI someday switches to
- * streaming progress, we tolerate extra lines by locating the last `{ … }`
- * block.
+ * Parse stdout of `create-instant`. CLI contract (scripts/create-token-instant.ts):
+ *   console.log(JSON.stringify({ txHash: hash }, null, 2));
+ * Fallback: any 0x-prefixed 64-hex substring, in case a future CLI version
+ * adds extra stderr/log lines before the JSON.
  */
-export function parseCreateApiStdout(stdout: string): {
-  createArg: string;
-  signature: string;
-} {
-  const obj = extractLastJsonObject(stdout);
-  if (!obj || typeof obj !== 'object') {
-    throw new Error(
-      `onchain_deployer: create-api stdout did not contain a JSON object. Got: ${truncate(stdout)}`,
-    );
-  }
-  const record = obj as Record<string, unknown>;
-  const createArg = record['createArg'];
-  const signature = record['signature'];
-  if (typeof createArg !== 'string' || !HEX64_RE.test(createArg)) {
-    throw new Error(
-      `onchain_deployer: create-api returned invalid createArg: ${truncate(String(createArg))}`,
-    );
-  }
-  if (typeof signature !== 'string' || !HEX64_RE.test(signature)) {
-    throw new Error(
-      `onchain_deployer: create-api returned invalid signature: ${truncate(String(signature))}`,
-    );
-  }
-  return { createArg, signature };
-}
-
-/**
- * Parse stdout of `create-chain`. Primary shape: JSON `{ txHash }`. Fallback:
- * any 0x-prefixed 64-hex substring (some CLI versions print only the raw
- * hash).
- */
-export function parseCreateChainStdout(stdout: string): Hash {
+export function parseInstantStdout(stdout: string): Hash {
   const obj = extractLastJsonObject(stdout);
   if (obj && typeof obj === 'object') {
     const record = obj as Record<string, unknown>;
@@ -376,7 +345,7 @@ export function parseCreateChainStdout(stdout: string): Hash {
   const match = TX_HASH_RE.exec(stdout);
   if (match) return match[0] as Hash;
   throw new Error(
-    `onchain_deployer: create-chain stdout did not contain a tx hash. Got: ${truncate(stdout)}`,
+    `onchain_deployer: create-instant stdout did not contain a tx hash. Got: ${truncate(stdout)}`,
   );
 }
 

@@ -2,8 +2,10 @@
  * Day 1 Phase 1 Task 3 — four-meme token deployment probe (BSC testnet).
  * Verifies route A (four-meme-ai CLI) and route B (direct TokenManager2 call).
  * Both are mainnet-only as of 2026-04-18:
- *   A. `four-meme-ai@1.0.0` hard-codes `networkCode: 'BSC'` upstream and
+ *   A. `@four-meme/four-meme-ai@1.0.8` hard-codes `networkCode: 'BSC'` upstream and
  *      submits via `viem/chains#bsc` (chainId 56). No `--testnet` switch.
+ *      (Earlier unscoped `four-meme-ai@1.0.0` is deprecated; we moved to the
+ *       official scoped package which ships a plain CJS entrypoint.)
  *   B. TokenManager2 `0x5c95...762b` has no bytecode on BSC testnet (chainId 97).
  * Outcome: BLOCKED for testnet. The probe is read-only (no signing, no gas,
  * no tx); it re-confirms findings on every run. Details + next steps in
@@ -18,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
-// TokenManager2 mainnet address per four-meme-ai@1.0.0
+// TokenManager2 mainnet address per @four-meme/four-meme-ai@1.0.8
 // skills/four-meme-integration/references/contract-addresses.md
 const TOKEN_MANAGER2_MAINNET = '0x5c952063c7fc8610FFDB798152D69F0B9550762b';
 
@@ -105,12 +107,12 @@ interface CliResult {
   stderrTail: string;
 }
 
-// Invoke `npx -y four-meme-ai@1.0.0 config` read-only to confirm CLI is
+// Invoke `npx -y @four-meme/four-meme-ai@1.0.8 config` read-only to confirm CLI is
 // reachable. The command returns the public raisedToken config from the
 // mainnet API; we inspect networkCode only — no signing, no tx.
 async function probeCli(): Promise<CliResult> {
   return await new Promise<CliResult>((resolveCli) => {
-    const child = spawn('npx', ['-y', 'four-meme-ai@1.0.0', 'config'], {
+    const child = spawn('npx', ['-y', '@four-meme/four-meme-ai@1.0.8', 'config'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: process.env,
     });
