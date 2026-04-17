@@ -68,7 +68,7 @@ export interface CreateLoreToolOptions {
 }
 
 export function createLoreTool(options: CreateLoreToolOptions): AgentTool<LoreInput, LoreOutput> {
-  const model = options.model ?? 'claude-sonnet-4-5';
+  const model = options.model ?? 'anthropic/claude-sonnet-4-5';
   const maxTokens = options.maxTokens ?? 1500;
   const gatewayBase = options.publicGateway ?? DEFAULT_GATEWAY;
 

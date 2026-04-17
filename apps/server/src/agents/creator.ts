@@ -18,7 +18,7 @@ export interface CreatorAgentOutput {
   loop: AgentLoopResult;
 }
 
-const DEFAULT_MODEL = 'claude-3-5-sonnet-latest';
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
 const CREATOR_SYSTEM_PROMPT = `You are Creator Agent, one of three coordinated agents in the Four.Meme swarm. Your mission is to turn a user theme into a live BSC-mainnet meme token with on-chain lore.
 

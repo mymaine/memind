@@ -1,18 +1,19 @@
 /**
  * Phase 2 Task 7 — end-to-end Creator agent demo run.
  *
- * Loads .env.local, constructs the Anthropic / Replicate / Pinata clients,
- * registers the four Creator tools, and invokes runCreatorAgent with a
- * user-supplied theme. On success prints BSC mainnet tx hash, IPFS CID,
- * and the local meme image path for judges to inspect.
+ * Loads .env.local, constructs the Anthropic SDK pointed at OpenRouter
+ * (the project's LLM gateway), plus Replicate / Pinata clients, registers
+ * the four Creator tools, and invokes runCreatorAgent with a user-supplied
+ * theme. On success prints BSC mainnet tx hash, IPFS CID, and the local
+ * meme image path for judges to inspect.
  *
  * Usage (from repo root):
  *   pnpm --filter @hack-fourmeme/server demo:creator -- "meme about BNB 2026"
  *
- * Cost per run (approx): Anthropic $0.03 + Replicate $0.003 + BSC gas $0.08.
- * This DOES deploy a real token on BSC mainnet — the HBNB2026- prefix guard
- * in narrative + deployer zod schemas keeps the token clearly labelled as a
- * hackathon demo.
+ * Cost per run (approx): OpenRouter Claude $0.03 + Replicate $0.003 + BSC
+ * gas $0.08. This DOES deploy a real token on BSC mainnet — the HBNB2026-
+ * prefix guard in narrative + deployer zod schemas keeps the token clearly
+ * labelled as a hackathon demo.
  */
 
 import { resolve } from 'node:path';
@@ -33,8 +34,12 @@ import { createOnchainDeployerTool } from '../tools/deployer.js';
 const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 
+// OpenRouter Anthropic-compatible gateway — all Anthropic SDK calls route here.
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const MODEL = 'anthropic/claude-sonnet-4-5';
+
 const envSchema = z.object({
-  ANTHROPIC_API_KEY: z.string().min(1),
+  OPENROUTER_API_KEY: z.string().min(1),
   REPLICATE_API_TOKEN: z.string().min(1),
   PINATA_JWT: z.string().min(1),
   BSC_DEPLOYER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
@@ -53,7 +58,10 @@ async function main(): Promise<void> {
   }
   const env = envResult.data;
 
-  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const anthropic = new Anthropic({
+    apiKey: env.OPENROUTER_API_KEY,
+    baseURL: OPENROUTER_BASE_URL,
+  });
   const replicate = new Replicate({ auth: env.REPLICATE_API_TOKEN });
   const pinata = new PinataSDK({
     pinataJwt: env.PINATA_JWT,
@@ -61,14 +69,16 @@ async function main(): Promise<void> {
   });
 
   const registry = new ToolRegistry();
-  registry.register(createNarrativeTool({ client: anthropic }));
+  registry.register(createNarrativeTool({ client: anthropic, model: MODEL }));
   registry.register(createImageTool({ client: replicate }));
-  registry.register(createLoreTool({ anthropic, pinata }));
+  registry.register(createLoreTool({ anthropic, pinata, model: MODEL }));
   registry.register(createOnchainDeployerTool({ privateKey: env.BSC_DEPLOYER_PRIVATE_KEY }));
 
-  console.info(`[demo] theme: ${theme}`);
+  console.info(`[demo] theme:   ${theme}`);
+  console.info(`[demo] gateway: ${OPENROUTER_BASE_URL}`);
+  console.info(`[demo] model:   ${MODEL}`);
   console.info(
-    `[demo] tools: ${registry
+    `[demo] tools:   ${registry
       .list()
       .map((t) => t.name)
       .join(', ')}`,
@@ -80,6 +90,7 @@ async function main(): Promise<void> {
     client: anthropic,
     registry,
     theme,
+    model: MODEL,
     onLog: (e) => {
       const ts = e.ts.slice(11, 19);
       console.info(`[${ts}] ${e.agent}.${e.tool} [${e.level}] ${e.message}`);

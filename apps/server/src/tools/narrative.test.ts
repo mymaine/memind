@@ -13,7 +13,7 @@ function mockAnthropic(text: string): AnthropicMessagesClient {
     id: 'msg_test',
     type: 'message',
     role: 'assistant',
-    model: 'claude-sonnet-4-5',
+    model: 'anthropic/claude-sonnet-4-5',
     content: [{ type: 'text', text }],
     stop_reason: 'end_turn',
     stop_sequence: null,

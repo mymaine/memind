@@ -75,7 +75,7 @@ export interface CreateNarrativeToolOptions {
 export function createNarrativeTool(
   options: CreateNarrativeToolOptions,
 ): AgentTool<NarrativeInput, NarrativeOutput> {
-  const model = options.model ?? 'claude-sonnet-4-5';
+  const model = options.model ?? 'anthropic/claude-sonnet-4-5';
   const maxTokens = options.maxTokens ?? 512;
 
   return {
