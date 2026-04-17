@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const agentIdSchema = z.enum(['creator', 'narrator', 'market-maker']);
+export const agentIdSchema = z.enum(['creator', 'narrator', 'market-maker', 'heartbeat']);
 export type AgentId = z.infer<typeof agentIdSchema>;
 
 export const agentStatusSchema = z.enum(['idle', 'running', 'done', 'error']);

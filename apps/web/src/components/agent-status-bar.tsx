@@ -15,7 +15,7 @@ const statusClass: Record<AgentStatus, string> = {
 };
 
 export function AgentStatusBar({
-  statuses = { creator: 'idle', narrator: 'idle', 'market-maker': 'idle' },
+  statuses = { creator: 'idle', narrator: 'idle', 'market-maker': 'idle', heartbeat: 'idle' },
 }: {
   statuses?: Record<AgentId, AgentStatus>;
 }) {
