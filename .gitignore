@@ -36,3 +36,6 @@ pnpm-debug.log*
 # rules
 AGENTS.md
 CLAUDE.md
+
+# runtime artifacts (generated meme images from demo runs)
+apps/server/tmp/
