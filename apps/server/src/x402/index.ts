@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from 'express';
+import type { Express, Request, RequestHandler, Response } from 'express';
 import { privateKeyToAccount } from 'viem/accounts';
 import { paymentMiddleware } from '@x402/express';
 import { HTTPFacilitatorClient, x402ResourceServer } from '@x402/core/server';
@@ -6,7 +6,20 @@ import type { RouteConfig } from '@x402/core/server';
 import type { Network } from '@x402/core/types';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import type { AppConfig } from '../config.js';
+import type { LoreStore } from '../state/lore-store.js';
 import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
+
+/**
+ * Optional runtime wiring for the x402 routes.
+ *
+ * `loreStore` plugs the Narrator agent's output into the `/lore/:tokenAddr`
+ * endpoint. When provided, hits with a stored chapter return the real lore;
+ * misses (and callers that omit the store entirely) still get the Phase 2
+ * mock payload so the x402 contract stays non-empty for the paid demo.
+ */
+export interface RegisterX402RoutesOpts {
+  loreStore?: LoreStore;
+}
 
 /**
  * Register the three paid x402 endpoints on the given Express app.
@@ -16,8 +29,9 @@ import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
  *   1. HTTPFacilitatorClient talks to config.x402.facilitatorUrl.
  *   2. x402ResourceServer registers the ExactEvmScheme for config.x402.network.
  *   3. paymentMiddleware guards the three routes from x402/config.ts.
- *   4. Express handlers serve mock resources (real dynamic agent output lands
- *      in Phase 3; this wiring is Phase 2 Task 6 scope).
+ *   4. Express handlers serve agent output (when a LoreStore is wired) or
+ *      mock payloads (Phase 2 fallback — keeps every paid route returning a
+ *      non-empty body even before the Narrator has published).
  *
  * Wallet configuration:
  *   - payTo address is resolved via resolvePayTo(config): env-provided address
@@ -25,7 +39,11 @@ import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
  *   - If both are missing we throw before any middleware is mounted so the
  *     server fails fast instead of silently issuing unsigned 402s.
  */
-export function registerX402Routes(app: Express, config: AppConfig): void {
+export function registerX402Routes(
+  app: Express,
+  config: AppConfig,
+  opts: RegisterX402RoutesOpts = {},
+): void {
   const payTo = resolvePayTo(config);
   const network = config.x402.network as Network;
 
@@ -39,8 +57,8 @@ export function registerX402Routes(app: Express, config: AppConfig): void {
   app.use(paymentMiddleware(routes, resourceServer));
 
   // Handlers run only after paymentMiddleware has verified payment.
-  // Each returns mock data — Phase 3 will plug these into real agent output.
-  app.get('/lore/:tokenAddr', handleLore);
+  // /lore is store-aware; /alpha and /metadata keep their Phase 2 mock shape.
+  app.get('/lore/:tokenAddr', createLoreHandler({ loreStore: opts.loreStore }));
   app.get('/alpha/:tokenAddr', handleAlpha);
   app.get('/metadata/:tokenAddr', handleMetadata);
 }
@@ -93,15 +111,55 @@ function buildRoutesConfig(
   return entries;
 }
 
-// ─── Route handlers (mock payloads; Phase 3 swaps in real agent data) ──────
+// ─── Route handlers ────────────────────────────────────────────────────────
 
-function handleLore(req: Request, res: Response): void {
-  const tokenAddr = req.params.tokenAddr;
-  res.json({
-    tokenAddr,
-    lore: `Mock lore chapter for token ${tokenAddr ?? '<missing>'}. Real IPFS lore arrives in Phase 3 once the Narrator agent is wired.`,
-    ipfsCid: 'bafybeigdyrztXXXXmockloreCIDplaceholderPhase2XXXXXXXXXXXXXXXX',
-  });
+/**
+ * Build the /lore handler. Exported so tests can mount it directly on a bare
+ * express app without the paymentMiddleware stack — that split keeps the
+ * paid integration test focused on x402 settlement while still giving us
+ * fast unit coverage of the store-vs-mock payload selection.
+ *
+ * Behaviour:
+ *   - If `loreStore` is supplied and has an entry for the requested token,
+ *     return the Narrator-published chapter (normalised lowercase tokenAddr,
+ *     chapterNumber, lore text, ipfsCid, ipfsUri, publishedAt).
+ *   - Otherwise (no store, or store miss) return the Phase 2 mock shape so
+ *     paying callers always get a non-empty body. The mock keeps the exact
+ *     wording from the original Phase 2 handler so any consumer asserting
+ *     on it remains green.
+ */
+export function createLoreHandler(opts: { loreStore?: LoreStore } = {}): RequestHandler {
+  const { loreStore } = opts;
+  return (req: Request, res: Response): void => {
+    const tokenAddr = req.params.tokenAddr;
+    if (loreStore && typeof tokenAddr === 'string') {
+      const entry = loreStore.getLatest(tokenAddr);
+      if (entry) {
+        res.json({
+          tokenAddr: entry.tokenAddr,
+          chapterNumber: entry.chapterNumber,
+          lore: entry.chapterText,
+          ipfsCid: entry.ipfsHash,
+          ipfsUri: entry.ipfsUri,
+          publishedAt: entry.publishedAt,
+        });
+        return;
+      }
+    }
+    // Phase 2 fallback — wording kept byte-identical to the original handler
+    // so any downstream assertion on the mock lore stays valid.
+    //
+    // Normalise tokenAddr to lowercase so this branch matches the store-hit
+    // branch's shape (LoreStore keys are always lowercase). Without this,
+    // two identical requests could return different casings depending on
+    // whether the store was warm — a subtle source of downstream drift.
+    const normalisedAddr = typeof tokenAddr === 'string' ? tokenAddr.toLowerCase() : tokenAddr;
+    res.json({
+      tokenAddr: normalisedAddr,
+      lore: `Mock lore chapter for token ${normalisedAddr ?? '<missing>'}. Real IPFS lore arrives in Phase 3 once the Narrator agent is wired.`,
+      ipfsCid: 'bafybeigdyrztXXXXmockloreCIDplaceholderPhase2XXXXXXXXXXXXXXXX',
+    });
+  };
 }
 
 function handleAlpha(req: Request, res: Response): void {

@@ -15,7 +15,8 @@ import { decodePaymentResponseHeader } from '@x402/core/http';
 import { ExactEvmScheme as ClientExactEvmScheme, toClientEvmSigner } from '@x402/evm';
 
 import { loadConfig } from '../config.js';
-import { registerX402Routes } from './index.js';
+import { LoreStore } from '../state/lore-store.js';
+import { createLoreHandler, registerX402Routes } from './index.js';
 
 // Load .env.local from the repo root so AGENT_WALLET_PRIVATE_KEY is available
 // when running `pnpm test` from any workspace package.
@@ -59,6 +60,20 @@ describe('registerX402Routes', () => {
   );
 
   it.skipIf(!hasAgentWallet)(
+    'registers the /lore route (hitting it without payment returns 402)',
+    async () => {
+      // Keep the paymentMiddleware contract intact for the real-settle test
+      // below by confirming /lore is actually mounted behind the paywall.
+      // Value-level handler behaviour (mock vs store-backed) is covered by
+      // the unit tests further down using createLoreHandler directly — that
+      // split lets us avoid paying USDC for three extra assertions while
+      // still proving the route is wired.
+      const response = await fetch(`${baseUrl}/lore/0xfeedbeef`);
+      expect(response.status).toBe(402);
+    },
+  );
+
+  it.skipIf(!hasAgentWallet)(
     'settles a real Base Sepolia USDC payment and returns 200 + tx hash',
     async () => {
       const privateKey = process.env.AGENT_WALLET_PRIVATE_KEY as `0x${string}`;
@@ -91,4 +106,128 @@ describe('registerX402Routes', () => {
     },
     120_000, // Real settlement can take 30–60s on Base Sepolia.
   );
+});
+
+/**
+ * Value-level coverage for the /lore route's payload selection logic.
+ *
+ * These tests deliberately mount the handler on a bare express app without
+ * paymentMiddleware. That split is intentional:
+ *   - The paid-integration test above still proves the full x402 stack settles
+ *     a real USDC payment on Base Sepolia (/metadata route → mock payload).
+ *   - Adding store-vs-mock assertions here via a paying fetch would cost real
+ *     testnet gas on every run with no additional integration value — the
+ *     middleware is already exercised by the /metadata test.
+ *   - The handler we test here is the *same* function mounted by
+ *     `registerX402Routes`, so there is no risk of behaviour drift.
+ */
+describe('createLoreHandler', () => {
+  function startHandlerApp(handler: ReturnType<typeof createLoreHandler>): {
+    baseUrl: string;
+    close: () => Promise<void>;
+  } {
+    const app = express();
+    app.get('/lore/:tokenAddr', handler);
+    const server = app.listen(0);
+    const address = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    return {
+      baseUrl,
+      close: () => new Promise<void>((r) => server.close(() => r())),
+    };
+  }
+
+  it('serves the mock payload when no loreStore is provided', async () => {
+    const { baseUrl, close } = startHandlerApp(createLoreHandler({}));
+    try {
+      const response = await fetch(`${baseUrl}/lore/0xabc`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        tokenAddr?: string;
+        lore?: string;
+        ipfsCid?: string;
+      };
+      expect(body.tokenAddr).toBe('0xabc');
+      expect(typeof body.lore).toBe('string');
+      expect(body.lore ?? '').toMatch(/Mock lore/);
+      expect(typeof body.ipfsCid).toBe('string');
+    } finally {
+      await close();
+    }
+  });
+
+  it('serves the store-backed payload on a hit', async () => {
+    const store = new LoreStore();
+    const tokenAddr = '0x1234567890abcdef1234567890abcdef12345678';
+    store.upsert({
+      tokenAddr,
+      chapterNumber: 3,
+      chapterText: 'real narrator chapter three',
+      ipfsHash: 'bafkrei-ch3',
+      ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch3',
+      publishedAt: '2026-04-20T12:00:00.000Z',
+    });
+
+    const { baseUrl, close } = startHandlerApp(createLoreHandler({ loreStore: store }));
+    try {
+      // Request with mixed-case address to confirm the handler normalises.
+      const response = await fetch(`${baseUrl}/lore/0x1234567890AbCdEf1234567890aBcDeF12345678`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        tokenAddr?: string;
+        chapterNumber?: number;
+        lore?: string;
+        ipfsCid?: string;
+        ipfsUri?: string;
+        publishedAt?: string;
+      };
+      expect(body.tokenAddr).toBe(tokenAddr);
+      expect(body.chapterNumber).toBe(3);
+      expect(body.lore).toBe('real narrator chapter three');
+      expect(body.ipfsCid).toBe('bafkrei-ch3');
+      expect(body.ipfsUri).toBe('https://gateway.pinata.cloud/ipfs/bafkrei-ch3');
+      expect(body.publishedAt).toBe('2026-04-20T12:00:00.000Z');
+    } finally {
+      await close();
+    }
+  });
+
+  it('mock fallback: lowercases a mixed-case tokenAddr so responses match the store-hit branch', async () => {
+    // The store-hit branch returns `entry.tokenAddr` (already lowercased by
+    // LoreStore). The mock fallback previously echoed `req.params.tokenAddr`
+    // verbatim, so identical requests could return different casings
+    // depending on whether the store was warm. Lock both branches to
+    // lowercase for contract symmetry.
+    const { baseUrl, close } = startHandlerApp(createLoreHandler({}));
+    try {
+      const mixedCase = '0xAbCdEfAbCdEfAbCdEfAbCdEfAbCdEfAbCdEfAbCd';
+      const response = await fetch(`${baseUrl}/lore/${mixedCase}`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { tokenAddr?: string; lore?: string };
+      expect(body.tokenAddr).toBe(mixedCase.toLowerCase());
+      expect(body.lore ?? '').toMatch(/Mock lore/);
+    } finally {
+      await close();
+    }
+  });
+
+  it('falls back to the mock payload when the store has no entry for the token', async () => {
+    const store = new LoreStore();
+    const { baseUrl, close } = startHandlerApp(createLoreHandler({ loreStore: store }));
+    try {
+      const response = await fetch(`${baseUrl}/lore/0xmissingtoken`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        tokenAddr?: string;
+        lore?: string;
+        ipfsCid?: string;
+        chapterNumber?: number;
+      };
+      expect(body.tokenAddr).toBe('0xmissingtoken');
+      expect(body.lore ?? '').toMatch(/Mock lore/);
+      expect(body.chapterNumber).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
 });
