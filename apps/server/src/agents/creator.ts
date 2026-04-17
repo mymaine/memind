@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { creatorResultSchema, type CreatorResult, type LogEvent } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import { runAgentLoop, type AgentLoopResult } from './runtime.js';
+import { extractJsonObject } from './_json.js';
 
 export interface RunCreatorAgentParams {
   client: Anthropic;
@@ -55,24 +56,7 @@ export async function runCreatorAgent(params: RunCreatorAgentParams): Promise<Cr
     agentId: 'creator',
   });
 
-  const json = extractJson(loop.finalText);
+  const json = extractJsonObject(loop.finalText, 'runCreatorAgent');
   const result = creatorResultSchema.parse(json);
   return { result, loop };
-}
-
-/**
- * Pull the first JSON object out of the model's final text. We accept either
- * raw JSON or JSON wrapped in a ```json fence to stay robust across prompt
- * iterations.
- */
-function extractJson(text: string): unknown {
-  const trimmed = text.trim();
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = fenceMatch?.[1] ?? trimmed;
-  try {
-    return JSON.parse(candidate);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`runCreatorAgent: final message was not valid JSON (${message}): ${candidate}`);
-  }
 }
