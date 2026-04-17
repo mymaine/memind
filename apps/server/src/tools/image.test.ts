@@ -1,18 +1,36 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Buffer } from 'node:buffer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type Replicate from 'replicate';
+import type { GoogleGenAI } from '@google/genai';
 import { createImageTool, imageInputSchema, imageOutputSchema } from './image.js';
 
 /**
- * Build a fake Replicate client whose `run` resolves to the given value.
+ * Build a fake GoogleGenAI client whose `models.generateContent` resolves to
+ * the given response shape.
  */
-function mockReplicate(runResult: unknown): Replicate {
+function mockGemini(response: unknown): {
+  client: GoogleGenAI;
+  generateContent: ReturnType<typeof vi.fn>;
+} {
+  const generateContent = vi.fn().mockResolvedValue(response);
   const client = {
-    run: vi.fn().mockResolvedValue(runResult),
+    models: { generateContent },
   };
-  return client as unknown as Replicate;
+  return { client: client as unknown as GoogleGenAI, generateContent };
+}
+
+function imageResponse(base64: string, extraParts: Array<{ text?: string }> = []): unknown {
+  return {
+    candidates: [
+      {
+        content: {
+          parts: [...extraParts, { inlineData: { mimeType: 'image/png', data: base64 } }],
+        },
+      },
+    ],
+  };
 }
 
 describe('imageInputSchema', () => {
@@ -42,79 +60,90 @@ describe('imageOutputSchema', () => {
 
 describe('createImageTool.execute', () => {
   let scratchDir: string;
-  const originalFetch = globalThis.fetch;
 
   beforeEach(async () => {
     scratchDir = await mkdtemp(join(tmpdir(), 'image-tool-test-'));
   });
 
   afterEach(async () => {
-    globalThis.fetch = originalFetch;
     await rm(scratchDir, { recursive: true, force: true });
   });
 
-  it('downloads the Replicate URL and writes the PNG to disk', async () => {
-    const fakeImageUrl = 'https://replicate.example.com/out.png';
-    const fakeBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG magic bytes
+  it('writes the decoded Gemini image bytes to a PNG on disk', async () => {
+    // PNG magic bytes
+    const fakeBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const { client, generateContent } = mockGemini(imageResponse(fakeBytes.toString('base64')));
 
-    globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
-      expect(url).toBe(fakeImageUrl);
-      return new Response(fakeBytes, { status: 200 });
-    }) as unknown as typeof fetch;
-
-    const client = mockReplicate([fakeImageUrl]);
     const tool = createImageTool({ client, outputDir: scratchDir });
-
     const out = await tool.execute({ prompt: 'a cool meme', name: 'HBNB2026-Test' });
+
     expect(out.localPath).toContain(scratchDir);
     expect(out.localPath.endsWith('.png')).toBe(true);
 
     const written = await readFile(out.localPath);
-    expect(new Uint8Array(written)).toEqual(fakeBytes);
-  });
+    expect(Buffer.compare(written, fakeBytes)).toBe(0);
 
-  it('accepts a Replicate FileOutput-like response (url() method)', async () => {
-    const fakeImageUrl = 'https://replicate.example.com/fo.png';
-    const fileOutput = {
-      url: () => new URL(fakeImageUrl),
+    // Verify the SDK was called with the expected params.
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    const call = generateContent.mock.calls[0]?.[0] as {
+      model: string;
+      contents: Array<{ text?: string }>;
+      config?: { responseModalities?: string[]; imageConfig?: { aspectRatio?: string } };
     };
+    expect(call.model).toBe('gemini-2.5-flash-image');
+    expect(call.contents[0]?.text).toBe('a cool meme');
+    expect(call.config?.responseModalities).toEqual(['IMAGE']);
+    expect(call.config?.imageConfig?.aspectRatio).toBe('1:1');
+  });
 
-    const fakeBytes = new Uint8Array([1, 2, 3, 4]);
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue(new Response(fakeBytes, { status: 200 })) as unknown as typeof fetch;
+  it('skips leading text parts and picks the first inlineData part', async () => {
+    const fakeBytes = Buffer.from([1, 2, 3, 4]);
+    const response = imageResponse(fakeBytes.toString('base64'), [{ text: 'here is your image:' }]);
+    const { client } = mockGemini(response);
 
-    const client = mockReplicate([fileOutput]);
     const tool = createImageTool({ client, outputDir: scratchDir });
-
     const out = await tool.execute({ prompt: 'p', name: 'n' });
-    expect(out.localPath).toContain('.png');
+
+    const written = await readFile(out.localPath);
+    expect(Buffer.compare(written, fakeBytes)).toBe(0);
   });
 
-  it('throws when the download fails', async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue(
-        new Response('nope', { status: 500, statusText: 'Server Error' }),
-      ) as unknown as typeof fetch;
+  it('throws when the Gemini response has no inlineData parts', async () => {
+    const response = {
+      candidates: [{ content: { parts: [{ text: 'sorry, no image' }] } }],
+    };
+    const { client } = mockGemini(response);
 
-    const client = mockReplicate(['https://replicate.example.com/bad.png']);
     const tool = createImageTool({ client, outputDir: scratchDir });
-
-    await expect(tool.execute({ prompt: 'p', name: 'n' })).rejects.toThrow(/HTTP 500/);
+    await expect(tool.execute({ prompt: 'p', name: 'n' })).rejects.toThrow(/no inlineData image/);
   });
 
-  it('throws when the Replicate response has no extractable URL', async () => {
-    const client = mockReplicate({});
+  it('throws when candidates is missing entirely', async () => {
+    const { client } = mockGemini({});
     const tool = createImageTool({ client, outputDir: scratchDir });
-    await expect(tool.execute({ prompt: 'p', name: 'n' })).rejects.toThrow(/could not extract URL/);
+    await expect(tool.execute({ prompt: 'p', name: 'n' })).rejects.toThrow(/no inlineData image/);
   });
 
-  it('rejects invalid input via zod before calling Replicate', async () => {
-    const client = mockReplicate(['https://x']);
+  it('rejects invalid input via zod before calling Gemini', async () => {
+    const { client, generateContent } = mockGemini(imageResponse('AAAA'));
     const tool = createImageTool({ client, outputDir: scratchDir });
 
     await expect(tool.execute({ prompt: '', name: 'x' })).rejects.toThrow();
-    expect(client.run).not.toHaveBeenCalled();
+    expect(generateContent).not.toHaveBeenCalled();
+  });
+
+  it('honours a custom model option', async () => {
+    const fakeBytes = Buffer.from([9, 9, 9]);
+    const { client, generateContent } = mockGemini(imageResponse(fakeBytes.toString('base64')));
+
+    const tool = createImageTool({
+      client,
+      outputDir: scratchDir,
+      model: 'gemini-3.1-flash-image-preview',
+    });
+    await tool.execute({ prompt: 'p', name: 'n' });
+
+    const call = generateContent.mock.calls[0]?.[0] as { model: string };
+    expect(call.model).toBe('gemini-3.1-flash-image-preview');
   });
 });

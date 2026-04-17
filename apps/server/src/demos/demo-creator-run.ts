@@ -20,7 +20,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import Anthropic from '@anthropic-ai/sdk';
-import Replicate from 'replicate';
+import { GoogleGenAI } from '@google/genai';
 import { PinataSDK } from 'pinata';
 import { z } from 'zod';
 
@@ -35,12 +35,14 @@ const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 
 // OpenRouter Anthropic-compatible gateway — all Anthropic SDK calls route here.
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+// Note: the SDK itself appends /v1/messages, so baseURL must stop before /v1.
+// Real endpoint hit at runtime: https://openrouter.ai/api/v1/messages
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
 const MODEL = 'anthropic/claude-sonnet-4-5';
 
 const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().min(1),
-  REPLICATE_API_TOKEN: z.string().min(1),
+  GOOGLE_API_KEY: z.string().min(1),
   PINATA_JWT: z.string().min(1),
   BSC_DEPLOYER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
@@ -62,7 +64,7 @@ async function main(): Promise<void> {
     apiKey: env.OPENROUTER_API_KEY,
     baseURL: OPENROUTER_BASE_URL,
   });
-  const replicate = new Replicate({ auth: env.REPLICATE_API_TOKEN });
+  const gemini = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
   const pinata = new PinataSDK({
     pinataJwt: env.PINATA_JWT,
     pinataGateway: 'gateway.pinata.cloud',
@@ -70,9 +72,16 @@ async function main(): Promise<void> {
 
   const registry = new ToolRegistry();
   registry.register(createNarrativeTool({ client: anthropic, model: MODEL }));
-  registry.register(createImageTool({ client: replicate }));
+  registry.register(createImageTool({ client: gemini }));
   registry.register(createLoreTool({ anthropic, pinata, model: MODEL }));
-  registry.register(createOnchainDeployerTool({ privateKey: env.BSC_DEPLOYER_PRIVATE_KEY }));
+  // four-meme-ai CLI's bundled tsx loader breaks on Node 25, so pin the
+  // subprocess to Node 22 via Homebrew's keg-only install.
+  registry.register(
+    createOnchainDeployerTool({
+      privateKey: env.BSC_DEPLOYER_PRIVATE_KEY,
+      nodeBinPath: '/opt/homebrew/opt/node@22/bin',
+    }),
+  );
 
   console.info(`[demo] theme:   ${theme}`);
   console.info(`[demo] gateway: ${OPENROUTER_BASE_URL}`);

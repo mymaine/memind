@@ -141,6 +141,14 @@ export interface OnchainDeployerToolConfig {
   cliCommand?: string;
   /** Override CLI base args (default `['-y', 'four-meme-ai@1.0.0']`). */
   cliBaseArgs?: readonly string[];
+  /**
+   * Optional directory to prepend to the CLI subprocess PATH. Use this to
+   * force the four-meme-ai CLI onto a specific Node version — e.g. Node 22
+   * on a host whose default Node is 25 (the CLI's bundled tsx loader
+   * doesn't resolve modules on Node 25). Example:
+   *   nodeBinPath: '/opt/homebrew/opt/node@22/bin'
+   */
+  nodeBinPath?: string;
   /** Inject a custom spawn implementation (tests). */
   spawnImpl?: SpawnFn;
   /** Inject a receipt fetcher (tests). Defaults to a viem PublicClient. */
@@ -188,6 +196,14 @@ export function createOnchainDeployerTool(
       }
       const label = parsed.label ?? 'AI';
 
+      // If nodeBinPath is set, prepend it to PATH so the CLI subprocess picks
+      // up the pinned Node binary rather than the host default. Required on
+      // hosts where Node 25 breaks four-meme-ai's bundled tsx loader.
+      const pathOverride: Record<string, string> =
+        config.nodeBinPath !== undefined
+          ? { PATH: `${config.nodeBinPath}:${process.env.PATH ?? ''}` }
+          : {};
+
       // Step 1 — create-api: login + upload + build createArg/signature.
       const createApiArgs = [
         ...cliBaseArgs,
@@ -198,13 +214,16 @@ export function createOnchainDeployerTool(
         parsed.description,
         label,
       ];
-      const createApiRes = await runCli(spawnFn, cliCommand, createApiArgs, config.privateKey);
+      const createApiRes = await runCli(spawnFn, cliCommand, createApiArgs, config.privateKey, {
+        ...pathOverride,
+      });
       const { createArg, signature } = parseCreateApiStdout(createApiRes.stdout);
 
       // Step 2 — create-chain: submit TokenManager2.createToken tx.
       const createChainArgs = [...cliBaseArgs, 'create-chain', createArg, signature];
       const createChainRes = await runCli(spawnFn, cliCommand, createChainArgs, config.privateKey, {
         BSC_RPC_URL: rpcUrl,
+        ...pathOverride,
       });
       const txHash = parseCreateChainStdout(createChainRes.stdout);
 
