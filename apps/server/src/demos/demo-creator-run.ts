@@ -24,6 +24,7 @@ import { GoogleGenAI } from '@google/genai';
 import { PinataSDK } from 'pinata';
 import { z } from 'zod';
 
+import { loadConfig } from '../config.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { runCreatorAgent } from '../agents/creator.js';
 import { createNarrativeTool } from '../tools/narrative.js';
@@ -40,8 +41,11 @@ loadDotenv({ path: resolve(repoRoot, '.env.local') });
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
 const MODEL = 'anthropic/claude-sonnet-4-5';
 
+// Only the env vars AppConfig does not cover live here (image generation,
+// Pinata JWT is present in AppConfig but re-validated for a crisp demo error,
+// BSC deployer key). The OpenRouter secret is resolved via AppConfig so both
+// OPENROUTER_API_KEY (preferred) and ANTHROPIC_API_KEY (legacy) work.
 const envSchema = z.object({
-  OPENROUTER_API_KEY: z.string().min(1),
   GOOGLE_API_KEY: z.string().min(1),
   PINATA_JWT: z.string().min(1),
   BSC_DEPLOYER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
@@ -49,6 +53,16 @@ const envSchema = z.object({
 
 async function main(): Promise<void> {
   const theme = process.argv[2] ?? 'a meme celebrating BNB Chain 2026 agentic commerce';
+
+  const config = loadConfig();
+  const openrouterKey = config.openrouter.apiKey ?? config.anthropic.apiKey;
+  if (openrouterKey === undefined || openrouterKey.trim() === '') {
+    console.error(
+      '[demo] OPENROUTER_API_KEY (preferred) or ANTHROPIC_API_KEY missing from .env.local',
+    );
+    process.exit(1);
+    return;
+  }
 
   const envResult = envSchema.safeParse(process.env);
   if (!envResult.success) {
@@ -61,7 +75,7 @@ async function main(): Promise<void> {
   const env = envResult.data;
 
   const anthropic = new Anthropic({
-    apiKey: env.OPENROUTER_API_KEY,
+    apiKey: openrouterKey,
     baseURL: OPENROUTER_BASE_URL,
   });
   const gemini = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });

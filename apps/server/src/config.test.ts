@@ -54,4 +54,23 @@ describe('loadConfig', () => {
     expect(cfg.x.handle).toBeUndefined();
     process.env = original;
   });
+
+  it('surfaces OPENROUTER_API_KEY via config.openrouter.apiKey', () => {
+    const original = { ...process.env };
+    process.env = { OPENROUTER_API_KEY: 'sk-or-abc' };
+    const cfg = loadConfig();
+    expect(cfg.openrouter.apiKey).toBe('sk-or-abc');
+    // Anthropic slot should remain independent when ANTHROPIC_API_KEY is unset.
+    expect(cfg.anthropic.apiKey).toBeUndefined();
+    process.env = original;
+  });
+
+  it('leaves both openrouter.apiKey and anthropic.apiKey undefined when neither env var is set', () => {
+    const original = { ...process.env };
+    process.env = {};
+    const cfg = loadConfig();
+    expect(cfg.openrouter.apiKey).toBeUndefined();
+    expect(cfg.anthropic.apiKey).toBeUndefined();
+    process.env = original;
+  });
 });

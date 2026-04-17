@@ -10,6 +10,11 @@ const envSchema = z.object({
   SERVER_PORT: z.coerce.number().default(4000),
 
   ANTHROPIC_API_KEY: z.preprocess(emptyAsUndefined, z.string().min(1).optional()),
+  // Dual-name transition: Phase 3 routes Anthropic SDK calls through
+  // OpenRouter's Anthropic-compatible gateway. The key is the same secret,
+  // just named differently depending on whose docs you follow. Both names
+  // are accepted; demos read `openrouter.apiKey ?? anthropic.apiKey`.
+  OPENROUTER_API_KEY: z.preprocess(emptyAsUndefined, z.string().min(1).optional()),
 
   PINATA_JWT: z.preprocess(emptyAsUndefined, z.string().min(1).optional()),
 
@@ -68,7 +73,16 @@ const envSchema = z.object({
 
 export type AppConfig = {
   port: number;
+  // Dual-name transition (Phase 2 → Phase 3): `anthropic.apiKey` is the
+  // historical slot (env `ANTHROPIC_API_KEY`), `openrouter.apiKey` is the
+  // current slot (env `OPENROUTER_API_KEY`). Both point at the same secret
+  // because Phase 3 routes Anthropic SDK calls through OpenRouter's
+  // Anthropic-compatible gateway. Callers should prefer
+  // `openrouter.apiKey ?? anthropic.apiKey` and fail fast when both are
+  // undefined. Kept as separate fields so Phase 2 callers that still read
+  // `anthropic.apiKey` stay source-compatible.
   anthropic: { apiKey: string | undefined };
+  openrouter: { apiKey: string | undefined };
   pinata: { jwt: string | undefined };
   wallets: {
     agent: { privateKey: string | undefined; address: string | undefined };
@@ -92,6 +106,7 @@ export function loadConfig(): AppConfig {
   return {
     port: env.SERVER_PORT,
     anthropic: { apiKey: env.ANTHROPIC_API_KEY },
+    openrouter: { apiKey: env.OPENROUTER_API_KEY },
     pinata: { jwt: env.PINATA_JWT },
     wallets: {
       agent: {
