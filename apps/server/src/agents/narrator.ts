@@ -2,7 +2,13 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { LogEvent } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { LoreStore } from '../state/lore-store.js';
-import { runAgentLoop, type ToolCallTrace } from './runtime.js';
+import {
+  runAgentLoop,
+  type RuntimeAssistantDelta,
+  type RuntimeToolUseEnd,
+  type RuntimeToolUseStart,
+  type ToolCallTrace,
+} from './runtime.js';
 
 /**
  * Narrator Agent — the "archivist" of the three-agent swarm.
@@ -38,6 +44,10 @@ export interface RunNarratorAgentParams {
   model?: string;
   maxTurns?: number;
   onLog?: (event: LogEvent) => void;
+  /** V2-P2 streaming hooks — forwarded to runAgentLoop. */
+  onToolUseStart?: (event: RuntimeToolUseStart) => void;
+  onToolUseEnd?: (event: RuntimeToolUseEnd) => void;
+  onAssistantDelta?: (event: RuntimeAssistantDelta) => void;
 }
 
 export interface NarratorAgentOutput {
@@ -139,6 +149,9 @@ export async function runNarratorAgent(
     model = DEFAULT_MODEL,
     maxTurns,
     onLog,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
   } = params;
 
   const chapterNumber = targetChapterNumber ?? previousChapters.length + 1;
@@ -156,6 +169,9 @@ export async function runNarratorAgent(
     userInput,
     maxTurns,
     onLog,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
     agentId: 'narrator',
   });
 

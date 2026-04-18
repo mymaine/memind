@@ -257,6 +257,11 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
     previousChapters: [],
     model: MODEL,
     onLog: (event) => store.addLog(runId, event),
+    // V2-P2: forward fine-grained stream events into the RunStore so SSE
+    // subscribers see spinner + result bubbles + token-by-token text.
+    onToolUseStart: (event) => store.addToolUseStart(runId, event),
+    onToolUseEnd: (event) => store.addToolUseEnd(runId, event),
+    onAssistantDelta: (event) => store.addAssistantDelta(runId, event),
   });
 
   orchestratorLog(
@@ -322,6 +327,9 @@ const defaultRunMarketMakerPhase: RunMarketMakerPhaseFn = async (deps) => {
     loreEndpointUrl,
     model: MODEL,
     onLog: (event) => store.addLog(runId, event),
+    onToolUseStart: (event) => store.addToolUseStart(runId, event),
+    onToolUseEnd: (event) => store.addToolUseEnd(runId, event),
+    onAssistantDelta: (event) => store.addAssistantDelta(runId, event),
   });
 
   if (marketMaker.loreFetch) {

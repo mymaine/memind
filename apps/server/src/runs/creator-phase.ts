@@ -92,6 +92,11 @@ export const runCreatorPhase: RunCreatorPhaseFn = async (deps) => {
     theme,
     model: MODEL,
     onLog: (event) => store.addLog(runId, event),
+    // V2-P2: pipe streaming events through the RunStore so the dashboard's
+    // left column shows per-tool spinners + per-token assistant text.
+    onToolUseStart: (event) => store.addToolUseStart(runId, event),
+    onToolUseEnd: (event) => store.addToolUseEnd(runId, event),
+    onAssistantDelta: (event) => store.addAssistantDelta(runId, event),
   });
 
   // ─── Translate tool traces → dashboard artifacts ────────────────────────

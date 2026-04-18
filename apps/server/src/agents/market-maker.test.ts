@@ -1,67 +1,42 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
-import type Anthropic from '@anthropic-ai/sdk';
-import type { Message } from '@anthropic-ai/sdk/resources/messages/messages.js';
 import type { AgentTool, AnyAgentTool, LogEvent } from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
 import { runMarketMakerAgent } from './market-maker.js';
+import {
+  makeStreamingClient,
+  textStream,
+  toolUseStream,
+  type ScriptedStream,
+} from './_test-client.js';
 
 /**
- * Build a fake Anthropic client whose `messages.create` replays a queued
- * sequence of Messages. Same shape as runtime.test.ts fakeClient — repeated
- * here to keep the test file self-contained.
+ * Fake Anthropic client factory — V2-P2: delegates to the shared streaming
+ * helper. Helper name kept for parity with earlier tests.
  */
-function fakeClient(responses: Message[]): {
-  client: Anthropic;
+function fakeClient(scripts: ScriptedStream[]): {
+  client: ReturnType<typeof makeStreamingClient>['client'];
   create: ReturnType<typeof vi.fn>;
 } {
-  const queue = [...responses];
-  const create = vi.fn(async () => {
-    const next = queue.shift();
-    if (!next) throw new Error('fakeClient: no more responses queued');
-    return next;
-  });
-  const client = { messages: { create } } as unknown as Anthropic;
-  return { client, create };
+  const { client, stream } = makeStreamingClient(scripts);
+  return { client, create: stream };
 }
 
-function textResponse(text: string): Message {
-  return {
-    id: 'msg_end',
-    type: 'message',
-    role: 'assistant',
-    model: 'test-model',
-    content: [{ type: 'text', text }],
-    stop_reason: 'end_turn',
-    stop_sequence: null,
-    usage: {
-      input_tokens: 1,
-      output_tokens: 1,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-    },
-  };
+function textResponse(text: string): ScriptedStream {
+  return textStream(text);
 }
 
 function toolUseResponse(
-  id: string,
+  _id: string,
   uses: { id: string; name: string; input: unknown }[],
-): Message {
-  return {
-    id,
-    type: 'message',
-    role: 'assistant',
-    model: 'test-model',
-    content: uses.map((u) => ({ type: 'tool_use', id: u.id, name: u.name, input: u.input })),
-    stop_reason: 'tool_use',
-    stop_sequence: null,
-    usage: {
-      input_tokens: 1,
-      output_tokens: 1,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-    },
-  };
+): ScriptedStream {
+  return toolUseStream(
+    uses.map((u) => ({
+      id: u.id,
+      name: u.name,
+      input: (u.input as Record<string, unknown>) ?? {},
+    })),
+  );
 }
 
 const TOKEN_ADDR = '0x1111111111111111111111111111111111111111';

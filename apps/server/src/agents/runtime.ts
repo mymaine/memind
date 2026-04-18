@@ -4,16 +4,24 @@ import type {
   ContentBlockParam,
   Message,
   MessageParam,
+  RawMessageStreamEvent,
   TextBlock,
   ToolResultBlockParam,
   ToolUseBlock,
 } from '@anthropic-ai/sdk/resources/messages/messages.js';
 import type { AgentId, LogEvent } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
+import { createStreamEventMapper } from './_stream-map.js';
 
 /**
  * Generic agent loop used by Creator / Narrator / Market-maker. Each call owns
  * its own message history so concurrent agents do not share state.
+ *
+ * V2-P2: each turn now drives `client.messages.stream` instead of
+ * `messages.create`. We forward the three stream-level events the dashboard
+ * cares about (`tool_use:start`, `tool_use:end`, `assistant:delta`) through
+ * dedicated callbacks while keeping the existing coarse `onLog` summary as a
+ * companion layer (see docs/features/dashboard-v2.md).
  */
 export interface RunAgentLoopParams {
   client: Anthropic;
@@ -25,10 +33,39 @@ export interface RunAgentLoopParams {
   maxTurns?: number;
   /** Stream every loop action (turn start, tool invoke, error, final) to caller. */
   onLog?: (event: LogEvent) => void;
-  /** Agent identity used purely for log attribution. */
+  /** Fine-grained event: tool invocation opened (spinner). */
+  onToolUseStart?: (event: RuntimeToolUseStart) => void;
+  /** Fine-grained event: tool invocation finished (result or error). */
+  onToolUseEnd?: (event: RuntimeToolUseEnd) => void;
+  /** Fine-grained event: one chunk of assistant free-form text. */
+  onAssistantDelta?: (event: RuntimeAssistantDelta) => void;
+  /** Agent identity used purely for log / event attribution. */
   agentId?: AgentId;
-  /** Max tokens per `messages.create` turn. Default: 2048. */
+  /** Max tokens per streamed turn. Default: 2048. */
   maxTokens?: number;
+}
+
+export interface RuntimeToolUseStart {
+  agent: AgentId;
+  toolName: string;
+  toolUseId: string;
+  input: Record<string, unknown>;
+  ts: string;
+}
+
+export interface RuntimeToolUseEnd {
+  agent: AgentId;
+  toolName: string;
+  toolUseId: string;
+  output: Record<string, unknown>;
+  isError: boolean;
+  ts: string;
+}
+
+export interface RuntimeAssistantDelta {
+  agent: AgentId;
+  delta: string;
+  ts: string;
 }
 
 export interface ToolCallTrace {
@@ -49,6 +86,15 @@ const DEFAULT_MAX_TURNS = 12;
 const DEFAULT_MAX_TOKENS = 2048;
 
 /**
+ * Minimal surface of `MessageStream` we consume. Declared locally so fakes in
+ * unit tests can stand in for the concrete SDK class without pulling its full
+ * EventEmitter shape.
+ */
+interface StreamHandle extends AsyncIterable<RawMessageStreamEvent> {
+  finalMessage(): Promise<Message>;
+}
+
+/**
  * Run an agent loop until the model emits `stop_reason: 'end_turn'` or we hit
  * `maxTurns`. Tool errors are fed back to the model via `is_error: true` so it
  * can recover; only unrecoverable problems (model-side errors, max turns,
@@ -63,6 +109,9 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
     userInput,
     maxTurns = DEFAULT_MAX_TURNS,
     onLog,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
     agentId = 'creator',
     maxTokens = DEFAULT_MAX_TOKENS,
   } = params;
@@ -97,13 +146,58 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
       message: `turn ${turn + 1} requesting completion`,
     });
 
-    const response: Message = await client.messages.create({
+    // Streaming call — `messages.stream` returns a `MessageStream`. We consume
+    // chunks via `for await` for fine-grained events and then await
+    // `finalMessage()` for the authoritative tool_use blocks + stop_reason.
+    const stream = client.messages.stream({
       model,
       max_tokens: maxTokens,
       system: systemPrompt,
       tools: anthropicTools,
       messages,
-    });
+    }) as unknown as StreamHandle;
+
+    const mapper = createStreamEventMapper();
+    const pendingToolStarts: RuntimeToolUseStart[] = [];
+
+    try {
+      for await (const chunk of stream) {
+        mapper(chunk, (mapped) => {
+          if (mapped.type === 'assistant:delta') {
+            if (onAssistantDelta) {
+              onAssistantDelta({
+                agent: agentId,
+                delta: mapped.delta,
+                ts: new Date().toISOString(),
+              });
+            }
+            return;
+          }
+          // tool_use:start — buffer and fire the callback right away so the
+          // UI can render a spinner the moment the tool block closes.
+          const startEvent: RuntimeToolUseStart = {
+            agent: agentId,
+            toolName: mapped.toolName,
+            toolUseId: mapped.toolUseId,
+            input: mapped.input,
+            ts: new Date().toISOString(),
+          };
+          pendingToolStarts.push(startEvent);
+          if (onToolUseStart) onToolUseStart(startEvent);
+        });
+      }
+    } catch (err) {
+      // Network / upstream stream failure — we cannot recover mid-turn.
+      const message = err instanceof Error ? err.message : String(err);
+      emit({
+        tool: 'runtime',
+        level: 'error',
+        message: `stream failed: ${message}`,
+      });
+      throw err;
+    }
+
+    const response = await stream.finalMessage();
 
     emit({
       tool: 'runtime',
@@ -133,11 +227,18 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
     // Execute every tool_use block in parallel and splice results back.
     const toolUses = response.content.filter(isToolUseBlock);
     const toolResults = await Promise.all(
-      toolUses.map((block) => executeToolBlock(block, registry, emit, toolCalls)),
+      toolUses.map((block) =>
+        executeToolBlock(block, registry, emit, toolCalls, agentId, onToolUseEnd),
+      ),
     );
 
     const toolResultContent: ContentBlockParam[] = toolResults;
     messages.push({ role: 'user', content: toolResultContent });
+
+    // `pendingToolStarts` is intentionally not cross-checked against
+    // `toolUses`: Anthropic's `finalMessage()` is the authoritative source
+    // for the execute loop; our start events are a dashboard affordance.
+    void pendingToolStarts;
   }
 
   emit({
@@ -153,6 +254,8 @@ async function executeToolBlock(
   registry: ToolRegistry,
   emit: (event: Omit<LogEvent, 'ts' | 'agent'>) => void,
   toolCalls: ToolCallTrace[],
+  agentId: AgentId,
+  onToolUseEnd: ((event: RuntimeToolUseEnd) => void) | undefined,
 ): Promise<ToolResultBlockParam> {
   const toolName = block.name;
   emit({
@@ -181,6 +284,19 @@ async function executeToolBlock(
       message: `tool ${toolName} ok`,
       meta: { toolUseId: block.id },
     });
+    if (onToolUseEnd) {
+      onToolUseEnd({
+        agent: agentId,
+        toolName,
+        toolUseId: block.id,
+        // `parsedOutput` is `unknown` from the tool registry's perspective.
+        // We coerce to a record for the SSE payload shape; non-object outputs
+        // are wrapped so the wire contract stays uniform.
+        output: toOutputRecord(parsedOutput),
+        isError: false,
+        ts: new Date().toISOString(),
+      });
+    }
     return {
       type: 'tool_result',
       tool_use_id: block.id,
@@ -200,6 +316,16 @@ async function executeToolBlock(
       message: `tool ${toolName} failed: ${message}`,
       meta: { toolUseId: block.id },
     });
+    if (onToolUseEnd) {
+      onToolUseEnd({
+        agent: agentId,
+        toolName,
+        toolUseId: block.id,
+        output: { error: message },
+        isError: true,
+        ts: new Date().toISOString(),
+      });
+    }
     return {
       type: 'tool_result',
       tool_use_id: block.id,
@@ -207,6 +333,14 @@ async function executeToolBlock(
       is_error: true,
     };
   }
+}
+
+function toOutputRecord(value: unknown): Record<string, unknown> {
+  if (value === null || value === undefined) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { value };
 }
 
 function isToolUseBlock(block: ContentBlock): block is ToolUseBlock {

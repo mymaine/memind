@@ -20,10 +20,13 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import type {
   Artifact,
+  AssistantDeltaEventPayload,
   LogEvent,
   RunKind,
   RunStatus,
   StatusEventPayload,
+  ToolUseEndEventPayload,
+  ToolUseStartEventPayload,
 } from '@hack-fourmeme/shared';
 
 export interface RunRecord {
@@ -74,7 +77,14 @@ export type TryCreateResult =
 export type RunEvent =
   | { type: 'log'; data: LogEvent }
   | { type: 'artifact'; data: Artifact }
-  | { type: 'status'; data: StatusEventPayload };
+  | { type: 'status'; data: StatusEventPayload }
+  // Fine-grained streaming events (V2-P2). These are NOT buffered by the store
+  // because they do not need replay — late subscribers get the coarse log
+  // summary from the `logs` buffer. We forward them live so the route layer
+  // can emit matching SSE events.
+  | { type: 'tool_use:start'; data: ToolUseStartEventPayload }
+  | { type: 'tool_use:end'; data: ToolUseEndEventPayload }
+  | { type: 'assistant:delta'; data: AssistantDeltaEventPayload };
 
 export type RunEventListener = (event: RunEvent) => void;
 
@@ -183,6 +193,29 @@ export class RunStore {
     if (!record) return;
     record.artifacts.push(artifact);
     this.emit(runId, { type: 'artifact', data: artifact });
+  }
+
+  // ─── Fine-grained streaming events (V2-P2) ───────────────────────────────
+  // No per-record buffering: replay is handled by the coarse `logs` layer
+  // (one LogEvent per tool invocation). These methods exist so callers never
+  // have to reach into the emitter directly.
+
+  /** Fire a tool_use:start event for live subscribers. */
+  addToolUseStart(runId: string, payload: ToolUseStartEventPayload): void {
+    if (!this.records.has(runId)) return;
+    this.emit(runId, { type: 'tool_use:start', data: payload });
+  }
+
+  /** Fire a tool_use:end event for live subscribers. */
+  addToolUseEnd(runId: string, payload: ToolUseEndEventPayload): void {
+    if (!this.records.has(runId)) return;
+    this.emit(runId, { type: 'tool_use:end', data: payload });
+  }
+
+  /** Fire an assistant:delta event for live subscribers. */
+  addAssistantDelta(runId: string, payload: AssistantDeltaEventPayload): void {
+    if (!this.records.has(runId)) return;
+    this.emit(runId, { type: 'assistant:delta', data: payload });
   }
 
   /**

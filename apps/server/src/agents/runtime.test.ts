@@ -1,42 +1,62 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { Message } from '@anthropic-ai/sdk/resources/messages/messages.js';
+import type {
+  Message,
+  RawMessageStreamEvent,
+  ToolUseBlock,
+} from '@anthropic-ai/sdk/resources/messages/messages.js';
 import type { AgentTool, AnyAgentTool, LogEvent } from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
 import { runAgentLoop } from './runtime.js';
 
 /**
- * Build a fake Anthropic client whose `messages.create` returns the next
- * response from a scripted queue. Each call consumes one entry and records a
- * deep snapshot of the messages passed in (runtime mutates its history array,
- * so a naive spy would only see the final state).
+ * Build a fake Anthropic client whose `messages.stream` returns the next
+ * scripted stream from a queue. Each stream exposes an async iterator over
+ * `RawMessageStreamEvent` chunks plus a `finalMessage()` promise the runtime
+ * awaits for the authoritative assistant content + stop_reason.
+ *
+ * We snapshot the `messages` array on every call because the runtime mutates
+ * it in place as tool results are appended, so a naive spy would only see the
+ * final state.
  */
-function fakeClient(responses: Message[]): {
+interface ScriptedStream {
+  chunks: RawMessageStreamEvent[];
+  final: Message;
+}
+
+function fakeClient(streams: ScriptedStream[]): {
   client: Anthropic;
-  create: ReturnType<typeof vi.fn>;
+  stream: ReturnType<typeof vi.fn>;
   snapshots: Array<{ messages: unknown[] }>;
 } {
-  const queue = [...responses];
+  const queue = [...streams];
   const snapshots: Array<{ messages: unknown[] }> = [];
-  const create = vi.fn(async (params: { messages: unknown[] }) => {
+  const stream = vi.fn((params: { messages: unknown[] }) => {
     snapshots.push(JSON.parse(JSON.stringify({ messages: params.messages })));
     const next = queue.shift();
-    if (!next) throw new Error('fakeClient: no more responses queued');
-    return next;
+    if (!next) throw new Error('fakeClient: no more streams queued');
+    return {
+      async *[Symbol.asyncIterator](): AsyncIterator<RawMessageStreamEvent> {
+        for (const chunk of next.chunks) yield chunk;
+      },
+      finalMessage(): Promise<Message> {
+        return Promise.resolve(next.final);
+      },
+    };
   });
-  const client = { messages: { create } } as unknown as Anthropic;
-  return { client, create, snapshots };
+  const client = { messages: { stream } } as unknown as Anthropic;
+  return { client, stream, snapshots };
 }
 
-function textOnlyResponse(text: string): Message {
+function msg(content: Message['content'], stopReason: Message['stop_reason']): Message {
   return {
-    id: 'msg_end',
+    id: 'msg',
     type: 'message',
     role: 'assistant',
-    model: 'test-model',
-    content: [{ type: 'text', text }],
-    stop_reason: 'end_turn',
+    model: 'test',
+    content,
+    stop_reason: stopReason,
     stop_sequence: null,
     usage: {
       input_tokens: 1,
@@ -47,30 +67,41 @@ function textOnlyResponse(text: string): Message {
   };
 }
 
-function toolUseResponse(
-  id: string,
-  toolUses: { id: string; name: string; input: unknown }[],
-): Message {
+function textStream(text: string): ScriptedStream {
   return {
-    id,
-    type: 'message',
-    role: 'assistant',
-    model: 'test-model',
-    content: toolUses.map((t) => ({
-      type: 'tool_use',
-      id: t.id,
-      name: t.name,
-      input: t.input,
-    })),
-    stop_reason: 'tool_use',
-    stop_sequence: null,
-    usage: {
-      input_tokens: 1,
-      output_tokens: 1,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-    },
+    chunks: [
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+      { type: 'content_block_stop', index: 0 },
+    ],
+    final: msg([{ type: 'text', text }], 'end_turn'),
   };
+}
+
+function toolUseStream(
+  toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>,
+): ScriptedStream {
+  const chunks: RawMessageStreamEvent[] = [];
+  toolUses.forEach((t, idx) => {
+    chunks.push({
+      type: 'content_block_start',
+      index: idx,
+      content_block: { type: 'tool_use', id: t.id, name: t.name, input: {} },
+    });
+    chunks.push({
+      type: 'content_block_delta',
+      index: idx,
+      delta: { type: 'input_json_delta', partial_json: JSON.stringify(t.input) },
+    });
+    chunks.push({ type: 'content_block_stop', index: idx });
+  });
+  const blocks: ToolUseBlock[] = toolUses.map((t) => ({
+    type: 'tool_use',
+    id: t.id,
+    name: t.name,
+    input: t.input,
+  }));
+  return { chunks, final: msg(blocks, 'tool_use') };
 }
 
 interface AddInput {
@@ -99,9 +130,9 @@ describe('runAgentLoop', () => {
     const addSpy = vi.fn(async (input: AddInput) => ({ sum: input.a + input.b }));
     registry.register(makeAddTool(addSpy) as unknown as AnyAgentTool);
 
-    const { client, create, snapshots } = fakeClient([
-      toolUseResponse('msg_1', [{ id: 'tu_1', name: 'add', input: { a: 2, b: 3 } }]),
-      textOnlyResponse('the answer is 5'),
+    const { client, stream, snapshots } = fakeClient([
+      toolUseStream([{ id: 'tu_1', name: 'add', input: { a: 2, b: 3 } }]),
+      textStream('the answer is 5'),
     ]);
 
     const result = await runAgentLoop({
@@ -113,7 +144,7 @@ describe('runAgentLoop', () => {
     });
 
     expect(addSpy).toHaveBeenCalledWith({ a: 2, b: 3 });
-    expect(create).toHaveBeenCalledTimes(2);
+    expect(stream).toHaveBeenCalledTimes(2);
     expect(result.finalText).toBe('the answer is 5');
     expect(result.stopReason).toBe('end_turn');
     expect(result.toolCalls).toHaveLength(1);
@@ -146,8 +177,8 @@ describe('runAgentLoop', () => {
     registry.register(makeAddTool(addSpy) as unknown as AnyAgentTool);
 
     const { client, snapshots } = fakeClient([
-      toolUseResponse('msg_1', [{ id: 'tu_1', name: 'add', input: { a: 1, b: 2 } }]),
-      textOnlyResponse('sorry, failed'),
+      toolUseStream([{ id: 'tu_1', name: 'add', input: { a: 1, b: 2 } }]),
+      textStream('sorry, failed'),
     ]);
 
     const result = await runAgentLoop({
@@ -175,8 +206,8 @@ describe('runAgentLoop', () => {
     registry.register(makeAddTool(addSpy) as unknown as AnyAgentTool);
 
     const { client } = fakeClient([
-      toolUseResponse('msg_1', [{ id: 'tu_1', name: 'add', input: { a: 'nope', b: 2 } }]),
-      textOnlyResponse('done'),
+      toolUseStream([{ id: 'tu_1', name: 'add', input: { a: 'nope' as unknown as number, b: 2 } }]),
+      textStream('done'),
     ]);
 
     const result = await runAgentLoop({
@@ -195,10 +226,10 @@ describe('runAgentLoop', () => {
     const registry = new ToolRegistry();
     registry.register(makeAddTool(async (i) => ({ sum: i.a + i.b })) as unknown as AnyAgentTool);
 
-    const loopingResponses = Array.from({ length: 5 }, (_, i) =>
-      toolUseResponse(`msg_${i}`, [{ id: `tu_${i}`, name: 'add', input: { a: 1, b: 1 } }]),
+    const loopingStreams = Array.from({ length: 5 }, (_, i) =>
+      toolUseStream([{ id: `tu_${i.toString()}`, name: 'add', input: { a: 1, b: 1 } }]),
     );
-    const { client } = fakeClient(loopingResponses);
+    const { client } = fakeClient(loopingStreams);
 
     await expect(
       runAgentLoop({
@@ -218,8 +249,8 @@ describe('runAgentLoop', () => {
 
     const logs: LogEvent[] = [];
     const { client } = fakeClient([
-      toolUseResponse('msg_1', [{ id: 'tu_1', name: 'add', input: { a: 2, b: 3 } }]),
-      textOnlyResponse('5'),
+      toolUseStream([{ id: 'tu_1', name: 'add', input: { a: 2, b: 3 } }]),
+      textStream('5'),
     ]);
 
     await runAgentLoop({
@@ -244,11 +275,11 @@ describe('runAgentLoop', () => {
     registry.register(makeAddTool(addSpy) as unknown as AnyAgentTool);
 
     const { client, snapshots } = fakeClient([
-      toolUseResponse('msg_1', [
+      toolUseStream([
         { id: 'tu_1', name: 'add', input: { a: 1, b: 2 } },
         { id: 'tu_2', name: 'add', input: { a: 10, b: 20 } },
       ]),
-      textOnlyResponse('done'),
+      textStream('done'),
     ]);
 
     const result = await runAgentLoop({

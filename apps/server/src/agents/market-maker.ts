@@ -2,7 +2,13 @@ import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { LogEvent } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
-import { runAgentLoop, type ToolCallTrace } from './runtime.js';
+import {
+  runAgentLoop,
+  type RuntimeAssistantDelta,
+  type RuntimeToolUseEnd,
+  type RuntimeToolUseStart,
+  type ToolCallTrace,
+} from './runtime.js';
 import type { TokenStatusOutput } from '../tools/token-status.js';
 import type { XFetchLoreOutput } from '../tools/x-fetch-lore.js';
 import { extractJsonObject } from './_json.js';
@@ -30,6 +36,10 @@ export interface RunMarketMakerAgentParams {
   model?: string;
   maxTurns?: number;
   onLog?: (event: LogEvent) => void;
+  /** V2-P2 streaming hooks — forwarded to runAgentLoop. */
+  onToolUseStart?: (event: RuntimeToolUseStart) => void;
+  onToolUseEnd?: (event: RuntimeToolUseEnd) => void;
+  onAssistantDelta?: (event: RuntimeAssistantDelta) => void;
 }
 
 export interface MarketMakerAgentOutput {
@@ -77,6 +87,9 @@ export async function runMarketMakerAgent(
     model = DEFAULT_MODEL,
     maxTurns,
     onLog,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
   } = params;
 
   const userInput = [
@@ -94,6 +107,9 @@ export async function runMarketMakerAgent(
     userInput,
     maxTurns,
     onLog,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
     agentId: 'market-maker',
   });
 

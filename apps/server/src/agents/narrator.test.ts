@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
-import type Anthropic from '@anthropic-ai/sdk';
-import type { Message } from '@anthropic-ai/sdk/resources/messages/messages.js';
 import type { AgentTool, AnyAgentTool, LogEvent } from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
 import { LoreStore } from '../state/lore-store.js';
 import { runNarratorAgent } from './narrator.js';
+import {
+  makeStreamingClient,
+  msg,
+  textStream,
+  toolUseStream,
+  type ScriptedStream,
+} from './_test-client.js';
 
 /**
  * The Narrator agent is a thin wrapper around runAgentLoop that:
@@ -33,62 +38,34 @@ interface ExtendLoreOutput {
   ipfsUri: string;
 }
 
-function fakeClient(responses: Message[]): {
-  client: Anthropic;
+// V2-P2: runtime now drives `messages.stream`; fakeClient delegates to the
+// shared streaming helper. We preserve the original helper names
+// (fakeClient/textOnlyResponse/toolUseResponse) to minimise churn across the
+// existing test assertions.
+function fakeClient(scripts: ScriptedStream[]): {
+  client: ReturnType<typeof makeStreamingClient>['client'];
   create: ReturnType<typeof vi.fn>;
 } {
-  const queue = [...responses];
-  const create = vi.fn(async () => {
-    const next = queue.shift();
-    if (!next) throw new Error('fakeClient: no more responses queued');
-    return next;
-  });
-  const client = { messages: { create } } as unknown as Anthropic;
-  return { client, create };
+  const { client, stream } = makeStreamingClient(scripts);
+  return { client, create: stream };
 }
 
-function textOnlyResponse(text: string): Message {
-  return {
-    id: 'msg_end',
-    type: 'message',
-    role: 'assistant',
-    model: 'test-model',
-    content: [{ type: 'text', text }],
-    stop_reason: 'end_turn',
-    stop_sequence: null,
-    usage: {
-      input_tokens: 1,
-      output_tokens: 1,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-    },
-  };
+function textOnlyResponse(text: string): ScriptedStream {
+  return textStream(text);
 }
 
 function toolUseResponse(
-  id: string,
+  _id: string,
   toolUses: { id: string; name: string; input: unknown }[],
-): Message {
-  return {
-    id,
-    type: 'message',
-    role: 'assistant',
-    model: 'test-model',
-    content: toolUses.map((t) => ({
-      type: 'tool_use',
+): ScriptedStream {
+  void msg;
+  return toolUseStream(
+    toolUses.map((t) => ({
       id: t.id,
       name: t.name,
-      input: t.input,
+      input: (t.input as Record<string, unknown>) ?? {},
     })),
-    stop_reason: 'tool_use',
-    stop_sequence: null,
-    usage: {
-      input_tokens: 1,
-      output_tokens: 1,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-    },
-  };
+  );
 }
 
 /**

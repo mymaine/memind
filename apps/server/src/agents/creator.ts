@@ -1,7 +1,13 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { creatorResultSchema, type CreatorResult, type LogEvent } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
-import { runAgentLoop, type AgentLoopResult } from './runtime.js';
+import {
+  runAgentLoop,
+  type AgentLoopResult,
+  type RuntimeAssistantDelta,
+  type RuntimeToolUseEnd,
+  type RuntimeToolUseStart,
+} from './runtime.js';
 import { extractJsonObject } from './_json.js';
 
 export interface RunCreatorAgentParams {
@@ -12,6 +18,10 @@ export interface RunCreatorAgentParams {
   model?: string;
   maxTurns?: number;
   onLog?: (event: LogEvent) => void;
+  /** V2-P2 streaming hooks — forwarded to runAgentLoop. */
+  onToolUseStart?: (event: RuntimeToolUseStart) => void;
+  onToolUseEnd?: (event: RuntimeToolUseEnd) => void;
+  onAssistantDelta?: (event: RuntimeAssistantDelta) => void;
 }
 
 export interface CreatorAgentOutput {
@@ -43,7 +53,17 @@ Rules:
  * `AgentTool` contract from `packages/shared/src/tool.ts`).
  */
 export async function runCreatorAgent(params: RunCreatorAgentParams): Promise<CreatorAgentOutput> {
-  const { client, registry, theme, model = DEFAULT_MODEL, maxTurns, onLog } = params;
+  const {
+    client,
+    registry,
+    theme,
+    model = DEFAULT_MODEL,
+    maxTurns,
+    onLog,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
+  } = params;
 
   const loop = await runAgentLoop({
     client,
@@ -53,6 +73,9 @@ export async function runCreatorAgent(params: RunCreatorAgentParams): Promise<Cr
     userInput: `Theme: ${theme}\n\nExecute the four tools in order and return the final JSON.`,
     maxTurns,
     onLog,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
     agentId: 'creator',
   });
 
