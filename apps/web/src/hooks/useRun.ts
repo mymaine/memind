@@ -12,22 +12,72 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Artifact,
+  AssistantDeltaEventPayload,
   CreateRunRequest,
   CreateRunResponse,
   LogEvent,
   StatusEventPayload,
+  ToolUseEndEventPayload,
+  ToolUseStartEventPayload,
 } from '@hack-fourmeme/shared';
+import {
+  EMPTY_ASSISTANT_TEXT,
+  EMPTY_TOOL_CALLS,
+  applyAssistantDelta,
+  applyToolUseEnd,
+  applyToolUseStart,
+  type AssistantTextByAgent,
+  type ToolCallState,
+  type ToolCallsByAgent,
+} from './useRun-state.js';
+
+// Re-export so existing consumers can import these from useRun.
+export type { AssistantTextByAgent, ToolCallState, ToolCallsByAgent };
 
 export type RunState =
-  | { phase: 'idle'; logs: []; artifacts: []; runId: null; error: null }
-  | { phase: 'running'; logs: LogEvent[]; artifacts: Artifact[]; runId: string; error: null }
-  | { phase: 'done'; logs: LogEvent[]; artifacts: Artifact[]; runId: string; error: null }
-  | { phase: 'error'; logs: LogEvent[]; artifacts: Artifact[]; runId: string; error: string };
+  | {
+      phase: 'idle';
+      logs: [];
+      artifacts: [];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: null;
+      error: null;
+    }
+  | {
+      phase: 'running';
+      logs: LogEvent[];
+      artifacts: Artifact[];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: string;
+      error: null;
+    }
+  | {
+      phase: 'done';
+      logs: LogEvent[];
+      artifacts: Artifact[];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: string;
+      error: null;
+    }
+  | {
+      phase: 'error';
+      logs: LogEvent[];
+      artifacts: Artifact[];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: string;
+      error: string;
+    };
 
 const IDLE_STATE: RunState = {
   phase: 'idle',
   logs: [],
   artifacts: [],
+  toolCalls: EMPTY_TOOL_CALLS,
+  assistantText: EMPTY_ASSISTANT_TEXT,
   runId: null,
   error: null,
 };
@@ -82,6 +132,8 @@ export function useRun(): UseRunResult {
         phase: 'running',
         logs: [],
         artifacts: [],
+        toolCalls: EMPTY_TOOL_CALLS,
+        assistantText: EMPTY_ASSISTANT_TEXT,
         runId,
         error: null,
       });
@@ -117,6 +169,51 @@ export function useRun(): UseRunResult {
         }
       });
 
+      // V2-P2 fine-grained events. All three share the same "only mutate when
+      // we have a live run record" guard as `log` and `artifact`.
+
+      es.addEventListener('tool_use:start', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as ToolUseStartEventPayload;
+          setState((prev) => {
+            if (prev.phase !== 'running' && prev.phase !== 'done' && prev.phase !== 'error') {
+              return prev;
+            }
+            return { ...prev, toolCalls: applyToolUseStart(prev.toolCalls, data) };
+          });
+        } catch {
+          // Ignore malformed payloads.
+        }
+      });
+
+      es.addEventListener('tool_use:end', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as ToolUseEndEventPayload;
+          setState((prev) => {
+            if (prev.phase !== 'running' && prev.phase !== 'done' && prev.phase !== 'error') {
+              return prev;
+            }
+            return { ...prev, toolCalls: applyToolUseEnd(prev.toolCalls, data) };
+          });
+        } catch {
+          // Ignore malformed payloads.
+        }
+      });
+
+      es.addEventListener('assistant:delta', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as AssistantDeltaEventPayload;
+          setState((prev) => {
+            if (prev.phase !== 'running' && prev.phase !== 'done' && prev.phase !== 'error') {
+              return prev;
+            }
+            return { ...prev, assistantText: applyAssistantDelta(prev.assistantText, data) };
+          });
+        } catch {
+          // Ignore malformed payloads.
+        }
+      });
+
       es.addEventListener('status', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data) as StatusEventPayload;
@@ -127,6 +224,8 @@ export function useRun(): UseRunResult {
                 phase: 'done',
                 logs: prev.logs,
                 artifacts: prev.artifacts,
+                toolCalls: prev.toolCalls,
+                assistantText: prev.assistantText,
                 runId: prev.runId ?? runId,
                 error: null,
               };
@@ -141,6 +240,8 @@ export function useRun(): UseRunResult {
                 phase: 'error',
                 logs: prev.logs,
                 artifacts: prev.artifacts,
+                toolCalls: prev.toolCalls,
+                assistantText: prev.assistantText,
                 runId: prev.runId ?? runId,
                 error: message,
               };
@@ -166,6 +267,8 @@ export function useRun(): UseRunResult {
         phase: 'error',
         logs: prev.phase === 'idle' ? [] : prev.logs,
         artifacts: prev.phase === 'idle' ? [] : prev.artifacts,
+        toolCalls: prev.phase === 'idle' ? EMPTY_TOOL_CALLS : prev.toolCalls,
+        assistantText: prev.phase === 'idle' ? EMPTY_ASSISTANT_TEXT : prev.assistantText,
         runId: prev.phase === 'idle' ? '' : (prev.runId ?? ''),
         error: message,
       }));

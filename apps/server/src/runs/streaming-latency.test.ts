@@ -27,7 +27,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { LoreStore } from '../state/lore-store.js';
 import { RunStore } from './store.js';
 import { registerRunRoutes } from './routes.js';
-import type { RunA2ADemoDeps, RunA2ADemoFn } from './a2a.js';
+import type { RunA2ADemoFn } from './routes.js';
+import type { RunA2ADemoDeps } from './a2a.js';
 import type { AppConfig } from '../config.js';
 
 const MAX_LATENCY_MS = 8_000;
