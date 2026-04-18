@@ -37,7 +37,32 @@ export interface RunRecord {
   logs: LogEvent[];
   artifacts: Artifact[];
   errorMessage?: string;
+  /**
+   * Lower-cased BSC token address this run targets, when known up front.
+   * `tryCreate()` uses this for the per-tokenAddress concurrency mutex
+   * (V2-P1 AC-V2-9). The initial Creator step in an a2a run does NOT yet have
+   * an address, so this field is left undefined and the mutex is skipped.
+   */
+  tokenAddress?: string;
 }
+
+/** Active statuses that hold the per-tokenAddress concurrency mutex. */
+const ACTIVE_STATUSES = new Set<RunStatus>(['pending', 'running']);
+
+export interface TryCreateInput {
+  kind: RunKind;
+  /**
+   * Optional. When supplied, tryCreate enforces a per-tokenAddress mutex:
+   * a second call with the same address (case-insensitive) while an earlier
+   * run is still active returns `{ ok: false, error: 'run_in_progress' }`.
+   * Distinct addresses run concurrently. Omit on the initial Creator step.
+   */
+  tokenAddress?: string;
+}
+
+export type TryCreateResult =
+  | { ok: true; record: RunRecord }
+  | { ok: false; error: 'run_in_progress'; existingRunId: string };
 
 /**
  * Discriminated-union event shape pushed to a subscriber. `type` matches the
@@ -79,6 +104,37 @@ export class RunStore {
     // something even if no event has fired yet.
     this.emitters.set(runId, new EventEmitter());
     return record;
+  }
+
+  /**
+   * Create a new run with optional per-tokenAddress concurrency mutex
+   * (V2-P1 AC-V2-9). When `tokenAddress` is supplied:
+   *   - if any active run (status ∈ pending|running) already holds that
+   *     address (case-insensitive compare), return a 409-shape result
+   *   - otherwise create a fresh record tagged with the lower-cased address
+   * When `tokenAddress` is omitted, behaves identically to `create(kind)`.
+   *
+   * Returning a discriminated result instead of throwing keeps the HTTP
+   * route layer's mapping to status codes a one-liner switch.
+   */
+  tryCreate(input: TryCreateInput): TryCreateResult {
+    const normalised = input.tokenAddress?.toLowerCase();
+    if (normalised !== undefined) {
+      for (const existing of this.records.values()) {
+        if (existing.tokenAddress === normalised && ACTIVE_STATUSES.has(existing.status)) {
+          return {
+            ok: false,
+            error: 'run_in_progress',
+            existingRunId: existing.runId,
+          };
+        }
+      }
+    }
+    const record = this.create(input.kind);
+    if (normalised !== undefined) {
+      record.tokenAddress = normalised;
+    }
+    return { ok: true, record };
   }
 
   /** Return the record for `runId`, or undefined if unknown. */

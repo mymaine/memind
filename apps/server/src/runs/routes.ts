@@ -83,7 +83,19 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
       args.tokenAddr = paramsRecord.tokenAddr;
     }
 
-    const record = runStore.create('a2a');
+    // Per-tokenAddress concurrency mutex (V2-P1 AC-V2-9). When the client
+    // supplies a tokenAddr we forward it to RunStore.tryCreate; a second
+    // call with the same address while the first run is still active gets a
+    // 409 + existingRunId so the dashboard can toast "already running".
+    const tryResult = runStore.tryCreate({ kind: 'a2a', tokenAddress: args.tokenAddr });
+    if (!tryResult.ok) {
+      res.status(409).json({
+        error: tryResult.error,
+        existingRunId: tryResult.existingRunId,
+      });
+      return;
+    }
+    const record = tryResult.record;
     // Respond 201 BEFORE the run kicks off: the client must have the runId
     // in hand so it can open the SSE stream before the first event fires.
     res.status(201).json({ runId: record.runId });

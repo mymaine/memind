@@ -36,6 +36,7 @@ import { createCheckTokenStatusTool } from '../tools/token-status.js';
 import { createXFetchLoreTool } from '../tools/x-fetch-lore.js';
 import { runNarratorAgent } from '../agents/narrator.js';
 import { runMarketMakerAgent } from '../agents/market-maker.js';
+import { runCreatorPhase as defaultRunCreatorPhase } from './creator-phase.js';
 import type { RunStore } from './store.js';
 
 // OpenRouter Anthropic-compatible gateway — mirrors demos/demo-a2a-run.ts.
@@ -67,7 +68,68 @@ export interface RunA2ADemoDeps {
    * point can do the same since it reuses the main server.
    */
   loreEndpointBaseUrl?: string;
+
+  // ─── Phase dependency-injection (V2-P1) ───────────────────────────────────
+  // Each phase runs through a callback so tests can swap in fakes that just
+  // push synthetic logs/artifacts into the RunStore. Production callers omit
+  // these fields and the orchestrator falls back to the real implementations.
+  runCreatorImpl?: RunCreatorPhaseFn;
+  runNarratorImpl?: RunNarratorPhaseFn;
+  runMarketMakerImpl?: RunMarketMakerPhaseFn;
 }
+
+/**
+ * Creator phase callback. Returns the deployed token's address + tx hash so
+ * the orchestrator can hand them to the Narrator phase. Implementations must
+ * also push their own logs/artifacts into the store.
+ */
+export type RunCreatorPhaseFn = (deps: {
+  config: AppConfig;
+  anthropic: Anthropic;
+  store: RunStore;
+  runId: string;
+  theme: string;
+}) => Promise<{
+  tokenAddr: string;
+  tokenName: string;
+  tokenSymbol: string;
+  tokenDeployTx: string;
+}>;
+
+/**
+ * Narrator phase callback. Receives the (possibly Creator-produced) token
+ * triple and returns the published lore CID + chapter number. Mirrors the
+ * shape of `runNarratorAgent`'s return without leaking the agent type.
+ */
+export type RunNarratorPhaseFn = (deps: {
+  config: AppConfig;
+  anthropic: Anthropic;
+  store: RunStore;
+  runId: string;
+  loreStore: LoreStore;
+  tokenAddr: string;
+  tokenName: string;
+  tokenSymbol: string;
+}) => Promise<{ tokenAddr: string; ipfsHash: string; chapterNumber: number }>;
+
+/**
+ * Market-maker phase callback. Returns the x402 settlement details when the
+ * MM purchases lore, or undefined when it declines.
+ */
+export type RunMarketMakerPhaseFn = (deps: {
+  config: AppConfig;
+  anthropic: Anthropic;
+  store: RunStore;
+  runId: string;
+  loreEndpointBaseUrl: string;
+  tokenAddr: string;
+}) => Promise<
+  | undefined
+  | {
+      settlementTxHash: string;
+      baseSepoliaExplorerUrl: string;
+    }
+>;
 
 /**
  * LogLevel is an inline alias of `LogEvent['level']`: the shared schema keeps
@@ -140,43 +202,18 @@ function emitPreSeedArtifacts(store: RunStore, runId: string, tokenAddr: string)
   }
 }
 
-export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
-  const { config, anthropic, store, runId, args, loreStore } = deps;
-  const loreEndpointBaseUrl =
-    deps.loreEndpointBaseUrl ?? `http://localhost:${config.port.toString()}`;
-
-  // Secret validation — fail fast by throwing so the caller can translate the
-  // failure into `store.setStatus(runId, 'error', err.message)`.
-  const openrouterKey = config.openrouter.apiKey ?? config.anthropic.apiKey ?? '';
-  if (openrouterKey.trim() === '') {
-    throw new Error(
-      'runA2ADemo: OPENROUTER_API_KEY (preferred) or ANTHROPIC_API_KEY missing from .env.local',
-    );
-  }
-  if (config.wallets.agent.privateKey === undefined) {
-    throw new Error('runA2ADemo: AGENT_WALLET_PRIVATE_KEY missing from .env.local');
-  }
+/**
+ * Default Narrator phase implementation — wires the existing
+ * `runNarratorAgent` into the phase callback shape. Kept as a top-level
+ * function so a2a.test can replace it with a fake while production code
+ * defaults to it.
+ */
+const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
+  const { config, anthropic, store, runId, loreStore, tokenAddr, tokenName, tokenSymbol } = deps;
   if (config.pinata.jwt === undefined) {
-    throw new Error('runA2ADemo: PINATA_JWT missing from .env.local');
+    throw new Error('narrator phase: PINATA_JWT missing');
   }
-
-  store.setStatus(runId, 'running');
-
-  // ─── Pre-seed artifacts (Phase 2 validated) ──────────────────────────────
-  // Emit artifacts that exist before this run started so the AC4 dashboard
-  // lights all 5 pills. bsc-token is always known (args.tokenAddr). Phase 2's
-  // deploy tx and creator lore CID are full-hash values from a prior run —
-  // callers pass them via env so defaults stay in the operator's .env.local.
-  // Missing env → that pill is simply not emitted.
-  emitPreSeedArtifacts(store, runId, args.tokenAddr);
-
-  // ─── Narrator phase ──────────────────────────────────────────────────────
-  orchestratorLog(
-    store,
-    runId,
-    'narrator',
-    `token: ${args.tokenAddr} (${args.tokenName} / ${args.tokenSymbol})`,
-  );
+  orchestratorLog(store, runId, 'narrator', `token: ${tokenAddr} (${tokenName} / ${tokenSymbol})`);
   orchestratorLog(store, runId, 'narrator', `model: ${MODEL} port: ${config.port.toString()}`);
   orchestratorLog(
     store,
@@ -204,9 +241,9 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
     client: anthropic,
     registry: narratorRegistry,
     store: loreStore,
-    tokenAddr: args.tokenAddr,
-    tokenName: args.tokenName,
-    tokenSymbol: args.tokenSymbol,
+    tokenAddr,
+    tokenName,
+    tokenSymbol,
     previousChapters: [],
     model: MODEL,
     onLog: (event) => store.addLog(runId, event),
@@ -219,16 +256,30 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
     `narrator published chapter ${narrator.chapterNumber.toString()} (CID ${narrator.ipfsHash})`,
   );
 
-  const loreCidArtifact: Artifact = {
+  store.addArtifact(runId, {
     kind: 'lore-cid',
     cid: narrator.ipfsHash,
     gatewayUrl: `https://gateway.pinata.cloud/ipfs/${narrator.ipfsHash}`,
     author: 'narrator',
     chapterNumber: narrator.chapterNumber,
-  };
-  store.addArtifact(runId, loreCidArtifact);
+  });
 
-  // ─── Market-maker phase ──────────────────────────────────────────────────
+  return {
+    tokenAddr,
+    ipfsHash: narrator.ipfsHash,
+    chapterNumber: narrator.chapterNumber,
+  };
+};
+
+/**
+ * Default Market-maker phase implementation. Mirrors the Phase 4 logic from
+ * the original monolithic runA2ADemo.
+ */
+const defaultRunMarketMakerPhase: RunMarketMakerPhaseFn = async (deps) => {
+  const { config, anthropic, store, runId, loreEndpointBaseUrl, tokenAddr } = deps;
+  if (config.wallets.agent.privateKey === undefined) {
+    throw new Error('market-maker phase: AGENT_WALLET_PRIVATE_KEY missing');
+  }
   const mmRegistry = new ToolRegistry();
   mmRegistry.register(createCheckTokenStatusTool({ rpcUrl: config.bsc.rpcUrl }));
   mmRegistry.register(
@@ -246,7 +297,7 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
       .map((t) => t.name)
       .join(', ')}`,
   );
-  const loreEndpointUrl = `${loreEndpointBaseUrl}/lore/${args.tokenAddr}`;
+  const loreEndpointUrl = `${loreEndpointBaseUrl}/lore/${tokenAddr}`;
   orchestratorLog(
     store,
     runId,
@@ -257,7 +308,7 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
   const marketMaker = await runMarketMakerAgent({
     client: anthropic,
     registry: mmRegistry,
-    tokenAddr: args.tokenAddr,
+    tokenAddr,
     loreEndpointUrl,
     model: MODEL,
     onLog: (event) => store.addLog(runId, event),
@@ -278,13 +329,130 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
       'market-maker',
       `x402 settled on Base Sepolia: ${marketMaker.loreFetch.settlementTxHash}`,
     );
-  } else {
+    return {
+      settlementTxHash: marketMaker.loreFetch.settlementTxHash,
+      baseSepoliaExplorerUrl: marketMaker.loreFetch.baseSepoliaExplorerUrl,
+    };
+  }
+  orchestratorLog(
+    store,
+    runId,
+    'market-maker',
+    'x402 settlement SKIPPED (market-maker declined purchase)',
+    'warn',
+  );
+  return undefined;
+};
+
+export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
+  const { config, anthropic, store, runId, args, loreStore } = deps;
+  const loreEndpointBaseUrl =
+    deps.loreEndpointBaseUrl ?? `http://localhost:${config.port.toString()}`;
+
+  // Phase implementations: tests inject fakes; production gets the real
+  // wiring. Resolved here so the rest of the function does not branch on
+  // "is this a test?".
+  const runCreator = deps.runCreatorImpl ?? defaultRunCreatorPhase;
+  const runNarrator = deps.runNarratorImpl ?? defaultRunNarratorPhase;
+  const runMarketMaker = deps.runMarketMakerImpl ?? defaultRunMarketMakerPhase;
+
+  // Secret validation — fail fast by throwing so the caller can translate the
+  // failure into `store.setStatus(runId, 'error', err.message)`.
+  const openrouterKey = config.openrouter.apiKey ?? config.anthropic.apiKey ?? '';
+  if (openrouterKey.trim() === '') {
+    throw new Error(
+      'runA2ADemo: OPENROUTER_API_KEY (preferred) or ANTHROPIC_API_KEY missing from .env.local',
+    );
+  }
+  if (config.wallets.agent.privateKey === undefined) {
+    throw new Error('runA2ADemo: AGENT_WALLET_PRIVATE_KEY missing from .env.local');
+  }
+  if (config.pinata.jwt === undefined) {
+    throw new Error('runA2ADemo: PINATA_JWT missing from .env.local');
+  }
+
+  store.setStatus(runId, 'running');
+
+  // ─── Step 0: Creator phase or dry-run fallback ──────────────────────────
+  // Default path runs the Creator agent end-to-end so the dashboard's left
+  // column shows real activity (V2-P1 AC-V2-1). The legacy pre-seed path
+  // only fires when the operator explicitly opts in via CREATOR_DRY_RUN=true,
+  // which is the demo-day fallback when the BSC mainnet RPC or Pinata is
+  // flaky.
+  const dryRun = process.env.CREATOR_DRY_RUN === 'true';
+  let nextTokenAddr = args.tokenAddr;
+  let nextTokenName = args.tokenName;
+  let nextTokenSymbol = args.tokenSymbol;
+
+  if (dryRun) {
     orchestratorLog(
       store,
       runId,
-      'market-maker',
-      'x402 settlement SKIPPED (market-maker declined purchase)',
+      'creator',
+      'CREATOR_DRY_RUN=true — skipping Creator phase, emitting env-fed pre-seed artifacts',
       'warn',
     );
+    emitPreSeedArtifacts(store, runId, args.tokenAddr);
+  } else {
+    orchestratorLog(store, runId, 'creator', 'running Creator agent ...');
+    const creatorOut = await runCreator({
+      config,
+      anthropic,
+      store,
+      runId,
+      // Theme defaults to a project-prefix-safe phrase if the caller doesn't
+      // supply one yet (the HTTP entry point will gain a `theme` param in a
+      // follow-up; the CLI currently uses the default token args so we keep
+      // a sensible fallback here).
+      theme: 'a meme celebrating BNB Chain 2026 agentic commerce',
+    });
+    nextTokenAddr = creatorOut.tokenAddr;
+    nextTokenName = creatorOut.tokenName;
+    nextTokenSymbol = creatorOut.tokenSymbol;
+    orchestratorLog(
+      store,
+      runId,
+      'creator',
+      `creator deployed token ${creatorOut.tokenAddr} (tx ${creatorOut.tokenDeployTx})`,
+    );
+    // Emit the bsc-token + token-deploy-tx artifacts so the Pills row lights
+    // the same way the dry-run path does — the Creator phase callback is
+    // responsible for the meme-image + lore-cid artifacts itself.
+    store.addArtifact(runId, {
+      kind: 'bsc-token',
+      chain: 'bsc-mainnet',
+      address: creatorOut.tokenAddr as `0x${string}`,
+      explorerUrl: `https://bscscan.com/token/${creatorOut.tokenAddr}`,
+      label: 'four.meme token (BSC mainnet)',
+    });
+    store.addArtifact(runId, {
+      kind: 'token-deploy-tx',
+      chain: 'bsc-mainnet',
+      txHash: creatorOut.tokenDeployTx,
+      explorerUrl: `https://bscscan.com/tx/${creatorOut.tokenDeployTx}`,
+      label: 'Creator deploy tx',
+    });
   }
+
+  // ─── Narrator phase ──────────────────────────────────────────────────────
+  await runNarrator({
+    config,
+    anthropic,
+    store,
+    runId,
+    loreStore,
+    tokenAddr: nextTokenAddr,
+    tokenName: nextTokenName,
+    tokenSymbol: nextTokenSymbol,
+  });
+
+  // ─── Market-maker phase ──────────────────────────────────────────────────
+  await runMarketMaker({
+    config,
+    anthropic,
+    store,
+    runId,
+    loreEndpointBaseUrl,
+    tokenAddr: nextTokenAddr,
+  });
 }
