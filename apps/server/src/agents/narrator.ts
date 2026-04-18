@@ -1,7 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { LogEvent } from '@hack-fourmeme/shared';
+import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { LoreStore } from '../state/lore-store.js';
+import { type AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
 import {
   runAgentLoop,
   type RuntimeAssistantDelta,
@@ -48,6 +49,17 @@ export interface RunNarratorAgentParams {
   onToolUseStart?: (event: RuntimeToolUseStart) => void;
   onToolUseEnd?: (event: RuntimeToolUseEnd) => void;
   onAssistantDelta?: (event: RuntimeAssistantDelta) => void;
+  /**
+   * AC3 anchor hook. When `anchorLedger` is supplied, the Narrator appends a
+   * ledger entry after the LoreStore upsert and (if `onArtifact` is also
+   * supplied) emits a `lore-anchor` artifact carrying the keccak256
+   * commitment. Both are optional: callers that don't need anchor evidence
+   * (Phase 2 demos, narrator unit fixtures) may omit them and the happy path
+   * is unchanged. The optional layer-2 BSC self-tx memo is invoked
+   * separately (see `apps/server/src/chain/anchor-tx.ts`).
+   */
+  anchorLedger?: AnchorLedger;
+  onArtifact?: (artifact: Artifact) => void;
 }
 
 export interface NarratorAgentOutput {
@@ -152,6 +164,8 @@ export async function runNarratorAgent(
     onToolUseStart,
     onToolUseEnd,
     onAssistantDelta,
+    anchorLedger,
+    onArtifact,
   } = params;
 
   const chapterNumber = targetChapterNumber ?? previousChapters.length + 1;
@@ -212,6 +226,35 @@ export async function runNarratorAgent(
     // Should be unreachable — we just upserted. Guard against a future
     // LoreStore bug rather than silently returning undefined.
     throw new Error('runNarratorAgent: upsert did not land — LoreStore contract violated');
+  }
+
+  // AC3 anchor layer 1: record the commitment in the ledger and optionally
+  // fan it out to the SSE artifact stream so the dashboard can render it in
+  // the Anchor Evidence panel. All failures must be non-fatal for the
+  // narrator happy path — the anchor is evidence, not a gate.
+  if (anchorLedger) {
+    const anchorId = computeAnchorId(stored.tokenAddr, stored.chapterNumber);
+    const contentHash = computeContentHash(stored.tokenAddr, stored.chapterNumber, stored.ipfsHash);
+    const ts = new Date().toISOString();
+    anchorLedger.append({
+      anchorId,
+      tokenAddr: stored.tokenAddr,
+      chapterNumber: stored.chapterNumber,
+      loreCid: stored.ipfsHash,
+      contentHash,
+      ts,
+    });
+    if (onArtifact) {
+      onArtifact({
+        kind: 'lore-anchor',
+        anchorId,
+        tokenAddr: stored.tokenAddr,
+        chapterNumber: stored.chapterNumber,
+        loreCid: stored.ipfsHash,
+        contentHash,
+        ts,
+      });
+    }
   }
 
   return {

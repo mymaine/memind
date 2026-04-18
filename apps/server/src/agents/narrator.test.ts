@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
-import type { AgentTool, AnyAgentTool, LogEvent } from '@hack-fourmeme/shared';
+import type { AgentTool, AnyAgentTool, Artifact, LogEvent } from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
 import { LoreStore } from '../state/lore-store.js';
+import { AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
 import { runNarratorAgent } from './narrator.js';
 import {
   makeStreamingClient,
@@ -378,6 +379,210 @@ describe('runNarratorAgent', () => {
         tokenSymbol: 'T',
       }),
     ).rejects.toThrow(/unexpected tokenAddr/i);
+  });
+
+  // ─── AC3 anchor hook ───────────────────────────────────────────────────────
+  // After the Narrator upserts the chapter into the LoreStore, it must also
+  // append a ledger entry and emit a `lore-anchor` artifact — provided the
+  // caller wired the optional `anchorLedger` + `onArtifact` dependencies.
+  // Wiring is opt-in so existing callers that don't need the anchor evidence
+  // (test fixtures, Phase 2 demos) aren't forced to add state.
+
+  it('appends an AnchorLedger entry and emits a lore-anchor artifact after upsert', async () => {
+    const { tool } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 3,
+        chapterText: 'third chapter body',
+        ipfsHash: 'bafkrei-ch3',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch3',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+    const ledger = new AnchorLedger();
+    const artifacts: Artifact[] = [];
+
+    const { client } = fakeClient([
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: [],
+            targetChapterNumber: 3,
+          },
+        },
+      ]),
+      textOnlyResponse('ok'),
+    ]);
+
+    await runNarratorAgent({
+      client,
+      registry,
+      store,
+      anchorLedger: ledger,
+      onArtifact: (a) => artifacts.push(a),
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+      targetChapterNumber: 3,
+    });
+
+    // Ledger row exists with the expected contentHash + anchorId shape.
+    const expectedAnchorId = computeAnchorId(TOKEN_ADDR, 3);
+    const expectedHash = computeContentHash(TOKEN_ADDR, 3, 'bafkrei-ch3');
+    expect(ledger.size()).toBe(1);
+    const row = ledger.get(expectedAnchorId);
+    expect(row).toBeDefined();
+    expect(row?.contentHash).toBe(expectedHash);
+    expect(row?.chapterNumber).toBe(3);
+    expect(row?.loreCid).toBe('bafkrei-ch3');
+    expect(row?.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    // Exactly one lore-anchor artifact emitted with the same commitment.
+    const anchors = artifacts.filter((a) => a.kind === 'lore-anchor');
+    expect(anchors).toHaveLength(1);
+    const anchor = anchors[0];
+    if (!anchor || anchor.kind !== 'lore-anchor') {
+      throw new Error('unreachable: filter guaranteed a lore-anchor element');
+    }
+    expect(anchor.anchorId).toBe(expectedAnchorId);
+    expect(anchor.contentHash).toBe(expectedHash);
+    expect(anchor.chapterNumber).toBe(3);
+    expect(anchor.loreCid).toBe('bafkrei-ch3');
+    // Layer-1 only: no on-chain fields yet.
+    expect(anchor.onChainTxHash).toBeUndefined();
+    expect(anchor.chain).toBeUndefined();
+    expect(anchor.explorerUrl).toBeUndefined();
+  });
+
+  it('skips anchor emission when anchorLedger + onArtifact are not supplied (back-compat)', async () => {
+    const { tool } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 1,
+        chapterText: 'body',
+        ipfsHash: 'bafkrei-ch1',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch1',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+
+    const { client } = fakeClient([
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: [],
+            targetChapterNumber: 1,
+          },
+        },
+      ]),
+      textOnlyResponse('ok'),
+    ]);
+
+    // No anchorLedger, no onArtifact — must still run the happy path cleanly.
+    const out = await runNarratorAgent({
+      client,
+      registry,
+      store,
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+    });
+
+    expect(out.ipfsHash).toBe('bafkrei-ch1');
+  });
+
+  it('overwrites the same anchor row on chapter rewrite', async () => {
+    const { tool } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 1,
+        chapterText: 'first try',
+        ipfsHash: 'first-cid',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/first-cid',
+      },
+      {
+        chapterNumber: 1,
+        chapterText: 'second try',
+        ipfsHash: 'second-cid',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/second-cid',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+    const ledger = new AnchorLedger();
+    const artifacts: Artifact[] = [];
+
+    const scripts = [
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: [],
+            targetChapterNumber: 1,
+          },
+        },
+      ]),
+      textOnlyResponse('first ack'),
+      toolUseResponse('msg_2', [
+        {
+          id: 'tu_2',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: [],
+            targetChapterNumber: 1,
+          },
+        },
+      ]),
+      textOnlyResponse('second ack'),
+    ];
+    const { client } = fakeClient(scripts);
+
+    await runNarratorAgent({
+      client,
+      registry,
+      store,
+      anchorLedger: ledger,
+      onArtifact: (a) => artifacts.push(a),
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+      targetChapterNumber: 1,
+    });
+    await runNarratorAgent({
+      client,
+      registry,
+      store,
+      anchorLedger: ledger,
+      onArtifact: (a) => artifacts.push(a),
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+      targetChapterNumber: 1,
+    });
+
+    // One ledger slot (same anchorId), but two artifact emissions — the event
+    // stream is append-only; the UI layer does its own dedup by anchorId.
+    expect(ledger.size()).toBe(1);
+    expect(ledger.get(computeAnchorId(TOKEN_ADDR, 1))?.loreCid).toBe('second-cid');
+
+    const anchors = artifacts.filter((a) => a.kind === 'lore-anchor');
+    expect(anchors).toHaveLength(2);
   });
 
   it('emits LogEvents tagged with agent="narrator"', async () => {
