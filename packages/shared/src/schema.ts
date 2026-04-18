@@ -246,4 +246,59 @@ export const statusEventPayloadSchema = z.object({
 });
 export type StatusEventPayload = z.infer<typeof statusEventPayloadSchema>;
 
-export type SseEventName = 'log' | 'artifact' | 'status';
+// ---------------------------------------------------------------------------
+// Fine-grained streaming events (V2-P2) — surface the Anthropic `messages.
+// stream` internals the dashboard needs to stop feeling like "nothing is
+// happening for 15 seconds". Three payload kinds:
+//
+//   tool_use:start      — tool invocation begun, input arguments resolved
+//   tool_use:end        — tool finished (ok or error), server-side result
+//   assistant:delta     — one chunk of assistant free-form text
+//
+// All three flow alongside (not instead of) the existing `log` and `artifact`
+// events. LogEvent remains the coarse summary layer for post-mortem reads of
+// the run; these new events drive live UI affordances (spinners, bubbles,
+// token-by-token rendering).
+// ---------------------------------------------------------------------------
+
+export const toolUseStartEventPayloadSchema = z.object({
+  agent: agentIdSchema,
+  toolName: z.string().min(1),
+  // `toolUseId` links the start spinner to its matching end result. Anthropic
+  // guarantees these ids are unique per assistant turn; we treat them as
+  // opaque strings.
+  toolUseId: z.string().min(1),
+  input: z.record(z.unknown()),
+  ts: z.string().datetime(),
+});
+export type ToolUseStartEventPayload = z.infer<typeof toolUseStartEventPayloadSchema>;
+
+export const toolUseEndEventPayloadSchema = z.object({
+  agent: agentIdSchema,
+  toolName: z.string().min(1),
+  toolUseId: z.string().min(1),
+  // Output is whatever the registered tool returned (after zod validation)
+  // or `{ error: <message> }` when `isError` is true. Stringifying it is the
+  // caller's job; we keep the raw shape so the UI can pretty-print.
+  output: z.record(z.unknown()),
+  isError: z.boolean(),
+  ts: z.string().datetime(),
+});
+export type ToolUseEndEventPayload = z.infer<typeof toolUseEndEventPayloadSchema>;
+
+export const assistantDeltaEventPayloadSchema = z.object({
+  agent: agentIdSchema,
+  // Non-empty by schema: the stream mapper drops empty-string deltas before
+  // ever emitting, so seeing one on the wire signals an upstream regression.
+  delta: z.string().min(1),
+  ts: z.string().datetime(),
+});
+export type AssistantDeltaEventPayload = z.infer<typeof assistantDeltaEventPayloadSchema>;
+
+export type SseEventName =
+  | 'log'
+  | 'artifact'
+  | 'status'
+  | 'tool_use:start'
+  | 'tool_use:end'
+  | 'assistant:delta';
