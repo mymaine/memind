@@ -5,13 +5,12 @@
 #   conventions.md — internal naming + git rules
 #   archive/      — historical drafts, superseded
 #   features/     — placeholder, empty
-#   runbooks/     — internal ops drafts
+# runbooks/ ships with the repo: demo-recording.md referenced by README (AC5).
 docs/spec.md
 docs/product.md
 docs/conventions.md
 docs/archive/
 docs/features/
-docs/runbooks/
 
 # Node / TypeScript
 node_modules/
