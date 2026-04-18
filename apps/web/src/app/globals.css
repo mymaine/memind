@@ -158,6 +158,61 @@ body {
   transform: none;
 }
 
+/*
+ * USDC particle flow (AC-P4.7-2 Hero + AC-P4.7-4 Solution x402 micro-animation).
+ * Particles ride the Creator→Shiller path via CSS `offset-path` so the motion
+ * follows the SVG curve exactly. Each particle carries an inline
+ * `--particle-delay` custom property so staggered begin times stay in CSS
+ * rather than needing per-particle JS timers. The path itself (`M 20 40
+ * Q 100 20, 180 40`) is duplicated in the component SVG — keep them in sync.
+ *
+ * `animation-play-state: paused` is the default so the drafting/idle phases
+ * freeze particles in place without tearing them off the path.
+ */
+@keyframes usdc-particle-travel {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+.usdc-particle {
+  offset-path: path('M 20 40 Q 100 20, 180 40');
+  offset-rotate: 0deg;
+  animation: usdc-particle-travel 1800ms linear infinite;
+  animation-delay: var(--particle-delay, 0ms);
+  animation-play-state: paused;
+}
+
+/* Phase gates — the component toggles these on the outer group. */
+.usdc-flow--paying .usdc-particle,
+.usdc-flow--drafting .usdc-particle {
+  animation-play-state: running;
+}
+
+/* Drafting = "agent is working" — slow the river to half speed so the viewer
+   reads it as processing, not streaming. */
+.usdc-flow--drafting .usdc-particle {
+  animation-duration: 3600ms;
+}
+
+/* Posted = settlement done — fade particles out; the right-side tick owns
+   the eye. Idle = default (paused, invisible via opacity:0 on the group). */
+.usdc-flow--posted .usdc-particle,
+.usdc-flow--idle .usdc-particle {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0ms !important;
