@@ -7,6 +7,7 @@ import { ThemeInput } from '@/components/theme-input';
 import { LogPanel } from '@/components/log-panel';
 import { TxList } from '@/components/tx-list';
 import { MemeImageCard } from '@/components/meme-image-card';
+import { HeartbeatSection } from '@/components/heartbeat-section';
 import { useRun, type RunState } from '@/hooks/useRun';
 
 /**
@@ -152,6 +153,12 @@ export default function HomePage() {
       />
 
       <TxList artifacts={state.artifacts} />
+
+      {/* V2-P3 Heartbeat section — owns its own useRun instance so the a2a
+          flow above and this independent run never share state. Users paste
+          the BSC address manually (see docs/features/dashboard-v2.md for
+          the deliberate decoupling rationale). */}
+      <HeartbeatSection />
 
       <footer className="border-t border-border-default pt-6 text-[12px] text-fg-tertiary">
         <span className="font-[family-name:var(--font-mono)]">
