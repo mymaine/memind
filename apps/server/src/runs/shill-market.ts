@@ -101,9 +101,13 @@ export const stubCreatorPaymentPhase: CreatorPaymentPhaseFn = async (deps) => {
   const orderId = randomUUID();
   const paidTxHash = `0x${'0'.repeat(64)}`;
   const paidAmountUsdc = '0.01';
+  // Orchestrator already lowercases `tokenAddr` before invoking this phase,
+  // but we re-normalise defensively so a custom `creatorPaymentImpl` that
+  // calls `stubCreatorPaymentPhase` with mixed-case input cannot reintroduce
+  // casing drift.
   shillOrderStore.enqueue({
     orderId,
-    targetTokenAddr: tokenAddr,
+    targetTokenAddr: tokenAddr.toLowerCase(),
     ...(creatorBrief !== undefined ? { creatorBrief } : {}),
     paidTxHash,
     paidAmountUsdc,
@@ -201,8 +205,17 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
   const runShiller = runShillerImpl ?? defaultRunShillerImpl;
   const runPayment = creatorPaymentImpl ?? stubCreatorPaymentPhase;
 
+  // Normalise the token address once, at the top of the orchestrator, and
+  // thread the lowercase form through every downstream dependency. EVM
+  // addresses are case-insensitive on-chain but callers hand us mixed-case
+  // (EIP-55 checksum, user input, upstream artifacts) — collapsing here keeps
+  // store keys, artifact fields, lore lookups, and agent inputs in lockstep
+  // without relying on each downstream module's own normalisation as a safety
+  // net.
+  const tokenAddrLower = args.tokenAddr.toLowerCase();
+
   store.setStatus(runId, 'running');
-  orchestratorLog(store, runId, `shill-market orchestrator starting for ${args.tokenAddr}`);
+  orchestratorLog(store, runId, `shill-market orchestrator starting for ${tokenAddrLower}`);
 
   // ─── Phase 1: Creator payment ──────────────────────────────────────────
   const payment = await runPayment({
@@ -210,11 +223,9 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     store,
     runId,
     shillOrderStore,
-    tokenAddr: args.tokenAddr,
+    tokenAddr: tokenAddrLower,
     ...(args.creatorBrief !== undefined ? { creatorBrief: args.creatorBrief } : {}),
   });
-
-  const targetTokenAddrLower = args.tokenAddr.toLowerCase();
 
   // Emit the x402 settlement artifact + the initial queued shill-order
   // artifact so the dashboard lights up before the Shiller agent runs.
@@ -232,7 +243,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
   const queuedArtifact: Artifact = {
     kind: 'shill-order',
     orderId: payment.orderId,
-    targetTokenAddr: targetTokenAddrLower,
+    targetTokenAddr: tokenAddrLower,
     ...(args.creatorBrief !== undefined ? { creatorBrief: args.creatorBrief } : {}),
     paidTxHash: payment.paidTxHash,
     paidAmountUsdc: payment.paidAmountUsdc,
@@ -242,16 +253,17 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
   store.addArtifact(runId, queuedArtifact);
 
   // ─── Phase 2: Lore pull ────────────────────────────────────────────────
-  const loreSnippet = resolveLoreSnippet(loreStore, args.tokenAddr, store, runId);
+  const loreSnippet = resolveLoreSnippet(loreStore, tokenAddrLower, store, runId);
 
-  // ─── Phase 3: Pull the order off the queue ─────────────────────────────
-  // `pullPending` flips state queued → processing atomically, so this also
-  // guarantees we never double-dispatch an order.
-  const pending = shillOrderStore.pullPending();
-  const order = pending.find((o) => o.orderId === payment.orderId);
+  // ─── Phase 3: Pull this order off the queue ────────────────────────────
+  // `pullById` flips only the known orderId from queued → processing, which
+  // avoids stranding any orphan queued orders that other producers might have
+  // enqueued between phases. Atomicity still holds: a second call for the
+  // same id returns undefined because the entry is no longer `queued`.
+  const order = shillOrderStore.pullById(payment.orderId);
   if (order === undefined) {
     throw new Error(
-      `runShillMarketDemo: payment enqueued order ${payment.orderId} but pullPending did not return it`,
+      `runShillMarketDemo: payment enqueued order ${payment.orderId} but pullById did not return it (missing or not queued)`,
     );
   }
 
@@ -264,7 +276,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     store,
     runId,
     orderId: order.orderId,
-    tokenAddr: order.targetTokenAddr,
+    tokenAddr: tokenAddrLower,
     ...(args.tokenSymbol !== undefined ? { tokenSymbol: args.tokenSymbol } : {}),
     loreSnippet,
     ...(args.creatorBrief !== undefined ? { creatorBrief: args.creatorBrief } : {}),
@@ -284,7 +296,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     const shillTweetArtifact: Artifact = {
       kind: 'shill-tweet',
       orderId: order.orderId,
-      targetTokenAddr: targetTokenAddrLower,
+      targetTokenAddr: tokenAddrLower,
       tweetId: shillerResult.tweetId,
       tweetUrl: shillerResult.tweetUrl,
       tweetText: shillerResult.tweetText,
@@ -295,7 +307,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     const doneArtifact: Artifact = {
       kind: 'shill-order',
       orderId: order.orderId,
-      targetTokenAddr: targetTokenAddrLower,
+      targetTokenAddr: tokenAddrLower,
       ...(args.creatorBrief !== undefined ? { creatorBrief: args.creatorBrief } : {}),
       paidTxHash: payment.paidTxHash,
       paidAmountUsdc: payment.paidAmountUsdc,
@@ -312,7 +324,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     const failedArtifact: Artifact = {
       kind: 'shill-order',
       orderId: order.orderId,
-      targetTokenAddr: targetTokenAddrLower,
+      targetTokenAddr: tokenAddrLower,
       ...(args.creatorBrief !== undefined ? { creatorBrief: args.creatorBrief } : {}),
       paidTxHash: payment.paidTxHash,
       paidAmountUsdc: payment.paidAmountUsdc,

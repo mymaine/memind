@@ -4,11 +4,14 @@
  * Sits between the x402 `/shill/:tokenAddr` endpoint (producer) and the
  * Shiller agent tick (consumer). States flow:
  *
- *   queued ─ pullPending() ─► processing ─ markDone / markFailed ─► done | failed
+ *   queued ─ pullPending() / pullById() ─► processing ─ markDone / markFailed ─► done | failed
  *
- * `pullPending()` flips state atomically so a single queued order cannot be
- * handed to two consecutive ticks — duplicate tweets for one paid order would
- * be worse than a lost one.
+ * `pullPending()` and `pullById()` flip state atomically so a single queued
+ * order cannot be handed to two consecutive ticks — duplicate tweets for one
+ * paid order would be worse than a lost one. Use `pullById` when you already
+ * know the target orderId (the orchestrator's default) to avoid stranding
+ * orphan queued orders; use `pullPending` for bulk dequeue when you genuinely
+ * want every queued entry at once.
  *
  * Address normalization mirrors LoreStore: every write lowercases
  * `targetTokenAddr`, every query lowercases its input. Producers (x402 handler
@@ -95,6 +98,27 @@ export class ShillOrderStore {
       entry.status = 'processing';
     }
     return pending.map((entry) => ({ ...entry }));
+  }
+
+  /**
+   * Single-order variant of `pullPending`: atomically flip one queued order
+   * to `processing` and return it. Returns `undefined` when the order does
+   * not exist, or when it exists but is not currently `queued` (e.g. already
+   * processing / done / failed). Returning `undefined` rather than throwing
+   * on a wrong-status order lets the orchestrator treat "nothing to claim"
+   * uniformly — the caller only cares whether it got a claim, not why.
+   *
+   * Why this exists alongside `pullPending`: the orchestrator processes a
+   * single known orderId per run; `pullPending` would also flip every other
+   * queued order to `processing`, stranding them when no one else is
+   * consuming the queue. `pullById` gives the orchestrator targeted dequeue
+   * without starving orphan orders.
+   */
+  pullById(orderId: string): ShillOrderEntry | undefined {
+    const entry = this.orders.get(orderId);
+    if (!entry || entry.status !== 'queued') return undefined;
+    entry.status = 'processing';
+    return { ...entry };
   }
 
   /**
