@@ -25,6 +25,8 @@ import { HeroScene } from '@/components/scenes/hero-scene';
 import { ProblemScene } from '@/components/scenes/problem-scene';
 import { SolutionScene } from '@/components/scenes/solution-scene';
 import { ProductScene } from '@/components/scenes/product-scene';
+import { VisionScene } from '@/components/scenes/vision-scene';
+import { EvidenceScene } from '@/components/scenes/evidence-scene';
 import { DevLogsDrawer } from '@/components/dev-logs-drawer';
 import { Toast } from '@/components/toast';
 import { useRun } from '@/hooks/useRun';
@@ -56,7 +58,8 @@ export default function HomePage(): React.ReactElement {
         <ProblemScene />
         <SolutionScene />
         <ProductScene kind="launch" runController={hookResult} />
-        {/* Vision + Evidence scenes land in V4.7-P5 Task 1+2. */}
+        <VisionScene />
+        <EvidenceScene />
         <footer className="border-t border-border-default pt-2 text-[11px] text-fg-tertiary">
           <span className="font-[family-name:var(--font-mono)]">
             Four.Meme AI Sprint · submission 2026-04-22 UTC 15:59
