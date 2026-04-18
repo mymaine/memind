@@ -139,6 +139,92 @@ describe('artifactSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  // ─── meme-image artifact (V2-P1) ───────────────────────────────────────────
+  // Two-state shape: `status: 'ok'` carries cid + gatewayUrl; `status:
+  // 'upload-failed'` carries errorMessage + null cid/gatewayUrl. The Creator
+  // flow MUST NOT crash when Pinata is down; it emits the failed-status variant
+  // and the dashboard renders a placeholder card. base64 data URL fallback is
+  // explicitly rejected (PNGs can be 1-2MB and would wedge SSE clients).
+
+  it('accepts a meme-image artifact with status=ok + cid + gatewayUrl', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'meme-image',
+      status: 'ok',
+      cid: 'bafybeibmemeimagexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      gatewayUrl:
+        'https://gateway.pinata.cloud/ipfs/bafybeibmemeimagexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      prompt: 'a cyberpunk neko detective in neo-tokyo 2099',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a meme-image artifact with status=upload-failed + errorMessage', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'meme-image',
+      status: 'upload-failed',
+      cid: null,
+      gatewayUrl: null,
+      prompt: 'a cyberpunk neko detective in neo-tokyo 2099',
+      errorMessage: 'pinata upload timed out after 10s',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects meme-image with status=ok but missing cid', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'meme-image',
+      status: 'ok',
+      cid: null,
+      gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafybeib',
+      prompt: 'p',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects meme-image with status=upload-failed but missing errorMessage', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'meme-image',
+      status: 'upload-failed',
+      cid: null,
+      gatewayUrl: null,
+      prompt: 'p',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects meme-image with empty prompt', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'meme-image',
+      status: 'ok',
+      cid: 'bafy',
+      gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafy',
+      prompt: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects meme-image with base64 data URL gatewayUrl (no inline data fallback)', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'meme-image',
+      status: 'ok',
+      cid: 'bafy',
+      gatewayUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0',
+      prompt: 'p',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects meme-image with unknown status value', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'meme-image',
+      status: 'pending',
+      cid: 'bafy',
+      gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafy',
+      prompt: 'p',
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('createRunRequestSchema', () => {
