@@ -23,69 +23,35 @@ import type {
 import {
   EMPTY_ASSISTANT_TEXT,
   EMPTY_TOOL_CALLS,
+  IDLE_STATE,
   applyAssistantDelta,
   applyToolUseEnd,
   applyToolUseStart,
   describeStartRunError,
+  performRunReset,
   type AssistantTextByAgent,
+  type RunState,
   type ToolCallState,
   type ToolCallsByAgent,
 } from './useRun-state';
 
 // Re-export so existing consumers can import these from useRun.
-export type { AssistantTextByAgent, ToolCallState, ToolCallsByAgent };
-
-export type RunState =
-  | {
-      phase: 'idle';
-      logs: [];
-      artifacts: [];
-      toolCalls: ToolCallsByAgent;
-      assistantText: AssistantTextByAgent;
-      runId: null;
-      error: null;
-    }
-  | {
-      phase: 'running';
-      logs: LogEvent[];
-      artifacts: Artifact[];
-      toolCalls: ToolCallsByAgent;
-      assistantText: AssistantTextByAgent;
-      runId: string;
-      error: null;
-    }
-  | {
-      phase: 'done';
-      logs: LogEvent[];
-      artifacts: Artifact[];
-      toolCalls: ToolCallsByAgent;
-      assistantText: AssistantTextByAgent;
-      runId: string;
-      error: null;
-    }
-  | {
-      phase: 'error';
-      logs: LogEvent[];
-      artifacts: Artifact[];
-      toolCalls: ToolCallsByAgent;
-      assistantText: AssistantTextByAgent;
-      runId: string;
-      error: string;
-    };
-
-const IDLE_STATE: RunState = {
-  phase: 'idle',
-  logs: [],
-  artifacts: [],
-  toolCalls: EMPTY_TOOL_CALLS,
-  assistantText: EMPTY_ASSISTANT_TEXT,
-  runId: null,
-  error: null,
-};
+export type { AssistantTextByAgent, RunState, ToolCallState, ToolCallsByAgent };
 
 export interface UseRunResult {
   state: RunState;
   startRun: (input: CreateRunRequest) => Promise<void>;
+  /**
+   * V4.7-P4 Task 1: force the run lifecycle back to idle.
+   *
+   * Closes any live EventSource, nulls `esRef`, clears the in-flight
+   * guard, and pushes IDLE_STATE into React state. Safe from every
+   * starting phase (idle / running / done / error); idle is effectively
+   * a no-op on the transport but still a state-reset on principle.
+   *
+   * Consumers: LaunchPanel `Run another`, OrderPanel `Order another`.
+   */
+  resetRun: () => void;
 }
 
 // Bypass the Next.js dev rewrite proxy for the SSE stream. The rewrite is
@@ -295,5 +261,13 @@ export function useRun(): UseRunResult {
     }
   }, []);
 
-  return { state, startRun };
+  // V4.7-P4 Task 1: imperative reset wired to the pure helper in
+  // useRun-state.ts. The useCallback wrapper keeps the returned function
+  // reference stable across renders so `Run another` button onClick
+  // handlers don't remount.
+  const resetRun = useCallback((): void => {
+    performRunReset({ esRef, startingRef, setState });
+  }, []);
+
+  return { state, startRun, resetRun };
 }

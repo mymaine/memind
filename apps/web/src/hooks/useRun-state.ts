@@ -12,10 +12,18 @@
  * V2-P5 Task 6 also lives here: `describeStartRunError` turns the POST
  * /api/runs failure body into a user-facing toast string so the UI layer
  * can stay declarative.
+ *
+ * V4.7-P4 Task 1 additions: the `RunState` shape, the canonical `IDLE_STATE`
+ * singleton, and the imperative `performRunReset` helper that powers the
+ * hook's new `resetRun()` method. Kept here (and not inside the hook) so we
+ * can unit-test every reset side effect — EventSource.close(), ref nulling,
+ * startingRef clearance, setState(IDLE_STATE) — without needing jsdom / RTL.
  */
 import type {
   AgentId,
+  Artifact,
   AssistantDeltaEventPayload,
+  LogEvent,
   ToolUseEndEventPayload,
   ToolUseStartEventPayload,
 } from '@hack-fourmeme/shared';
@@ -45,6 +53,110 @@ export const EMPTY_ASSISTANT_TEXT: AssistantTextByAgent = {
   'market-maker': '',
   heartbeat: '',
 };
+
+/**
+ * Full shape of a client-side run. Four discriminants keyed on `phase`:
+ *   - idle:    no run has been started (runId null, no collections).
+ *   - running: POST /api/runs resolved, SSE is open or about to be.
+ *   - done:    server emitted `status: done`; SSE is closed.
+ *   - error:   server emitted `status: error` or POST failed; SSE closed.
+ *
+ * Re-exported from useRun so existing `import { type RunState } from
+ * '@/hooks/useRun'` consumers remain unchanged (spec §禁止改動 allows
+ * internal moves, forbids external surface breakage).
+ */
+export type RunState =
+  | {
+      phase: 'idle';
+      logs: [];
+      artifacts: [];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: null;
+      error: null;
+    }
+  | {
+      phase: 'running';
+      logs: LogEvent[];
+      artifacts: Artifact[];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: string;
+      error: null;
+    }
+  | {
+      phase: 'done';
+      logs: LogEvent[];
+      artifacts: Artifact[];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: string;
+      error: null;
+    }
+  | {
+      phase: 'error';
+      logs: LogEvent[];
+      artifacts: Artifact[];
+      toolCalls: ToolCallsByAgent;
+      assistantText: AssistantTextByAgent;
+      runId: string;
+      error: string;
+    };
+
+/**
+ * Canonical idle state. Reused by useRun's initial setState, by the reset
+ * helper below, and directly in tests so there is one source of truth for
+ * the idle shape.
+ */
+export const IDLE_STATE: RunState = {
+  phase: 'idle',
+  logs: [],
+  artifacts: [],
+  toolCalls: EMPTY_TOOL_CALLS,
+  assistantText: EMPTY_ASSISTANT_TEXT,
+  runId: null,
+  error: null,
+};
+
+/**
+ * Mutable ref shape matching React's useRef<T | null>.current contract but
+ * decoupled from React so this module (and its tests) stay framework-free.
+ */
+export interface MutableRef<T> {
+  current: T;
+}
+
+export interface PerformRunResetDeps {
+  readonly esRef: MutableRef<EventSource | null>;
+  readonly startingRef: MutableRef<boolean>;
+  readonly setState: (next: RunState) => void;
+}
+
+/**
+ * Imperative core of useRun's `resetRun()` method. Runs the three side
+ * effects unconditionally regardless of the starting phase:
+ *
+ *   1. If an EventSource is still attached, close it and null the ref.
+ *      The optional chain means idle / done / error starts (where the ref
+ *      is already null) are a safe no-op on the transport.
+ *   2. Clear the in-flight startRun guard so a subsequent startRun() can
+ *      enter its critical section. The hook's try/finally already does
+ *      this on the happy path, but reset enforces it unconditionally as a
+ *      belt-and-braces measure for the interleaved-reset edge case.
+ *   3. Push the canonical IDLE_STATE into React state.
+ *
+ * Covers the V4.7-P4 risk mitigation: "reset implementation must attempt
+ * esRef.current?.close() and esRef.current = null regardless of current
+ * phase" (see spec risk row for useRun.resetRun).
+ */
+export function performRunReset(deps: PerformRunResetDeps): void {
+  if (deps.esRef.current) {
+    deps.esRef.current.close();
+    deps.esRef.current = null;
+  }
+  deps.startingRef.current = false;
+  deps.setState(IDLE_STATE);
+}
 
 export function applyToolUseStart(
   prev: ToolCallsByAgent,
