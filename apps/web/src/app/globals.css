@@ -355,6 +355,50 @@ body {
   filter: drop-shadow(0 0 6px var(--color-chain-base));
 }
 
+/* ---------- Dev Logs Drawer (AC-P4.7-5a) ---------- */
+/* Slide-up entry animation played on first expand. The drawer itself is
+   always sticky-bottom; only the content region animates so we do not have
+   to reflow the whole page.
+
+   The closed variant zeroes the content height + clips overflow rather
+   than unmounting, because the inner LogPanel / TxList / etc. stay
+   subscribed to SSE events through props while hidden (spec §Risk). */
+@keyframes devlogs-slide-up {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.devlogs-content {
+  transition:
+    height 250ms var(--ease-out),
+    opacity 200ms var(--ease-out);
+}
+
+.devlogs-content--open {
+  animation: devlogs-slide-up 250ms var(--ease-out);
+}
+
+/* Tab panel cross-fade — only the active tab is visible at a time, but all
+   six panels stay mounted so their SSE props keep flowing. */
+.devlogs-tab--active {
+  animation: devlogs-tab-fade 200ms var(--ease-out);
+}
+
+@keyframes devlogs-tab-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0ms !important;
@@ -389,5 +433,16 @@ body {
   .tx-pill--flashing {
     animation: none !important;
     filter: drop-shadow(0 0 6px var(--color-chain-base)) !important;
+  }
+
+  /* Dev Logs Drawer respects reduced-motion: no slide-up, no cross-fade.
+     The global animation-duration override above collapses the keyframes
+     to a single frame; we also explicitly clear them so the active tab
+     is instantly visible at opacity: 1 without any transition. */
+  .devlogs-content,
+  .devlogs-content--open,
+  .devlogs-tab--active {
+    animation: none !important;
+    transition: none !important;
   }
 }

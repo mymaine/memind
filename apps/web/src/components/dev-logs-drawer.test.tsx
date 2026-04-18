@@ -145,9 +145,7 @@ describe('<DevLogsDrawer />', () => {
         chain: 'base-sepolia',
         txHash: TX_HASH,
         explorerUrl: `https://sepolia.basescan.org/tx/${TX_HASH}`,
-        amount: '10000',
-        asset: 'USDC',
-        direction: 'client->service',
+        amountUsdc: '0.01',
       },
     ];
     const out = renderToStaticMarkup(
