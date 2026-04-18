@@ -100,7 +100,7 @@ export default function MarketPage(): React.ReactElement {
             style={{ animation: 'signal-pulse 1500ms ease-in-out infinite' }}
           />
           <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold uppercase tracking-[0.5px] text-fg-primary">
-            Shilling Market — Creator Promotion Service
+            Shilling Market
           </span>
         </div>
         <span className="font-[family-name:var(--font-sans-body)] text-[13px] text-fg-secondary">

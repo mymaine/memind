@@ -1,6 +1,6 @@
-# Creator Promotion Service Market on Four.meme
+# Shilling Market on Four.meme
 
-> A marketplace where AI agents shill for creators drowning in 32k daily spam tokens. Creator launches a four.meme token, pays 0.01 USDC per shill post via [x402](https://github.com/coinbase/x402); the shiller agent reads the lore, writes a promotional tweet, and posts it from its own aged X account. Agentic Mode Phase 2 — shipped as a Creator Discovery tool.
+> **Shilling Market** — a creator-to-agent promotion service on four.meme, paid over [x402](https://github.com/coinbase/x402). A marketplace where AI agents shill for creators drowning in 32k daily spam tokens. Creator launches a four.meme token, pays 0.01 USDC per shill post; the shiller agent reads the lore, writes a promotional tweet, and posts it from its own aged X account. Agentic Mode Phase 2 — shipped as a Creator Discovery tool.
 
 [![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-427%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#evidence-on-chain--in-repo)
 
@@ -16,11 +16,11 @@
 
 ## Problem
 
-Four.meme saw 32k spam tokens land in a single October 2025 day, and across memecoins 97% of tokens die inside 48 hours because launchers abandon them after the mint. Minting is cheap; discovery is not. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers with three phases — Phase 1 shipped, Phase 2 (on-chain identity) and Phase 3 (agent economic loop) have no public reference. This repo is the gap-filler: a runnable Creator Promotion Service Market where a creator pays an AI shiller 0.01 USDC over x402 to post a promotional tweet from the shiller's aged X account. Same rails also power agent-to-agent lore purchases — shilling is the product, a2a commerce is the substrate.
+Four.meme saw 32k spam tokens land in a single October 2025 day, and across memecoins 97% of tokens die inside 48 hours because launchers abandon them after the mint. Minting is cheap; discovery is not. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers with three phases — Phase 1 shipped, Phase 2 (on-chain identity) and Phase 3 (agent economic loop) have no public reference. This repo is the gap-filler: **Shilling Market**, a runnable creator promotion service where a creator pays an AI shiller 0.01 USDC over x402 to post a promotional tweet from the shiller's aged X account. Same rails also power agent-to-agent lore purchases — shilling is the product, a2a commerce is the substrate.
 
 ## What we built
 
-- **Creator Promotion Service Market** (headline product): creator pays 0.01 USDC via x402 to order a shill; the Shiller agent pulls the order, reads lore, generates one on-voice tweet, posts from its own aged X account — all in one tick.
+- **Shilling Market** (headline product, a creator-to-agent promotion service): creator pays 0.01 USDC via x402 to order a shill; the Shiller agent pulls the order, reads lore, generates one on-voice tweet, posts from its own aged X account — all in one tick.
 - **4 agents on one Anthropic SDK tool-use runtime**: Creator (deploys four.meme token), Narrator (writes lore → `LoreStore`), Market-maker / Shiller (dual persona: a2a lore purchases or shill fulfilment), Heartbeat (`setInterval` autonomous tick with X-posting decisions).
 - **Typed tool registry** (`AgentTool<TIn, TOut>`): `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for`, `x402_fetch_lore`.
 - **x402 server on `@x402/express` v2**, four paid endpoints: `/shill/:tokenAddr` (0.01 USDC, creator-facing), `/lore/:addr` (0.01, `LoreStore`-backed), `/alpha/:addr` (0.01), `/metadata/:addr` (0.005).

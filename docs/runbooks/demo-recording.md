@@ -11,7 +11,7 @@ status: active
 
 This is the step-by-step script for producing the submission video. One operator, one screen, one take.
 
-**Primary take** (this runbook's main content): Phase 4.6 — _Creator Promotion Service Market_. Creator pays an AI shiller 0.01 USDC; shiller reads the lore and posts a real promotional tweet from its own aged X account. ~100 seconds, one cut.
+**Primary take** (this runbook's main content): Phase 4.6 — _Shilling Market_ (creator-to-agent promotion service). Creator pays an AI shiller 0.01 USDC; shiller reads the lore and posts a real promotional tweet from its own aged X account. ~100 seconds, one cut.
 
 **Backup take** (see appendix): Phase 4.5 — _agent-to-agent commerce_ (Creator → Narrator → Market-maker reads lore via x402). Use only if the shilling take cannot be recovered (X API outage, Base Sepolia stalled ≥ 15 min, etc.).
 

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { TopNav } from '@/components/top-nav';
 import './globals.css';
 
 // Inter drives `--font-sans-body` (design.md §3); system-ui already backs
@@ -18,15 +19,18 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Agent Swarm · Four.Meme',
+  title: 'Shilling Market on Four.meme',
   description:
-    'First agent-to-agent commerce demo on Four.Meme Agentic Mode — Creator, Narrator, Market-maker cooperate via x402.',
+    'Shilling Market — a creator-to-agent promotion service on four.meme, paid over x402. Creator pays 0.01 USDC; an AI shiller posts a promotional tweet from its own aged X account.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <TopNav />
+        {children}
+      </body>
     </html>
   );
 }
