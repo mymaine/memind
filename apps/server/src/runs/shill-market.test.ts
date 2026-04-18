@@ -222,6 +222,93 @@ describe('runShillMarketDemo', () => {
     expect(last.status).toBe('failed');
   });
 
+  it('lowercase consistency: orchestrator lowercases tokenAddr for every artifact, store write, and shiller input regardless of caller casing', async () => {
+    // Mixed-case input — caller might pass EIP-55 checksum address, user
+    // input, or an upstream artifact that wasn't normalised. The orchestrator
+    // must be the single place we collapse casing, so every downstream
+    // consumer (store, artifacts, shiller phase) sees the same lowercase key.
+    const MIXED = '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444';
+    const LOWER = MIXED.toLowerCase();
+    expect(MIXED).not.toBe(LOWER); // guard: sanity-check the fixture is actually mixed-case.
+
+    const ORDER_ID = 'order_case';
+    // Capture every tokenAddr the orchestrator forwards to the payment phase.
+    // The contract is: the orchestrator is the single normalisation point,
+    // and downstream deps (payment impl, shiller impl, artifacts) must all
+    // see the lowercase form. We do NOT want to rely on ShillOrderStore's
+    // internal normalisation to mask upstream casing drift.
+    let observedPaymentTokenAddr: string | undefined;
+    const creatorPaymentImpl: CreatorPaymentPhaseFn = async (deps) => {
+      observedPaymentTokenAddr = deps.tokenAddr;
+      const paidTxHash = `0x${'0'.repeat(64)}`;
+      const paidAmountUsdc = '0.01';
+      deps.shillOrderStore.enqueue({
+        orderId: ORDER_ID,
+        targetTokenAddr: deps.tokenAddr,
+        paidTxHash,
+        paidAmountUsdc,
+        ts: new Date().toISOString(),
+      });
+      return { orderId: ORDER_ID, paidTxHash, paidAmountUsdc };
+    };
+
+    let observedShillerTokenAddr: string | undefined;
+    const runShillerImpl = vi
+      .fn<RunShillerPhaseFn>()
+      .mockImplementation(async (deps): Promise<ShillerAgentOutput> => {
+        observedShillerTokenAddr = deps.tokenAddr;
+        return {
+          orderId: deps.orderId,
+          tokenAddr: deps.tokenAddr,
+          decision: 'shill',
+          tweetId: 't_case',
+          tweetUrl: 'https://x.com/shiller/status/t_case',
+          tweetText: '$HBNB2026-CASE lowercase all the things 👁',
+          postedAt: '2026-04-18T10:05:00.000Z',
+          toolCalls: [],
+        };
+      });
+
+    const record = runStore.create('shill-market');
+
+    await runShillMarketDemo({
+      config: makeConfigStub(),
+      anthropic,
+      store: runStore,
+      runId: record.runId,
+      args: { tokenAddr: MIXED },
+      shillOrderStore,
+      loreStore,
+      creatorPaymentImpl,
+      runShillerImpl,
+    });
+
+    // The orchestrator must hand EVERY dependency the lowercase address —
+    // the normalisation must happen once, at the top of the orchestrator,
+    // not be silently fixed up by ShillOrderStore internals.
+    expect(observedPaymentTokenAddr).toBe(LOWER);
+    expect(observedShillerTokenAddr).toBe(LOWER);
+
+    // Every shill-order / shill-tweet artifact must carry lowercase addr.
+    const updated = runStore.get(record.runId);
+    const shillOrderArtifacts = updated?.artifacts.filter((a) => a.kind === 'shill-order') ?? [];
+    expect(shillOrderArtifacts.length).toBeGreaterThan(0);
+    for (const art of shillOrderArtifacts) {
+      if (art.kind !== 'shill-order') continue;
+      expect(art.targetTokenAddr).toBe(LOWER);
+    }
+    const shillTweet = updated?.artifacts.find((a) => a.kind === 'shill-tweet');
+    if (shillTweet?.kind === 'shill-tweet') {
+      expect(shillTweet.targetTokenAddr).toBe(LOWER);
+    }
+
+    // findByTokenAddr(LOWER) must return the order — store key must be lowercase.
+    const found = shillOrderStore.findByTokenAddr(LOWER);
+    expect(found.map((o) => o.orderId)).toContain(ORDER_ID);
+    const entry = shillOrderStore.getById(ORDER_ID);
+    expect(entry?.targetTokenAddr).toBe(LOWER);
+  });
+
   it('lore-missing fallback: stub snippet is non-empty and URL-free', async () => {
     // LoreStore is empty — orchestrator must synthesise a fallback snippet so
     // the Shiller phase still runs. Fallback content matters: it cannot leak

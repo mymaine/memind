@@ -138,6 +138,44 @@ describe('ShillOrderStore', () => {
     ).toEqual([]);
   });
 
+  it('pullById flips only the specified queued order to processing and leaves others untouched', () => {
+    // pullPending's bulk flip strands orphan orders when the orchestrator only
+    // cares about a single payment.orderId. pullById is the targeted counterpart:
+    // find one order, flip it atomically, leave every other queued entry queued.
+    store.enqueue(makeInput({ orderId: 'target', ts: '2026-04-20T00:00:01.000Z' }));
+    store.enqueue(makeInput({ orderId: 'orphan-a', ts: '2026-04-20T00:00:02.000Z' }));
+    store.enqueue(makeInput({ orderId: 'orphan-b', ts: '2026-04-20T00:00:03.000Z' }));
+
+    const pulled = store.pullById('target');
+    expect(pulled?.orderId).toBe('target');
+    expect(pulled?.status).toBe('processing');
+
+    // Other orders must remain queued — no collateral state change.
+    expect(store.getById('orphan-a')?.status).toBe('queued');
+    expect(store.getById('orphan-b')?.status).toBe('queued');
+
+    // A second pullById for the same id must NOT re-flip (already processing).
+    expect(store.pullById('target')).toBeUndefined();
+  });
+
+  it('pullById returns undefined for unknown orderId', () => {
+    store.enqueue(makeInput({ orderId: 'exists' }));
+    expect(store.pullById('nope')).toBeUndefined();
+    // Pre-existing order is untouched.
+    expect(store.getById('exists')?.status).toBe('queued');
+  });
+
+  it('pullById returns undefined when order exists but is not queued', () => {
+    // Contract: pullById only flips queued → processing. Any other current
+    // status (processing / done / failed) yields undefined so callers can tell
+    // "nothing to pick up" apart from "successfully claimed".
+    store.enqueue(makeInput({ orderId: 'o1' }));
+    store.pullPending(); // now processing
+
+    expect(store.pullById('o1')).toBeUndefined();
+    expect(store.getById('o1')?.status).toBe('processing');
+  });
+
   it('size tracks total entries across all statuses and clear empties the store', () => {
     store.enqueue(makeInput({ orderId: 'o1' }));
     store.enqueue(makeInput({ orderId: 'o2' }));

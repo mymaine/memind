@@ -300,6 +300,94 @@ describe('createPostShillForTool.execute', () => {
     ).rejects.toThrow(/401|auth failed/);
   });
 
+  /**
+   * Lock-in tests for the `\bpaid\b` guard's JavaScript-regex word-boundary
+   * behaviour. A reviewer raised concern that `\bpaid\b` might false-match
+   * on `unpaid`, `repaid`, `prepaid` (legitimate English where "paid" is a
+   * substring). Per JS spec `\b` is the boundary between `\w` = [A-Za-z0-9_]
+   * and non-`\w`, so inside `unpaid` the `n`→`p` transition is `\w`→`\w`
+   * and `\b` does NOT match — the regex is safe. These tests nail that
+   * behaviour down so a well-intentioned future refactor can't silently
+   * regress (e.g. rewriting to `(?:^|[^a-z])paid` which DOES eat `unpaid`).
+   */
+  describe('paid-intent guard word boundary (lock-in)', () => {
+    it('does not retry when LLM draft contains "unpaid" (substring, not whole word)', async () => {
+      const draft = '$HBNB2026-BAT an unpaid thought: the cavern lore hits harder than expected 👁';
+      const { client, spy } = mockAnthropicSequence([draft]);
+      const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+      const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+      const out = await tool.execute({
+        orderId: 'order_unpaid',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'lore',
+      });
+
+      // Single LLM call => guard passed => no retry triggered by "unpaid".
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(out.tweetText).toBe(draft);
+    });
+
+    it('does not retry when LLM draft contains "repaid" (substring, not whole word)', async () => {
+      const draft = '$HBNB2026-BAT the cavern repaid its debt in strange echoes 👁';
+      const { client, spy } = mockAnthropicSequence([draft]);
+      const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+      const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+      const out = await tool.execute({
+        orderId: 'order_repaid',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'lore',
+      });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(out.tweetText).toBe(draft);
+    });
+
+    it('does not retry when LLM draft contains "prepaid" (substring, not whole word)', async () => {
+      const draft = '$HBNB2026-BAT a prepaid curiosity opens a door into the cavern 👁';
+      const { client, spy } = mockAnthropicSequence([draft]);
+      const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+      const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+      const out = await tool.execute({
+        orderId: 'order_prepaid',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'lore',
+      });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(out.tweetText).toBe(draft);
+    });
+
+    it('DOES retry when LLM draft contains "paid" as a whole word', async () => {
+      // Complement to the three above: the guard must still fire on the
+      // actual violation — "paid" surrounded by word boundaries.
+      const dirty = '$BAT being paid for this curious find, but lore is real 👁';
+      const clean = '$HBNB2026-BAT a curious cavern find, lore stands on its own 👁';
+      const { client, spy } = mockAnthropicSequence([dirty, clean]);
+      const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+      const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+      const out = await tool.execute({
+        orderId: 'order_paid_whole',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'lore',
+      });
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(out.tweetText).toBe(clean);
+    });
+  });
+
   it('rejects invalid input via zod before any LLM call', async () => {
     const { client, spy } = mockAnthropicSequence(['unused']);
     const { tool: postToXTool, executeSpy } = stubPostToXTool();
