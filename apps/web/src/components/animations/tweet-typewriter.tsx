@@ -162,7 +162,6 @@ export function TweetTypewriter({
 
   return (
     <p
-      role="text"
       aria-label={ariaLabel ?? text}
       data-testid="tweet-typewriter"
       data-complete={isTypingComplete ? 'true' : 'false'}
