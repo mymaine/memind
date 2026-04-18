@@ -10,11 +10,11 @@
  */
 import { useCallback, useState } from 'react';
 import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
-import { MOODS } from '@/components/pixel-human-glyph/mood-registry';
+import { MOODS, getMoodConfig } from '@/components/pixel-human-glyph/mood-registry';
 
-const ONE_SHOT = new Set(['jump', 'surprise', 'celebrate'] as const);
-
-type OneShotMood = 'jump' | 'surprise' | 'celebrate';
+// Derived from the registry so new one-shot moods participate in the
+// "Trigger all non-loop" retrigger automatically.
+const ONE_SHOT = new Set(MOODS.filter((m) => !getMoodConfig(m).loop));
 
 export default function GlyphDemoPage(): React.ReactElement {
   const [size, setSize] = useState(150);
@@ -67,7 +67,7 @@ export default function GlyphDemoPage(): React.ReactElement {
 
       <section className="mx-auto grid max-w-[1400px] grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
         {MOODS.map((mood) => {
-          const isOneShot = ONE_SHOT.has(mood as OneShotMood);
+          const isOneShot = ONE_SHOT.has(mood);
           return (
             <div
               key={mood}

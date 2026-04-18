@@ -18,7 +18,7 @@ describe('<PixelHumanGlyph /> structural contract', () => {
     expect(out).toMatch(/<svg[^>]+viewBox/);
   });
 
-  it('applies the mood-specific class to the root svg for all 10 moods', () => {
+  it('applies the mood-specific class to the root svg for all moods', () => {
     for (const mood of MOODS) {
       const out = html(mood);
       expect(out).toContain(`pixel--${mood}`);
@@ -68,6 +68,21 @@ describe('<PixelHumanGlyph /> structural contract', () => {
   it('mounts celebrate sparkles only for celebrate mood', () => {
     expect(html('celebrate')).toContain('data-layer="celebrate-sparkles"');
     expect(html('idle')).not.toContain('data-layer="celebrate-sparkles"');
+  });
+
+  it('mounts sunglasses overlay only for sunglasses mood', () => {
+    expect(html('sunglasses')).toContain('data-layer="sunglasses"');
+    expect(html('idle')).not.toContain('data-layer="sunglasses"');
+  });
+
+  it('mounts keyboard overlay only for type-keyboard mood', () => {
+    expect(html('type-keyboard')).toContain('data-layer="keyboard"');
+    expect(html('idle')).not.toContain('data-layer="keyboard"');
+  });
+
+  it('mounts megaphone overlay only for megaphone mood', () => {
+    expect(html('megaphone')).toContain('data-layer="megaphone"');
+    expect(html('idle')).not.toContain('data-layer="megaphone"');
   });
 
   it('honors custom aria-label', () => {

@@ -22,7 +22,10 @@ export type ShillingMood =
   | 'work'
   | 'think'
   | 'surprise'
-  | 'celebrate';
+  | 'celebrate'
+  | 'sunglasses'
+  | 'type-keyboard'
+  | 'megaphone';
 
 export interface MoodConfig {
   readonly loop: boolean;
@@ -42,6 +45,9 @@ export const MOODS = [
   'think',
   'surprise',
   'celebrate',
+  'sunglasses',
+  'type-keyboard',
+  'megaphone',
 ] as const satisfies readonly ShillingMood[];
 
 const REGISTRY: Readonly<Record<ShillingMood, MoodConfig>> = {
@@ -56,6 +62,11 @@ const REGISTRY: Readonly<Record<ShillingMood, MoodConfig>> = {
   think: { loop: true, durationMs: null },
   surprise: { loop: false, durationMs: 600 },
   celebrate: { loop: false, durationMs: 1200 },
+  // Prop-based one-shots: draw-out -> hold/action -> stow. Duration covers
+  // the full round-trip including both transitions.
+  sunglasses: { loop: false, durationMs: 2500 },
+  'type-keyboard': { loop: false, durationMs: 3000 },
+  megaphone: { loop: false, durationMs: 2500 },
 };
 
 export function getMoodConfig(mood: ShillingMood): MoodConfig {

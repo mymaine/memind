@@ -98,6 +98,99 @@ export function PixelSymbols({ mood }: Props): ReactElement | null {
         </g>
       );
 
+    case 'sunglasses':
+      // Black shades spanning the eye row (y=4). The main bar covers both eye
+      // slots and one pixel of frame on each side; the two accent pixels on
+      // y=3 suggest the top rim so the shape reads as glasses, not a mask.
+      return (
+        <g data-layer="sunglasses" className="pixel-symbols pixel-symbols--sunglasses">
+          <PixelBlock
+            className="pixel-symbols__shades"
+            pixels={[
+              // main bar
+              [8, 4],
+              [9, 4],
+              [10, 4],
+              [11, 4],
+              [12, 4],
+              // top frame accents above each lens
+              [8, 3],
+              [12, 3],
+            ]}
+            fill="#111"
+          />
+        </g>
+      );
+
+    case 'type-keyboard':
+      // Tiny pixel keyboard floated in front of the figure. Base row on y=9
+      // and three key pips on y=8 keep clear of the feet at y=7. The 3-key
+      // silhouette with underbar is the most legible keyboard within 6 px.
+      return (
+        <g data-layer="keyboard" className="pixel-symbols pixel-symbols--keyboard">
+          <PixelBlock
+            className="pixel-symbols__keyboard"
+            pixels={[
+              // top row: three key caps
+              [8, 8],
+              [10, 8],
+              [12, 8],
+              // base row: full chassis
+              [7, 9],
+              [8, 9],
+              [9, 9],
+              [10, 9],
+              [11, 9],
+              [12, 9],
+            ]}
+            fill="var(--pixel-accent)"
+          />
+        </g>
+      );
+
+    case 'megaphone':
+      // Pixel megaphone aimed to the right of the figure with three staggered
+      // sound-wave pips further right. Shape: narrow grip on x=14, a slanted
+      // body on x=15, a vertical 5-pixel bell on x=16. Waves sit on x=17..18.
+      return (
+        <g data-layer="megaphone" className="pixel-symbols pixel-symbols--megaphone">
+          <PixelBlock
+            className="pixel-symbols__horn"
+            pixels={[
+              // grip
+              [14, 4],
+              [14, 5],
+              // slanted body pixels hint at a widening cone
+              [15, 3],
+              [15, 6],
+              // bell mouth (tall vertical)
+              [16, 2],
+              [16, 3],
+              [16, 4],
+              [16, 5],
+              [16, 6],
+            ]}
+            fill="var(--pixel-primary)"
+          />
+          {/* Each wave pip animates independently via stagger delays. */}
+          <PixelBlock
+            className="pixel-symbols__wave pixel-symbols__wave--0"
+            pixels={[[17, 2]]}
+            fill="var(--pixel-accent)"
+          />
+          <PixelBlock
+            className="pixel-symbols__wave pixel-symbols__wave--1"
+            pixels={[[18, 4]]}
+            fill="var(--pixel-accent)"
+          />
+          <PixelBlock
+            className="pixel-symbols__wave pixel-symbols__wave--2"
+            pixels={[[17, 6]]}
+            fill="var(--pixel-accent)"
+          />
+        </g>
+      );
+
     case 'celebrate':
       // Four pixel-plus sparkles scattered around the figure.
       return (

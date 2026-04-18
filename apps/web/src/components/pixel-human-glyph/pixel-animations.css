@@ -604,6 +604,240 @@
   animation-delay: 360ms;
 }
 
+/* ---- Sunglasses (one-shot 2500ms) -------------------------------------- */
+
+/*
+ * Phased prop animation: draw-out (0-20%) → hold (20-80%) → stow (80-100%).
+ * Hand-right pantomimes grabbing the shades; stage tilts + scales slightly
+ * during the hold for a "cool" beat.
+ */
+@keyframes pixel-sunglasses-shades {
+  0% {
+    opacity: 0;
+    transform: translate(2px, -2px);
+  }
+  20%,
+  80% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(2px, -2px);
+  }
+}
+
+@keyframes pixel-sunglasses-hand-right {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  10%,
+  20% {
+    transform: translate(-1px, -1px);
+  }
+  80%,
+  90% {
+    transform: translate(-1px, -1px);
+  }
+}
+
+@keyframes pixel-sunglasses-stage {
+  0%,
+  20% {
+    transform: scale(1) rotate(0deg);
+  }
+  30%,
+  70% {
+    transform: scale(1.02) rotate(-1deg);
+  }
+  80%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.pixel--sunglasses .pixel-stage {
+  animation: pixel-sunglasses-stage 2500ms ease-in-out 1 forwards;
+}
+
+.pixel--sunglasses [data-part='hand-right'] {
+  transform-box: fill-box;
+  animation: pixel-sunglasses-hand-right 2500ms ease-in-out 1 forwards;
+}
+
+.pixel-symbols--sunglasses .pixel-symbols__shades {
+  transform-box: fill-box;
+  animation: pixel-sunglasses-shades 2500ms ease-in-out 1 forwards;
+}
+
+/* ---- Type-keyboard (one-shot 3000ms) ----------------------------------- */
+
+/*
+ * Phased: keyboard slides up into view → hands alternate tapping → keyboard
+ * slides back down. Steps timing on the hands gives an 8-bit cadence.
+ */
+@keyframes pixel-keyboard-prop {
+  0% {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  20%,
+  80% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+@keyframes pixel-keyboard-hand-a {
+  0%,
+  20% {
+    transform: translateY(0);
+  }
+  25%,
+  75% {
+    /* down-stroke */
+    transform: translateY(0.5px);
+  }
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes pixel-keyboard-hand-b {
+  0%,
+  20% {
+    transform: translateY(0);
+  }
+  25%,
+  75% {
+    transform: translateY(-0.5px);
+  }
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.pixel--type-keyboard [data-part='hand-left'] {
+  transform-box: fill-box;
+  /* 6 steps over the 1800ms hold window ≈ ~3 taps/sec per hand, alternating. */
+  animation: pixel-keyboard-hand-a 3000ms steps(6, end) 1 forwards;
+}
+
+.pixel--type-keyboard [data-part='hand-right'] {
+  transform-box: fill-box;
+  animation: pixel-keyboard-hand-b 3000ms steps(6, end) 1 forwards;
+}
+
+.pixel-symbols--keyboard .pixel-symbols__keyboard {
+  transform-box: fill-box;
+  animation: pixel-keyboard-prop 3000ms ease-in-out 1 forwards;
+}
+
+/* ---- Megaphone (one-shot 2500ms) --------------------------------------- */
+
+/*
+ * Phased: horn slides in from the right → stage leans into the shout while
+ * waves broadcast in sequence → horn retreats.
+ */
+@keyframes pixel-megaphone-horn {
+  0% {
+    opacity: 0;
+    transform: translateX(3px);
+  }
+  20%,
+  80% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(3px);
+  }
+}
+
+@keyframes pixel-megaphone-hand-right {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20%,
+  80% {
+    transform: translate(1px, -1px);
+  }
+}
+
+@keyframes pixel-megaphone-stage {
+  0%,
+  20% {
+    transform: translateX(0);
+  }
+  30%,
+  70% {
+    transform: translateX(-0.5px);
+  }
+  80%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Stagger the three wave pips across the 1500ms hold window. */
+@keyframes pixel-megaphone-wave {
+  0%,
+  20% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  60% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.pixel--megaphone .pixel-stage {
+  animation: pixel-megaphone-stage 2500ms ease-in-out 1 forwards;
+}
+
+.pixel--megaphone [data-part='hand-right'] {
+  transform-box: fill-box;
+  animation: pixel-megaphone-hand-right 2500ms ease-in-out 1 forwards;
+}
+
+.pixel-symbols--megaphone .pixel-symbols__horn {
+  transform-box: fill-box;
+  animation: pixel-megaphone-horn 2500ms ease-in-out 1 forwards;
+}
+
+.pixel-symbols--megaphone .pixel-symbols__wave {
+  transform-box: fill-box;
+  animation: pixel-megaphone-wave 2500ms ease-in-out 1 forwards;
+}
+
+.pixel-symbols--megaphone .pixel-symbols__wave--0 {
+  animation-delay: 600ms;
+}
+.pixel-symbols--megaphone .pixel-symbols__wave--1 {
+  animation-delay: 900ms;
+}
+.pixel-symbols--megaphone .pixel-symbols__wave--2 {
+  animation-delay: 1200ms;
+}
+
 /* ---- Reduced-motion fallback ------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -622,7 +856,12 @@
     transform-origin: 50% 100%;
   }
   .pixel--surprise .pixel-symbols__bang,
-  .pixel--celebrate .pixel-symbols__sparkle {
+  .pixel--celebrate .pixel-symbols__sparkle,
+  .pixel--sunglasses .pixel-symbols__shades,
+  .pixel--type-keyboard .pixel-symbols__keyboard,
+  .pixel--megaphone .pixel-symbols__horn,
+  .pixel--megaphone .pixel-symbols__wave {
     opacity: 1;
+    transform: none;
   }
 }

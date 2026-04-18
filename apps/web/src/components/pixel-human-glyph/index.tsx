@@ -47,6 +47,9 @@ const MOOD_CSS_CLASS: Record<ShillingMood, string> = {
   think: 'pixel--think',
   surprise: 'pixel--surprise',
   celebrate: 'pixel--celebrate',
+  sunglasses: 'pixel--sunglasses',
+  'type-keyboard': 'pixel--type-keyboard',
+  megaphone: 'pixel--megaphone',
 };
 
 export function PixelHumanGlyph(props: PixelHumanGlyphProps): ReactElement {
