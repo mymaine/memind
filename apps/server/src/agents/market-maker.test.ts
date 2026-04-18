@@ -2,7 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import type { AgentTool, AnyAgentTool, LogEvent } from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
-import { runMarketMakerAgent } from './market-maker.js';
+import { runMarketMakerAgent, runShillerAgent } from './market-maker.js';
+import {
+  postShillForInputSchema,
+  postShillForOutputSchema,
+  type PostShillForInput,
+  type PostShillForOutput,
+} from '../tools/post-shill-for.js';
 import {
   makeStreamingClient,
   textStream,
@@ -339,5 +345,162 @@ describe('runMarketMakerAgent', () => {
         loreEndpointUrl: LORE_URL,
       }),
     ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shill persona — Phase 4.6 AC-P4.6-3
+// ---------------------------------------------------------------------------
+// Tests target the second persona of the Market-maker agent. The a2a
+// persona (`runMarketMakerAgent`) tests above MUST stay green — shill is
+// additive, not a replacement.
+// ---------------------------------------------------------------------------
+
+const SHILL_TOKEN_ADDR = '0x2222222222222222222222222222222222222222';
+
+interface StubPostShillForOptions {
+  output?: Partial<PostShillForOutput>;
+  throwError?: Error;
+}
+
+/**
+ * Stub `post_shill_for` — `execute` either returns a success payload or
+ * throws. `executeSpy` records every call so tests can assert the input
+ * shape (e.g. whether `tokenSymbol` is passed through or omitted).
+ */
+function stubPostShillForTool(opts: StubPostShillForOptions = {}): {
+  tool: AgentTool<PostShillForInput, PostShillForOutput>;
+  executeSpy: ReturnType<typeof vi.fn>;
+} {
+  const executeSpy = vi.fn(async (input: PostShillForInput): Promise<PostShillForOutput> => {
+    if (opts.throwError !== undefined) throw opts.throwError;
+    const defaults: PostShillForOutput = {
+      orderId: input.orderId,
+      tokenAddr: input.tokenAddr,
+      tweetId: 'tid-1',
+      tweetUrl: 'https://x.com/shiller/status/tid-1',
+      tweetText: `$BAT lore reads like a dream`,
+      postedAt: '2026-04-19T00:00:00.000Z',
+    };
+    return { ...defaults, ...(opts.output ?? {}) };
+  });
+  const tool: AgentTool<PostShillForInput, PostShillForOutput> = {
+    name: 'post_shill_for',
+    description: 'stub post_shill_for for tests',
+    inputSchema: postShillForInputSchema,
+    outputSchema: postShillForOutputSchema,
+    execute: executeSpy,
+  };
+  return { tool, executeSpy };
+}
+
+describe('runShillerAgent', () => {
+  it('happy path: posts the tweet and returns a shill decision with a non-error tool call', async () => {
+    const postedAt = '2026-04-19T00:00:00.000Z';
+    const { tool, executeSpy } = stubPostShillForTool({
+      output: {
+        tweetId: 'tid-1',
+        tweetUrl: 'https://x.com/shiller/status/tid-1',
+        tweetText: '$BAT — lore reads like a dream',
+        postedAt,
+      },
+    });
+
+    const out = await runShillerAgent({
+      postShillForTool: tool,
+      orderId: 'order-1',
+      tokenAddr: SHILL_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'A curious tale about $HBNB2026-BAT',
+    });
+
+    expect(out.decision).toBe('shill');
+    expect(out.orderId).toBe('order-1');
+    expect(out.tokenAddr).toBe(SHILL_TOKEN_ADDR);
+    expect(out.tweetId).toBe('tid-1');
+    expect(out.tweetUrl).toBe('https://x.com/shiller/status/tid-1');
+    expect(out.tweetText).toBe('$BAT — lore reads like a dream');
+    expect(out.postedAt).toBe(postedAt);
+    expect(out.errorMessage).toBeUndefined();
+
+    expect(out.toolCalls).toHaveLength(1);
+    expect(out.toolCalls[0].name).toBe('post_shill_for');
+    expect(out.toolCalls[0].isError).toBe(false);
+    expect(out.toolCalls[0].output).toMatchObject({ tweetId: 'tid-1' });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('tool failure: decision becomes skip and errorMessage surfaces the thrown message', async () => {
+    const { tool } = stubPostShillForTool({ throwError: new Error('guard exhausted') });
+
+    const out = await runShillerAgent({
+      postShillForTool: tool,
+      orderId: 'order-2',
+      tokenAddr: SHILL_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore text',
+    });
+
+    expect(out.decision).toBe('skip');
+    expect(out.errorMessage).toBe('guard exhausted');
+    expect(out.tweetId).toBeUndefined();
+    expect(out.tweetUrl).toBeUndefined();
+
+    expect(out.toolCalls).toHaveLength(1);
+    expect(out.toolCalls[0].name).toBe('post_shill_for');
+    expect(out.toolCalls[0].isError).toBe(true);
+    expect(out.toolCalls[0].output).toMatchObject({ error: 'guard exhausted' });
+  });
+
+  it('omits tokenSymbol from the tool input when the caller does not pass it', async () => {
+    const { tool, executeSpy } = stubPostShillForTool();
+
+    await runShillerAgent({
+      postShillForTool: tool,
+      orderId: 'order-3',
+      tokenAddr: SHILL_TOKEN_ADDR,
+      // tokenSymbol intentionally omitted
+      loreSnippet: 'lore text with a symbol inline',
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const calledWith = executeSpy.mock.calls[0][0] as PostShillForInput;
+    expect(calledWith.orderId).toBe('order-3');
+    expect(calledWith.tokenAddr).toBe(SHILL_TOKEN_ADDR);
+    expect(calledWith.loreSnippet).toBe('lore text with a symbol inline');
+    // The key itself must not appear when tokenSymbol was not provided — a
+    // present-but-undefined value would leak through to the downstream zod
+    // parse and we want the "infer from lore" branch to trigger.
+    expect('tokenSymbol' in calledWith).toBe(false);
+  });
+
+  it('emits at least two LogEvents with agent="market-maker" across start and completion', async () => {
+    const logs: LogEvent[] = [];
+    const { tool } = stubPostShillForTool();
+
+    await runShillerAgent({
+      postShillForTool: tool,
+      orderId: 'order-4',
+      tokenAddr: SHILL_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore text',
+      creatorBrief: 'please make it curious',
+      onLog: (e) => logs.push(e),
+    });
+
+    expect(logs.length).toBeGreaterThanOrEqual(2);
+    expect(logs.every((e) => e.agent === 'market-maker')).toBe(true);
+
+    // First log covers the start path and carries the creatorBrief in meta.
+    const start = logs[0];
+    expect(start.level).toBe('info');
+    expect(start.message).toMatch(/shill mode/);
+    expect(start.meta).toMatchObject({ creatorBrief: 'please make it curious' });
+
+    // Last log is the success completion.
+    const end = logs[logs.length - 1];
+    expect(end.level).toBe('info');
+    expect(end.message).toMatch(/tweet posted/);
   });
 });

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { LogEvent } from '@hack-fourmeme/shared';
+import type { AgentTool, LogEvent } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import {
   runAgentLoop,
@@ -11,6 +11,7 @@ import {
 } from './runtime.js';
 import type { TokenStatusOutput } from '../tools/token-status.js';
 import type { XFetchLoreOutput } from '../tools/x-fetch-lore.js';
+import type { PostShillForInput, PostShillForOutput } from '../tools/post-shill-for.js';
 import { extractJsonObject } from './_json.js';
 
 /**
@@ -171,4 +172,93 @@ export async function runMarketMakerAgent(
     ...(loreFetch ? { loreFetch } : {}),
     toolCalls: loop.toolCalls,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Shill persona — Phase 4.6
+// ---------------------------------------------------------------------------
+//
+// `runShillerAgent` is the Market-maker agent's second persona. Conceptually
+// one agent identity ("market-maker") with two personas dispatched at the
+// caller level: the a2a persona (above) and the shill persona (below). We
+// keep both in this file so the two personas share the same module boundary
+// and the a2a call site stays untouched by the shill addition.
+//
+// Why NOT an LLM decision loop (runAgentLoop) for shill persona:
+//   1. The decision to shill was already made at x402 payment time. Creator
+//      paid 0.01 USDC; the agent MUST attempt to post. Running another LLM
+//      "should I shill?" pass would duplicate work and risk hallucinating
+//      skip against a paid order (bad UX, possibly refund-triggering).
+//   2. The LLM intelligence this flow needs is inside `post_shill_for`
+//      itself (drafting + guarding the tweet). Wrapping it in a second LLM
+//      loop adds cost and failure surface without adding judgment.
+//   3. MVP hard deadline 2026-04-21 — every additional loop = more things
+//      to stabilise for the demo recording window.
+//
+// The `toolCalls` shape mirrors the a2a persona's trace entries so the
+// dashboard's ToolCallBubble UI renders both modes identically.
+// ---------------------------------------------------------------------------
+
+export interface RunShillerAgentParams {
+  /**
+   * Injected `post_shill_for` tool. Wired by the caller (typically the
+   * shill-market orchestrator) from the tool registry, or by tests with a
+   * direct stub. Dependency-injection keeps this persona free of Anthropic /
+   * X API concerns — it only orchestrates.
+   */
+  postShillForTool: AgentTool<PostShillForInput, PostShillForOutput>;
+  orderId: string;
+  tokenAddr: string;
+  tokenSymbol?: string;
+  loreSnippet: string;
+  /**
+   * Free-form text the Creator attached when ordering the shill. Logged for
+   * observability but NOT passed to `post_shill_for` — the tweet is grounded
+   * in lore, not creator marketing copy, to keep the organic voice.
+   */
+  creatorBrief?: string;
+  /**
+   * Log hook — emits with `agent: 'market-maker'`. The shill persona shares
+   * the market-maker agent identity for UI/trace simplicity; callers that
+   * need to distinguish personas can inspect the `[shill mode]` message
+   * prefix or the `tool: 'post_shill_for'` field.
+   */
+  onLog?: (event: LogEvent) => void;
+}
+
+export interface ShillerAgentOutput {
+  orderId: string;
+  tokenAddr: string;
+  /**
+   * `skip` is only reachable when the injected `post_shill_for` tool throws
+   * (e.g. guard exhausted after retry, OAuth 401). The orchestrator is then
+   * expected to call `ShillOrderStore.markFailed(orderId, errorMessage)`.
+   */
+  decision: 'shill' | 'skip';
+  // Populated when decision === 'shill'.
+  tweetId?: string;
+  tweetUrl?: string;
+  tweetText?: string;
+  postedAt?: string;
+  /**
+   * Trace entries compatible with the a2a persona's `ToolCallTrace` shape
+   * (name / input / output / isError). Minimal by design — the shill flow
+   * issues exactly one tool call, so the trace always has length 1.
+   */
+  toolCalls: Array<{
+    name: string;
+    input: Record<string, unknown>;
+    output: Record<string, unknown>;
+    isError: boolean;
+  }>;
+  /** Populated when the tool throws — mirrors what the orchestrator persists. */
+  errorMessage?: string;
+}
+
+// Red-phase stub — makes the symbol importable so new tests fail on
+// assertion rather than on TypeError at import time. Replaced with the real
+// implementation in the green commit. The `_params` rename silences the
+// unused-var lint without loosening the public signature.
+export async function runShillerAgent(_params: RunShillerAgentParams): Promise<ShillerAgentOutput> {
+  throw new Error('runShillerAgent: not implemented');
 }
