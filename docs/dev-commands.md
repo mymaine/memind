@@ -122,7 +122,7 @@ pnpm --filter @hack-fourmeme/server demo:a2a
 
 # Heartbeat — accelerated 15s tick loop; optional --dry-run skips real X posts.
 pnpm --filter @hack-fourmeme/server demo:heartbeat -- --dry-run
-pnpm --filter @hack-fourmeme/server demo:heartbeat           # real X posts, costs $0.01/post
+pnpm --filter @hack-fourmeme/server demo:heartbeat           # real X posts; see docs/decisions/2026-04-19-x-posting-agent.md for current pricing (re-verify before demo; avoid URLs in post body)
 ```
 
 ## Quality
