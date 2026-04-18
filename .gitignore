@@ -1,17 +1,12 @@
-# Documentation — most of docs/ ships with the repo (English for reviewers).
-# The paths below stay local:
-#   spec.md       — internal roadmap, not public
-#   product.md    — superseded by README Problem / What we built sections
-#   conventions.md — internal naming + git rules
-#   archive/      — historical drafts, superseded
-#   features/     — placeholder, empty
-# runbooks/ ships with the repo: demo-recording.md referenced by README (AC5).
-docs/spec.md
-docs/product.md
-docs/conventions.md
-docs/archive/
-docs/features/
-docs/decisions/
+# Documentation — docs/ is team-internal by default; only the paths
+# explicitly un-ignored below ship with the repo.
+#   docs/architecture.md             — judge-facing architecture detail
+#   docs/runbooks/demo-recording.md  — AC5 runbook referenced by README
+# Everything else (spec / features / decisions / design / dev-commands /
+# testing / product / conventions / archive) stays local.
+docs/*
+!docs/architecture.md
+!docs/runbooks/
 
 # Node / TypeScript
 node_modules/
