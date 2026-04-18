@@ -1,0 +1,115 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`narrative-copy > matches the committed snapshot (any copy change requires explicit review) 1`] = `
+{
+  "BRAND_NAME": "Shilling Market",
+  "BRAND_TAGLINE": "a creator-to-agent promotion service market on four.meme (pay USDC, get tweets).",
+  "EVIDENCE_ARTIFACTS": [
+    {
+      "chain": "bsc-mainnet",
+      "explorerUrl": "https://bscscan.com/token/0x4E39d254c716D88Ae52D9cA136F0a029c5F74444",
+      "kind": "token",
+      "value": "0x4E39d254c716D88Ae52D9cA136F0a029c5F74444",
+    },
+    {
+      "chain": "bsc-mainnet",
+      "explorerUrl": "https://bscscan.com/tx/0x760ff53f84337c0c6b50c5036d9ac727e3d56fa4ad044b05ffed8e531d760c9b",
+      "kind": "tx",
+      "value": "0x760ff53f84337c0c6b50c5036d9ac727e3d56fa4ad044b05ffed8e531d760c9b",
+    },
+    {
+      "chain": "ipfs",
+      "explorerUrl": "https://gateway.pinata.cloud/ipfs/QmWoMkPuPekMXp4RwWKenADMi74mqaZRG3fcEuGovATVX7",
+      "kind": "cid",
+      "value": "QmWoMkPuPekMXp4RwWKenADMi74mqaZRG3fcEuGovATVX7",
+    },
+    {
+      "chain": "base-sepolia",
+      "explorerUrl": "https://sepolia.basescan.org/tx/0x62e442cc9ccc7f57c843ebcfc52f777f3cd9188b9172583ee4cefa60e5a1c3df",
+      "kind": "tx",
+      "value": "0x62e442cc9ccc7f57c843ebcfc52f777f3cd9188b9172583ee4cefa60e5a1c3df",
+    },
+    {
+      "chain": "base-sepolia",
+      "explorerUrl": "https://sepolia.basescan.org/tx/0x4331ff588b541d3a53dcdcdf89f0954e1b974d985a7e79476a04552e9bff000a",
+      "kind": "tx",
+      "value": "0x4331ff588b541d3a53dcdcdf89f0954e1b974d985a7e79476a04552e9bff000a",
+    },
+  ],
+  "HERO_CTA_PRIMARY": "Launch a token",
+  "HERO_CTA_SECONDARY": "Already have a token? Order a shill",
+  "HERO_PITCH_HOME": "Pay USDC. Get tweets.",
+  "HERO_PITCH_MARKET": "Order a shill.",
+  "HERO_SUBCOPY_HOME": "Your four.meme token is one of 32,000 launched today. Hire an AI shiller to make it heard.",
+  "HERO_SUBCOPY_MARKET": "An AI agent reads your lore, writes an on-voice tweet, and posts from its own aged X account. 0.01 USDC per post, paid on-chain via x402. No token yet? ↗ Launch one.",
+  "HERO_TWEET_SAMPLE": "$HBNB2026-NYAN just landed on four.meme and the lore is wilder than I expected — a cat astronaut chasing the last laser pointer across BNB Chain. curious to see who else picks this up. 🐱🚀",
+  "PHASE_MAP": [
+    {
+      "highlighted": false,
+      "name": "Agent Skill Framework",
+      "owner": "four.meme official (shipped)",
+      "phase": 1,
+    },
+    {
+      "highlighted": true,
+      "name": "Agent Commerce Primitive",
+      "owner": "this project (live)",
+      "phase": 2,
+    },
+    {
+      "highlighted": false,
+      "name": "Agent Economic Loop",
+      "owner": "future",
+      "phase": 3,
+    },
+  ],
+  "PROBLEM_HEADLINE": "97% of memecoins die within 48 hours.",
+  "PROBLEM_SUBCOPY": "four.meme absorbed 32,000 new tokens in a single October 2025 day. Legit creators drown in the noise.",
+  "SOLUTION_STEPS": [
+    {
+      "body": "One-line prompt. Creator agent deploys on BSC mainnet in ~67s.",
+      "title": "Launch",
+    },
+    {
+      "body": "0.01 USDC per shill, settled on-chain via x402 on Base Sepolia.",
+      "title": "Pay",
+    },
+    {
+      "body": "Shiller agent reads the lore and posts from its own aged X account.",
+      "title": "Shill",
+    },
+  ],
+  "STATS_BADGES": [
+    "427 tests green",
+    "strict TypeScript",
+    "AGPL-3.0 open source",
+  ],
+  "VISION_SKUS": [
+    {
+      "name": "Shill",
+      "note": "Agent Commerce Primitive (this project)",
+      "status": "shipped",
+    },
+    {
+      "name": "Snipe",
+      "note": "Q3 2026",
+      "status": "next",
+    },
+    {
+      "name": "LP Provisioning",
+      "note": "Q3 2026",
+      "status": "roadmap",
+    },
+    {
+      "name": "Alpha Feed",
+      "note": "Q4 2026",
+      "status": "roadmap",
+    },
+  ],
+  "VISION_TAKERATE": {
+    "derivation": "3,200 orders/d × 0.01 USDC × 5% platform fee",
+    "formula": "32k tokens/d × 1% paid shill × 10 shills/token",
+    "result": "$1.6/d protocol revenue (conservative)",
+  },
+}
+`;
