@@ -166,4 +166,82 @@ describe('RunStore', () => {
     store.clear();
     expect(store.get(record.runId)).toBeUndefined();
   });
+
+  // ─── tryCreate: per-tokenAddress concurrency mutex (V2-P1 AC-V2-9) ──────────
+  // Two runs against the same tokenAddress would race the LoreStore (both
+  // narrators write `chapter N` for the same key) and corrupt the x402
+  // /lore/:addr response. tryCreate enforces "one active run per tokenAddress"
+  // by returning a 409-shape result when an active run already exists for the
+  // requested address. Runs without a tokenAddress (e.g. the initial Creator
+  // step that hasn't deployed yet) skip the mutex.
+
+  it('tryCreate without tokenAddress always succeeds (no mutex)', () => {
+    const a = store.tryCreate({ kind: 'a2a' });
+    expect(a.ok).toBe(true);
+    const b = store.tryCreate({ kind: 'a2a' });
+    expect(b.ok).toBe(true);
+  });
+
+  it('tryCreate with a fresh tokenAddress succeeds and tags the record', () => {
+    const result = store.tryCreate({ kind: 'a2a', tokenAddress: '0xAAA' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.record.tokenAddress).toBe('0xaaa');
+      expect(result.record.status).toBe('pending');
+    }
+  });
+
+  it('tryCreate returns 409 shape when an active run already holds the same tokenAddress', () => {
+    const first = store.tryCreate({ kind: 'a2a', tokenAddress: '0xBeef' });
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error('first should be ok');
+
+    const second = store.tryCreate({ kind: 'a2a', tokenAddress: '0xbeef' });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.error).toBe('run_in_progress');
+      expect(second.existingRunId).toBe(first.record.runId);
+    }
+  });
+
+  it('tryCreate matches tokenAddress case-insensitively (EIP-55 mixed case)', () => {
+    const first = store.tryCreate({
+      kind: 'a2a',
+      tokenAddress: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+    });
+    expect(first.ok).toBe(true);
+
+    const second = store.tryCreate({
+      kind: 'a2a',
+      tokenAddress: '0x4e39d254c716d88ae52d9ca136f0a029c5f74444',
+    });
+    expect(second.ok).toBe(false);
+  });
+
+  it('tryCreate releases the mutex once the prior run terminates (done)', () => {
+    const first = store.tryCreate({ kind: 'a2a', tokenAddress: '0xCAFE' });
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error('unreachable');
+    store.setStatus(first.record.runId, 'done');
+
+    const second = store.tryCreate({ kind: 'a2a', tokenAddress: '0xCAFE' });
+    expect(second.ok).toBe(true);
+  });
+
+  it('tryCreate releases the mutex once the prior run terminates (error)', () => {
+    const first = store.tryCreate({ kind: 'a2a', tokenAddress: '0xDEAD' });
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error('unreachable');
+    store.setStatus(first.record.runId, 'error', 'boom');
+
+    const second = store.tryCreate({ kind: 'a2a', tokenAddress: '0xDEAD' });
+    expect(second.ok).toBe(true);
+  });
+
+  it('tryCreate allows concurrent runs against different tokenAddresses', () => {
+    const a = store.tryCreate({ kind: 'a2a', tokenAddress: '0xAAA' });
+    const b = store.tryCreate({ kind: 'a2a', tokenAddress: '0xBBB' });
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+  });
 });

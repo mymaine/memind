@@ -162,6 +162,58 @@ describe('registerRunRoutes', () => {
     });
   });
 
+  describe('POST /api/runs concurrency mutex (V2-P1 AC-V2-9)', () => {
+    beforeEach(async () => {
+      // Long-running fake so the first run stays active while the second
+      // POST attempts to start. The harness stays open for the test life.
+      const longRunningFake: RunA2ADemoFn = () => new Promise(() => {});
+      harness = await startHarness(longRunningFake);
+    });
+
+    it('returns 409 when a second a2a run targets the same tokenAddr', async () => {
+      const tokenAddr = '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444';
+      const first = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'a2a', params: { tokenAddr } }),
+      });
+      expect(first.status).toBe(201);
+      const firstBody = (await first.json()) as { runId?: string };
+
+      const second = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'a2a', params: { tokenAddr } }),
+      });
+      expect(second.status).toBe(409);
+      const secondBody = (await second.json()) as { error?: string; existingRunId?: string };
+      expect(secondBody.error).toBe('run_in_progress');
+      expect(secondBody.existingRunId).toBe(firstBody.runId);
+    });
+
+    it('allows concurrent a2a runs when tokenAddr differs', async () => {
+      const first = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'a2a',
+          params: { tokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444' },
+        }),
+      });
+      expect(first.status).toBe(201);
+
+      const second = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'a2a',
+          params: { tokenAddr: '0x1111111111111111111111111111111111111111' },
+        }),
+      });
+      expect(second.status).toBe(201);
+    });
+  });
+
   describe('GET /api/runs/:id', () => {
     beforeEach(async () => {
       const fakeRun: RunA2ADemoFn = async () => {
