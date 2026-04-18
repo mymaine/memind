@@ -39,8 +39,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SolutionScene } from './solution-scene.js';
-import { SOLUTION_STEPS } from '../../lib/narrative-copy.js';
+import { SolutionScene, TX_PILL_LABEL } from './solution-scene.js';
+import { EVIDENCE_ARTIFACTS, SOLUTION_STEPS } from '../../lib/narrative-copy.js';
 
 function render(props: Parameters<typeof SolutionScene>[0] = {}): string {
   return renderToStaticMarkup(<SolutionScene {...props} />);
@@ -124,5 +124,16 @@ describe('<SolutionScene /> structural contract', () => {
     // absent so reduced-motion users see a steady glow rather than a blink.
     expect(out).toMatch(/data-testid="tx-pill"/);
     expect(out).not.toMatch(/data-testid="tx-pill"[^>]+class="[^"]*\btx-pill--flashing\b/);
+  });
+
+  it('TX_PILL_LABEL mirrors the x402 settlement artifact short hash', () => {
+    // Review P2-3: spec comment in solution-scene.tsx promises the pill stays
+    // in sync with EVIDENCE_ARTIFACTS[3]; this test pins that invariant so a
+    // drift on either side breaks the build instead of surviving review.
+    const settlement = EVIDENCE_ARTIFACTS[3];
+    expect(settlement.chain).toBe('base-sepolia');
+    expect(settlement.kind).toBe('tx');
+    const expected = `BASE ${settlement.value.slice(0, 6)}..${settlement.value.slice(-4)}`;
+    expect(TX_PILL_LABEL).toBe(expected);
   });
 });

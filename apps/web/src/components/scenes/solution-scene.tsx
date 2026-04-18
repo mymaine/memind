@@ -47,7 +47,7 @@ import { UsdcParticleFlow } from '@/components/animations/usdc-particle-flow';
  * format `BASE 0x62e4..c3df` stays obvious inline. Any update to
  * EVIDENCE_ARTIFACTS[3] should be mirrored here in the same commit.
  */
-const TX_PILL_LABEL = 'BASE 0x62e4..c3df';
+export const TX_PILL_LABEL = 'BASE 0x62e4..c3df';
 
 /** Relaxed step shape used by the prop; narrative-copy uses a stricter
  *  union title type internally, but callers overriding should be free to
