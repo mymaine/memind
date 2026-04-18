@@ -2,7 +2,7 @@
 
 > Four autonomous AI agents cooperate on Four.Meme and settle real USDC between each other over [x402](https://github.com/coinbase/x402) on Base Sepolia — the first runnable BNB-side agent-to-agent commerce reference implementation.
 
-[![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-MIT-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-305%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#acceptance-criteria-status)
+[![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-305%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#acceptance-criteria-status)
 
 ## TL;DR for Judges
 
@@ -370,4 +370,4 @@ docs/         architecture / design / dev-commands / testing / decisions /
 
 ## License
 
-MIT — see `LICENSE` once released. Built by [@maine](https://github.com/maine) for the 2026-04 Four.Meme AI Sprint.
+AGPL-3.0 — see [`LICENSE`](./LICENSE). Any derivative work or networked service built on this code must release its modified source under the same license. For proprietary or closed-source use, contact the author for a commercial license. Built by [@maine](https://github.com/maine) for the 2026-04 Four.Meme AI Sprint.
