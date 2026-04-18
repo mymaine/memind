@@ -23,7 +23,7 @@ import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
-import { type runShillMarketDemo } from './shill-market.js';
+import { runShillMarketDemo, type RunShillMarketDemoArgs } from './shill-market.js';
 
 /**
  * Default Phase 2 validated BSC mainnet demo token — mirrors the CLI
@@ -98,6 +98,7 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
   const { config, anthropic, runStore, loreStore } = deps;
   const runImpl = deps.runA2ADemoImpl ?? runA2ADemo;
   const heartbeatImpl = deps.runHeartbeatDemoImpl ?? runHeartbeatDemo;
+  const shillMarketImpl = deps.runShillMarketDemoImpl ?? runShillMarketDemo;
 
   // ─── POST /api/runs ──────────────────────────────────────────────────────
   app.post('/api/runs', (req: Request, res: Response) => {
@@ -149,6 +150,77 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
         runId: record.runId,
         tokenAddress: rawTokenAddress,
         config,
+      })
+        .then(() => {
+          runStore.setStatus(record.runId, 'done');
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          runStore.setStatus(record.runId, 'error', message);
+        });
+      return;
+    }
+
+    // ─── P4.6-3: shill-market dispatch ─────────────────────────────────────
+    if (body.kind === 'shill-market') {
+      const paramsRecord = body.params ?? {};
+      const rawTokenAddr =
+        typeof paramsRecord.tokenAddr === 'string' ? paramsRecord.tokenAddr.trim() : '';
+      if (!EVM_ADDRESS_REGEX.test(rawTokenAddr)) {
+        res.status(400).json({
+          error: 'shill-market mode requires params.tokenAddr (EVM address)',
+          tokenAddr: rawTokenAddr,
+        });
+        return;
+      }
+
+      // ShillOrderStore is the queue the orchestrator + x402 handler both
+      // touch. Without it the run cannot produce any useful work, so we
+      // refuse loudly instead of silently creating a broken RunRecord.
+      if (deps.shillOrderStore === undefined) {
+        res.status(500).json({
+          error: 'shill-market mode requires shillOrderStore to be wired into the server',
+        });
+        return;
+      }
+      const shillOrderStore = deps.shillOrderStore;
+
+      const tokenSymbol =
+        typeof paramsRecord.tokenSymbol === 'string' && paramsRecord.tokenSymbol.trim() !== ''
+          ? paramsRecord.tokenSymbol.trim()
+          : undefined;
+      const creatorBrief =
+        typeof paramsRecord.creatorBrief === 'string' && paramsRecord.creatorBrief.trim() !== ''
+          ? paramsRecord.creatorBrief.trim()
+          : undefined;
+
+      const tryResult = runStore.tryCreate({
+        kind: 'shill-market',
+        tokenAddress: rawTokenAddr,
+      });
+      if (!tryResult.ok) {
+        res.status(409).json({
+          error: tryResult.error,
+          existingRunId: tryResult.existingRunId,
+        });
+        return;
+      }
+      const record = tryResult.record;
+      res.status(201).json({ runId: record.runId });
+
+      const args: RunShillMarketDemoArgs = {
+        tokenAddr: rawTokenAddr,
+        ...(tokenSymbol !== undefined ? { tokenSymbol } : {}),
+        ...(creatorBrief !== undefined ? { creatorBrief } : {}),
+      };
+      void shillMarketImpl({
+        config,
+        anthropic,
+        store: runStore,
+        runId: record.runId,
+        args,
+        shillOrderStore,
+        loreStore,
       })
         .then(() => {
           runStore.setStatus(record.runId, 'done');
