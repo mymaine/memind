@@ -15,6 +15,9 @@ export default tseslint.config(
       '**/*.config.js',
       '**/*.config.mjs',
       '**/*.config.ts',
+      // Next auto-generated; triple-slash references are mandated by Next
+      // typedRoutes and the file is documented as "should not be edited".
+      '**/next-env.d.ts',
     ],
   },
   js.configs.recommended,

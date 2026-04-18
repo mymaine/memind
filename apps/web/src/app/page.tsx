@@ -1,9 +1,71 @@
+'use client';
+
+import { useMemo } from 'react';
+import type { AgentId, AgentStatus } from '@hack-fourmeme/shared';
 import { AgentStatusBar } from '@/components/agent-status-bar';
 import { ThemeInput } from '@/components/theme-input';
 import { LogPanel } from '@/components/log-panel';
 import { TxList } from '@/components/tx-list';
+import { useRun, type RunState } from '@/hooks/useRun';
+
+/**
+ * Derive per-agent status from the run state. Rules:
+ *   - idle phase: every agent idle.
+ *   - running phase: agent has ≥1 log entry → running. An error log on an
+ *     agent promotes it to 'error'. Specific completion signals flip an agent
+ *     to 'done' ahead of the terminal status event:
+ *       narrator     → done once a lore-cid artifact from narrator arrives
+ *       market-maker → done once an x402-tx artifact arrives
+ *     Creator stays idle for a2a runs — pre-seed artifacts show up but the
+ *     Creator agent does not actually execute.
+ *   - done phase: anything still running becomes 'done'.
+ *   - error phase: anything still running becomes 'error'.
+ */
+function deriveAgentStatuses(state: RunState): Record<AgentId, AgentStatus> {
+  const next: Record<AgentId, AgentStatus> = {
+    creator: 'idle',
+    narrator: 'idle',
+    'market-maker': 'idle',
+    heartbeat: 'idle',
+  };
+  if (state.phase === 'idle') return next;
+
+  for (const log of state.logs) {
+    // a2a runs do not emit heartbeat logs — treat defensively anyway.
+    if (log.agent === 'heartbeat') continue;
+    if (log.level === 'error') {
+      next[log.agent] = 'error';
+    } else if (next[log.agent] !== 'error') {
+      next[log.agent] = 'running';
+    }
+  }
+
+  for (const artifact of state.artifacts) {
+    if (artifact.kind === 'lore-cid' && artifact.author === 'narrator') {
+      if (next.narrator !== 'error') next.narrator = 'done';
+    }
+    if (artifact.kind === 'x402-tx') {
+      if (next['market-maker'] !== 'error') next['market-maker'] = 'done';
+    }
+  }
+
+  if (state.phase === 'done') {
+    for (const k of Object.keys(next) as AgentId[]) {
+      if (next[k] === 'running') next[k] = 'done';
+    }
+  } else if (state.phase === 'error') {
+    for (const k of Object.keys(next) as AgentId[]) {
+      if (next[k] === 'running') next[k] = 'error';
+    }
+  }
+
+  return next;
+}
 
 export default function HomePage() {
+  const { state, startRun } = useRun();
+  const agentStatuses = useMemo(() => deriveAgentStatuses(state), [state]);
+
   return (
     <main className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-12 px-6 py-10">
       <header className="flex items-center justify-between">
@@ -31,14 +93,23 @@ export default function HomePage() {
           Three agents cooperate: Creator deploys a four.meme token, Narrator writes lore, and
           Market-maker auto-pays USDC via x402 to fetch it. One prompt. Five on-chain artifacts.
         </p>
-        <ThemeInput />
+        <ThemeInput onRun={startRun} disabled={state.phase === 'running'} />
+        {state.phase === 'error' ? (
+          <div
+            role="alert"
+            className="rounded-[var(--radius-card)] border border-[color:var(--color-danger)] p-4 text-[14px] text-fg-primary"
+          >
+            <span className="font-[family-name:var(--font-mono)] text-fg-tertiary">error · </span>
+            {state.error}
+          </div>
+        ) : null}
       </section>
 
-      <AgentStatusBar />
+      <AgentStatusBar statuses={agentStatuses} />
 
-      <LogPanel />
+      <LogPanel logs={state.logs} />
 
-      <TxList />
+      <TxList artifacts={state.artifacts} />
 
       <footer className="border-t border-border-default pt-6 text-[12px] text-fg-tertiary">
         <span className="font-[family-name:var(--font-mono)]">

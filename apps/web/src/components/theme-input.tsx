@@ -1,17 +1,29 @@
 'use client';
 
 import { useState } from 'react';
+import type { CreateRunRequest } from '@hack-fourmeme/shared';
 
-export function ThemeInput() {
+export interface ThemeInputProps {
+  /** Kick off a run. For Step C we only invoke the `a2a` kind. */
+  onRun: (input: CreateRunRequest) => Promise<void>;
+  /** True while a run is live — used to lock the form & relabel the CTA. */
+  disabled: boolean;
+}
+
+export function ThemeInput({ onRun, disabled }: ThemeInputProps) {
   const [theme, setTheme] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    if (!theme.trim() || submitting) return;
-    setSubmitting(true);
-    // TODO(Phase 2): POST /agents/creator/run with SSE subscription. Placeholder only.
-    setTimeout(() => setSubmitting(false), 400);
+    if (disabled) return;
+    const trimmed = theme.trim();
+    // Theme is currently ignored server-side for `a2a` (pre-seeded token), but
+    // we still forward it so switching to the `creator` kind later needs no
+    // UI changes.
+    await onRun({
+      kind: 'a2a',
+      params: trimmed ? { theme: trimmed } : {},
+    });
   }
 
   return (
@@ -25,15 +37,16 @@ export function ThemeInput() {
           type="text"
           value={theme}
           onChange={(e) => setTheme(e.target.value)}
+          disabled={disabled}
           placeholder="e.g. a meme for BNB Chain 2026 growth"
-          className="flex-1 rounded-[var(--radius-default)] border border-border-default bg-bg-surface px-4 py-3 font-[family-name:var(--font-sans-body)] text-[16px] text-fg-primary placeholder:text-fg-tertiary focus:border-2 focus:border-accent focus:outline-none"
+          className="flex-1 rounded-[var(--radius-default)] border border-border-default bg-bg-surface px-4 py-3 font-[family-name:var(--font-sans-body)] text-[16px] text-fg-primary placeholder:text-fg-tertiary focus:border-2 focus:border-accent focus:outline-none disabled:opacity-60"
         />
         <button
           type="submit"
-          disabled={submitting || !theme.trim()}
-          className="rounded-[var(--radius-default)] border-2 border-accent bg-bg-surface px-5 py-3 font-[family-name:var(--font-sans-body)] text-[16px] font-semibold text-accent-text transition-opacity duration-150 hover:opacity-80 disabled:opacity-40"
+          disabled={disabled}
+          className="rounded-[var(--radius-default)] border-2 border-accent bg-bg-surface px-5 py-3 font-[family-name:var(--font-sans-body)] text-[16px] font-semibold text-accent-text transition-opacity duration-150 hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {submitting ? 'Spawning…' : 'Run swarm'}
+          {disabled ? 'Running…' : 'Run swarm'}
         </button>
       </div>
     </form>
