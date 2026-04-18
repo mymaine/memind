@@ -1,15 +1,19 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { AgentId, AgentStatus, Artifact } from '@hack-fourmeme/shared';
 import { AgentStatusBar } from '@/components/agent-status-bar';
 import { ArchitectureDiagram } from '@/components/architecture-diagram';
 import { ThemeInput } from '@/components/theme-input';
 import { LogPanel } from '@/components/log-panel';
+import { TimelineView } from '@/components/timeline-view';
 import { TxList } from '@/components/tx-list';
 import { MemeImageCard } from '@/components/meme-image-card';
 import { HeartbeatSection } from '@/components/heartbeat-section';
+import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS } from '@/hooks/useRun-state';
 import { useRun, type RunState } from '@/hooks/useRun';
+
+type ViewMode = 'columns' | 'timeline';
 
 /**
  * Pull the latest meme-image artifact from the run, if any. We pick the most
@@ -89,6 +93,14 @@ export default function HomePage() {
   const { state, startRun } = useRun();
   const agentStatuses = useMemo(() => deriveAgentStatuses(state), [state]);
   const memeImage = useMemo(() => latestMemeImage(state), [state]);
+  // V2-P4: 3-column vs Timeline view toggle. State lives here so switching
+  // does not unsubscribe SSE; the underlying run state stays in `useRun`.
+  const [viewMode, setViewMode] = useState<ViewMode>('columns');
+
+  // Both renderers want toolCalls / assistantText in the post-idle state; we
+  // pre-compute once so the JSX below stays slim.
+  const toolCalls = state.phase === 'idle' ? EMPTY_TOOL_CALLS : state.toolCalls;
+  const assistantText = state.phase === 'idle' ? EMPTY_ASSISTANT_TEXT : state.assistantText;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-12 px-6 py-10">
@@ -149,11 +161,50 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      <LogPanel
-        logs={state.logs}
-        toolCalls={state.phase === 'idle' ? undefined : state.toolCalls}
-        assistantText={state.phase === 'idle' ? undefined : state.assistantText}
-      />
+      <section aria-label="Run view" className="flex flex-col gap-3">
+        <div
+          role="tablist"
+          aria-label="Run view mode"
+          className="flex w-fit items-center gap-1 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'columns'}
+            onClick={() => setViewMode('columns')}
+            className={`rounded-[var(--radius-card)] px-3 py-1 font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] transition-colors ${
+              viewMode === 'columns'
+                ? 'bg-accent/15 text-accent'
+                : 'text-fg-tertiary hover:text-fg-primary'
+            }`}
+          >
+            3 columns
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'timeline'}
+            onClick={() => setViewMode('timeline')}
+            className={`rounded-[var(--radius-card)] px-3 py-1 font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] transition-colors ${
+              viewMode === 'timeline'
+                ? 'bg-accent/15 text-accent'
+                : 'text-fg-tertiary hover:text-fg-primary'
+            }`}
+          >
+            timeline
+          </button>
+        </div>
+
+        {viewMode === 'columns' ? (
+          <LogPanel
+            logs={state.logs}
+            toolCalls={state.phase === 'idle' ? undefined : toolCalls}
+            assistantText={state.phase === 'idle' ? undefined : assistantText}
+          />
+        ) : (
+          <TimelineView logs={state.logs} artifacts={state.artifacts} toolCalls={toolCalls} />
+        )}
+      </section>
 
       <TxList artifacts={state.artifacts} />
 
