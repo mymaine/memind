@@ -250,6 +250,39 @@ export const loreAnchorArtifactSchema = z
     }
   });
 
+// `shill-order` artifact (Phase 4.6) — queue entry emitted when a creator
+// pays 0.01 USDC via x402 to the `/shill/:tokenAddr` route. Status advances
+// queued → processing → done / failed as the Shiller agent picks it up.
+// `paidAmountUsdc` is a decimal-encoded string (matches `x402TxArtifactSchema`)
+// to avoid float drift when the dashboard reads it back.
+export const shillOrderArtifactSchema = z.object({
+  kind: z.literal('shill-order'),
+  orderId: z.string().min(1),
+  targetTokenAddr: z.string().regex(evmAddressRegex),
+  creatorBrief: z.string().optional(),
+  paidTxHash: z.string().regex(evmTxHashRegex),
+  paidAmountUsdc: z.string().min(1),
+  status: z.enum(['queued', 'processing', 'done', 'failed']),
+  ts: z.string().datetime(),
+  label: z.string().optional(),
+});
+
+// `shill-tweet` artifact (Phase 4.6) — emitted once the Shiller agent posts
+// the promotional tweet from its own X account. `tweetText` is capped at the
+// 280-char X hard limit (internal target is ≤ 250 but the schema leaves
+// headroom for edge cases). `orderId` correlates back to the source
+// `shill-order` for the dashboard's order panel.
+export const shillTweetArtifactSchema = z.object({
+  kind: z.literal('shill-tweet'),
+  orderId: z.string().min(1),
+  targetTokenAddr: z.string().regex(evmAddressRegex),
+  tweetId: z.string().min(1),
+  tweetUrl: z.string().url(),
+  tweetText: z.string().min(1).max(280),
+  ts: z.string().datetime(),
+  label: z.string().optional(),
+});
+
 // Note on `discriminatedUnion` vs `union`:
 //   `memeImageArtifactSchema` + `heartbeatTickArtifactSchema` +
 //   `loreAnchorArtifactSchema` are ZodEffects (they use `.superRefine`), which
@@ -265,6 +298,8 @@ const baseArtifactSchema = z.discriminatedUnion('kind', [
   x402TxArtifactSchema,
   tweetUrlArtifactSchema,
   heartbeatDecisionArtifactSchema,
+  shillOrderArtifactSchema,
+  shillTweetArtifactSchema,
 ]);
 
 export const artifactSchema = z.union([
@@ -282,7 +317,7 @@ export type ArtifactKind = Artifact['kind'];
 // are reserved for a follow-up without breaking the wire format.
 // ---------------------------------------------------------------------------
 
-export const runKindSchema = z.enum(['creator', 'a2a', 'heartbeat']);
+export const runKindSchema = z.enum(['creator', 'a2a', 'heartbeat', 'shill-market']);
 export type RunKind = z.infer<typeof runKindSchema>;
 
 export const runStatusSchema = z.enum(['pending', 'running', 'done', 'error']);
