@@ -123,7 +123,7 @@ export default function HomePage() {
     // Budget breakdown (approx): header 36 + title+input 96 + architecture
     // 170 + meme+view 380 + pills 80 + heartbeat (collapsed) 56 + footer 40
     // + gaps 60 ≈ 918px. Heartbeat expands in place and scrolls internally.
-    <main className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 px-6 py-4">
+    <main className="mx-auto flex min-h-[calc(100vh-56px)] max-w-[1400px] flex-col gap-4 px-6 py-4">
       {/* Shared <Header /> is mounted at the layout level (V4.7-P1 Task 4);
           the page-level "Agent Swarm" header block lived here before and
           has been removed. The min-h/padding tuning for the now-shorter

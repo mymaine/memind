@@ -91,7 +91,7 @@ export default function MarketPage(): React.ReactElement {
   const assistantText = state.phase === 'idle' ? EMPTY_ASSISTANT_TEXT : state.assistantText;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-5 px-6 py-4">
+    <main className="mx-auto flex min-h-[calc(100vh-56px)] max-w-[1400px] flex-col gap-5 px-6 py-4">
       {/* Shared <Header /> is mounted at the layout level (V4.7-P1 Task 4);
           the page-level "Shilling Market" header block lived here before
           and has been removed. Market-hero narrative lands in V4.7-P4. */}
