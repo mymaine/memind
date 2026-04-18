@@ -8,6 +8,8 @@ import type { AppConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
 import { RunStore } from './store.js';
 import { registerRunRoutes, type RunA2ADemoFn, type RunHeartbeatDemoFn } from './routes.js';
+import { runHeartbeatDemo } from './heartbeat-runner.js';
+import type { AgentLoopResult, runAgentLoop } from '../agents/runtime.js';
 
 /**
  * Route-level coverage for POST /api/runs + GET /api/runs/:id + GET
@@ -244,6 +246,95 @@ describe('registerRunRoutes', () => {
       });
       expect(second.status).toBe(409);
     });
+  });
+
+  // ─── V2-P3 Task 6: heartbeat SSE round-trip end-to-end ────────────────────
+  // Drive the REAL runHeartbeatDemo through POST /api/runs + GET /events and
+  // assert the wire carries exactly 3 heartbeat-tick artifacts + at least 1
+  // heartbeat-decision + 1 tweet-url. We inject a fake runAgentLoop so the
+  // test never talks to Anthropic / X / viem.
+  describe('heartbeat SSE round-trip (V2-P3 Task 6 · AC-V2-4)', () => {
+    it('streams 3 heartbeat-tick + heartbeat-decision + tweet-url over SSE', async () => {
+      const tokenAddress = '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444';
+
+      const fakeLoop = (async (): Promise<AgentLoopResult> => ({
+        finalText: '{"action":"post","reason":"demo tick"}',
+        toolCalls: [
+          {
+            name: 'post_to_x',
+            input: { text: 'hello $HBNB' },
+            output: {
+              tweetId: '1830000000000000777',
+              text: 'hello $HBNB',
+              postedAt: '2026-04-20T10:00:00.000Z',
+              url: 'https://x.com/agent/status/1830000000000000777',
+            },
+            isError: false,
+          },
+        ],
+        trace: [],
+        stopReason: 'end_turn',
+      })) as unknown as typeof runAgentLoop;
+
+      const heartbeatBridge: RunHeartbeatDemoFn = (deps) =>
+        runHeartbeatDemo({
+          ...deps,
+          tickCount: 3,
+          intervalMs: 10,
+          sleepImpl: async () => {},
+          runAgentLoopImpl: fakeLoop,
+        });
+
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, heartbeatBridge);
+
+      const create = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'heartbeat', params: { tokenAddress } }),
+      });
+      expect(create.status).toBe(201);
+      const { runId } = (await create.json()) as { runId: string };
+
+      const received = await new Promise<string>((resolveFn, rejectFn) => {
+        const url = new URL(`${harness.baseUrl}/api/runs/${runId}/events`);
+        const req = http.request(
+          {
+            hostname: url.hostname,
+            port: Number(url.port),
+            path: url.pathname,
+            method: 'GET',
+            headers: { accept: 'text/event-stream' },
+          },
+          (res) => {
+            expect(res.statusCode).toBe(200);
+            let buf = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => {
+              buf += chunk;
+            });
+            res.on('end', () => resolveFn(buf));
+            res.on('error', rejectFn);
+          },
+        );
+        req.on('error', rejectFn);
+        req.end();
+      });
+
+      // Exactly 3 heartbeat-tick events.
+      const tickMatches = received.match(/"kind":"heartbeat-tick"/g) ?? [];
+      expect(tickMatches).toHaveLength(3);
+
+      // At least 1 heartbeat-decision + 1 tweet-url.
+      expect(received).toMatch(/"kind":"heartbeat-decision"/);
+      expect(received).toMatch(/"action":"post"/);
+      expect(received).toMatch(/"kind":"tweet-url"/);
+      expect(received).toMatch(/"tweetId":"1830000000000000777"/);
+
+      // Stream must close with a `done` status so the client EventSource
+      // does not keep the connection open.
+      expect(received).toMatch(/"status":"done"/);
+    }, 10_000);
   });
 
   // Restore these `POST /api/runs` error cases that got pulled into the
