@@ -250,6 +250,49 @@ body {
   animation: tw-caret-blink 800ms steps(2, end) infinite;
 }
 
+/*
+ * Problem scene · 32k fake-token ticker marquee (AC-P4.7-3).
+ *
+ * Each `.ticker-row` repeats its token list twice inline; the -50% translate
+ * endpoint lines the second copy up exactly where the first began, so the
+ * loop is seamless. `animation-play-state: paused` is the default — the
+ * React component flips it to `running` via the `.ticker--running` gate
+ * when its IntersectionObserver reports the section in view. Leaving the
+ * viewport freezes the frame rather than unmounting, so re-entry continues
+ * from where it left off.
+ *
+ * Rows alternate direction via `.ticker-row--reverse` (animation-direction:
+ * reverse) to produce a "noisy" rather than "orderly" feel. Speed is locked
+ * to 40s (design.md §7 duration-marquee 40-80s, floored so the motion
+ * registers without stealing attention from the foreground callout).
+ */
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-row {
+  animation: ticker-scroll 40s linear infinite;
+  animation-play-state: paused;
+  will-change: transform;
+}
+
+.ticker-row--reverse {
+  animation-direction: reverse;
+}
+
+.ticker--running .ticker-row {
+  animation-play-state: running;
+}
+
+.ticker--paused .ticker-row {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0ms !important;
