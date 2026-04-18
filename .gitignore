@@ -11,6 +11,7 @@ docs/product.md
 docs/conventions.md
 docs/archive/
 docs/features/
+docs/decisions/
 
 # Node / TypeScript
 node_modules/
