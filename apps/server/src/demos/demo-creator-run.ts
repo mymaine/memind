@@ -86,7 +86,7 @@ async function main(): Promise<void> {
 
   const registry = new ToolRegistry();
   registry.register(createNarrativeTool({ client: anthropic, model: MODEL }));
-  registry.register(createImageTool({ client: gemini }));
+  registry.register(createImageTool({ client: gemini, pinata }));
   registry.register(createLoreTool({ anthropic, pinata, model: MODEL }));
   registry.register(createOnchainDeployerTool({ privateKey: env.BSC_DEPLOYER_PRIVATE_KEY }));
 

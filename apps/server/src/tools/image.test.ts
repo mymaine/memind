@@ -210,28 +210,25 @@ describe('createImageTool.execute', () => {
     expect(out.localPath).toContain(scratchDir);
   });
 
-  it('returns status=upload-failed when Pinata exceeds the 10s timeout budget', async () => {
-    vi.useFakeTimers();
-    try {
-      const fakeBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-      const { client } = mockGemini(imageResponse(fakeBytes.toString('base64')));
-      const pinata = mockPinata({ behaviour: 'hang' });
+  it('returns status=upload-failed when Pinata exceeds the configured timeout budget', async () => {
+    // Real timers + a 50ms budget keep the test under ~80ms wall time without
+    // wedging the fake-timer / fs-IO microtask interleaving that fake timers
+    // would introduce. The production default is 10s; we exercise the timeout
+    // path with an aggressive ceiling so the hung promise must lose the race.
+    const fakeBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const { client } = mockGemini(imageResponse(fakeBytes.toString('base64')));
+    const pinata = mockPinata({ behaviour: 'hang' });
 
-      const tool = createImageTool({
-        client,
-        pinata,
-        outputDir: scratchDir,
-        pinataTimeoutMs: 50,
-      });
-      const promise = tool.execute({ prompt: 'a cool meme', name: 'HBNB2026-Test' });
-      await vi.advanceTimersByTimeAsync(60);
-      const out = await promise;
+    const tool = createImageTool({
+      client,
+      pinata,
+      outputDir: scratchDir,
+      pinataTimeoutMs: 50,
+    });
+    const out = await tool.execute({ prompt: 'a cool meme', name: 'HBNB2026-Test' });
 
-      expect(out.status).toBe('upload-failed');
-      expect(out.errorMessage).toMatch(/timed out/i);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(out.status).toBe('upload-failed');
+    expect(out.errorMessage).toMatch(/timed out/i);
   });
 
   it('skips leading text parts and picks the first inlineData part', async () => {
