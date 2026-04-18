@@ -2,14 +2,21 @@
 
 import { useEffect, useRef } from 'react';
 import type { AgentId, LogEvent } from '@hack-fourmeme/shared';
+import { ToolCallBubble } from './tool-call-bubble';
+import type { AssistantTextByAgent, ToolCallsByAgent, ToolCallState } from '@/hooks/useRun-state';
 
 /**
  * Three-column log stream: one column per agent (creator / narrator /
  * market-maker). Heartbeat logs are filtered out — a2a runs never emit them.
  *
+ * V2-P2: each column now also renders, above the coarse log lines:
+ *   - live assistant text (token-by-token) from `assistant:delta` events
+ *   - ToolCallBubble entries for every `tool_use:start/end` pair
+ *
+ * The log lines stay as the post-run readable summary; the new visuals are
+ * the live "what is the agent doing RIGHT NOW" layer.
+ *
  * Visual spec: docs/design.md §4 "Log Panel" + §7 "log-line-in" animation.
- * New entries animate in with the existing keyframe declared in globals.css,
- * which is already guarded against `prefers-reduced-motion`.
  */
 
 const COLUMNS: { id: Exclude<AgentId, 'heartbeat'>; label: string }[] = [
@@ -28,10 +35,14 @@ function AgentColumn({
   agent,
   label,
   logs,
+  toolCalls,
+  assistantText,
 }: {
   agent: Exclude<AgentId, 'heartbeat'>;
   label: string;
   logs: LogEvent[];
+  toolCalls: ToolCallState[];
+  assistantText: string;
 }): React.ReactElement {
   const scrollRef = useRef<HTMLOListElement | null>(null);
 
@@ -53,6 +64,23 @@ function AgentColumn({
           {logs.length}
         </span>
       </header>
+      {/* V2-P2: live tool-use bubbles + assistant delta text. Rendered above
+          the coarse log so the demo viewer sees the live affordances first. */}
+      {toolCalls.length > 0 || assistantText.length > 0 ? (
+        <div className="flex flex-col gap-2 border-b border-border-default pb-2">
+          {toolCalls.map((call) => (
+            <ToolCallBubble key={call.id} call={call} />
+          ))}
+          {assistantText.length > 0 ? (
+            <div
+              aria-label={`${agent} assistant text`}
+              className="max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-card)] bg-bg-surface p-2 font-[family-name:var(--font-mono)] text-[12px] text-fg-secondary"
+            >
+              {assistantText}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <ol
         ref={scrollRef}
         aria-label={`${agent} log column`}
@@ -64,7 +92,7 @@ function AgentColumn({
           logs.map((e, i) => (
             <li
               // Per-agent list so ts+idx is sufficient for a stable key.
-              key={`${e.ts}-${i}`}
+              key={`${e.ts}-${i.toString()}`}
               className="flex flex-wrap items-baseline gap-x-2"
               style={{ animation: 'log-line-in 150ms ease-out both' }}
             >
@@ -79,7 +107,15 @@ function AgentColumn({
   );
 }
 
-export function LogPanel({ logs = [] }: { logs?: LogEvent[] }) {
+export function LogPanel({
+  logs = [],
+  toolCalls,
+  assistantText,
+}: {
+  logs?: LogEvent[];
+  toolCalls?: ToolCallsByAgent;
+  assistantText?: AssistantTextByAgent;
+}) {
   // a2a runs emit no heartbeat entries, but filter defensively so adding the
   // heartbeat kind later does not regress the 3-column layout.
   const byAgent: Record<Exclude<AgentId, 'heartbeat'>, LogEvent[]> = {
@@ -102,7 +138,14 @@ export function LogPanel({ logs = [] }: { logs?: LogEvent[] }) {
       </header>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {COLUMNS.map((c) => (
-          <AgentColumn key={c.id} agent={c.id} label={c.label} logs={byAgent[c.id]} />
+          <AgentColumn
+            key={c.id}
+            agent={c.id}
+            label={c.label}
+            logs={byAgent[c.id]}
+            toolCalls={toolCalls?.[c.id] ?? []}
+            assistantText={assistantText?.[c.id] ?? ''}
+          />
         ))}
       </div>
     </section>

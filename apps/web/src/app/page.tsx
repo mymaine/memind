@@ -145,7 +145,11 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      <LogPanel logs={state.logs} />
+      <LogPanel
+        logs={state.logs}
+        toolCalls={state.phase === 'idle' ? undefined : state.toolCalls}
+        assistantText={state.phase === 'idle' ? undefined : state.assistantText}
+      />
 
       <TxList artifacts={state.artifacts} />
 
