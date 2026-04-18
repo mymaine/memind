@@ -176,6 +176,12 @@ export const EVIDENCE_ARTIFACTS = [
   },
 ] as const satisfies readonly EvidenceArtifact[];
 
+// ─── Footer ─────────────────────────────────────────────────────────────────
+
+// Shared site-wide footer tagline — surfaces the submission deadline so the
+// footer reads the same on Home and Market instead of drifting per-route.
+export const FOOTER_TAGLINE = 'Four.Meme AI Sprint · submission 2026-04-22 UTC 15:59';
+
 // ─── Stats badges ───────────────────────────────────────────────────────────
 
 export const STATS_BADGES = [

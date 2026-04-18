@@ -30,6 +30,7 @@ import { EvidenceScene } from '@/components/scenes/evidence-scene';
 import { DevLogsDrawer } from '@/components/dev-logs-drawer';
 import { Toast } from '@/components/toast';
 import { useRun } from '@/hooks/useRun';
+import { FOOTER_TAGLINE } from '@/lib/narrative-copy';
 
 export default function HomePage(): React.ReactElement {
   const hookResult = useRun();
@@ -61,9 +62,7 @@ export default function HomePage(): React.ReactElement {
         <VisionScene />
         <EvidenceScene />
         <footer className="border-t border-border-default pt-2 text-[11px] text-fg-tertiary">
-          <span className="font-[family-name:var(--font-mono)]">
-            Four.Meme AI Sprint · submission 2026-04-22 UTC 15:59
-          </span>
+          <span className="font-[family-name:var(--font-mono)]">{FOOTER_TAGLINE}</span>
         </footer>
       </main>
       {/* Drawer is fixed bottom (position:fixed in its own styles), so it

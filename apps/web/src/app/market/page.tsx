@@ -41,7 +41,7 @@ import { EvidenceScene } from '@/components/scenes/evidence-scene';
 import { DevLogsDrawer } from '@/components/dev-logs-drawer';
 import { Toast } from '@/components/toast';
 import { useRun } from '@/hooks/useRun';
-import { HERO_PITCH_MARKET, HERO_SUBCOPY_MARKET } from '@/lib/narrative-copy';
+import { FOOTER_TAGLINE, HERO_PITCH_MARKET, HERO_SUBCOPY_MARKET } from '@/lib/narrative-copy';
 
 export default function MarketPage(): React.ReactElement {
   const hookResult = useRun();
@@ -76,9 +76,7 @@ export default function MarketPage(): React.ReactElement {
         <VisionScene />
         <EvidenceScene />
         <footer className="border-t border-border-default pt-2 text-[11px] text-fg-tertiary">
-          <span className="font-[family-name:var(--font-mono)]">
-            Four.Meme AI Sprint · Phase 4.6 Shilling Market · base-sepolia
-          </span>
+          <span className="font-[family-name:var(--font-mono)]">{FOOTER_TAGLINE}</span>
         </footer>
       </main>
       <DevLogsDrawer runState={state} host="market" />
