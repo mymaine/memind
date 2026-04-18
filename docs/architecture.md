@@ -27,8 +27,9 @@ hack-bnb-fourmeme-agent-creator/
 │           ├── agents/   # Creator / Narrator / Market-maker / Heartbeat
 │           ├── tools/    # narrative / image / deployer / lore / lore-extend /
 │           │             # token-status / x-post / x-fetch-lore
-│           ├── state/    # in-memory LoreStore (latest chapter per token)
+│           ├── state/    # in-memory LoreStore + AnchorLedger (AC3 layer 1)
 │           ├── chain/    # viem client + TokenManager2 partial ABI
+│           │             # + anchor-tx (AC3 layer 2, env-gated BSC memo tx)
 │           ├── x402/     # payment middleware + paid route handlers
 │           ├── runs/     # RunStore + runA2ADemo + REST/SSE route handlers
 │           └── demos/    # demo:creator / demo:a2a / demo:heartbeat
@@ -186,7 +187,7 @@ HeartbeatAgent (triggered by pnpm demo:heartbeat)
 | `apps/web`            | ThemeInput, SSE subscription via EventSource, three live log columns, five-pill TxList; `useRun` hook owns the run lifecycle; `artifact-view` maps the Artifact union to pill renderings | Agent logic, on-chain calls, server state |
 | `apps/server/agents/` | Creator / Narrator / Market-maker / Heartbeat plan/execute logic plus the shared `_json.ts` JSON parser                                                                                  | HTTP routing, direct shell calls          |
 | `apps/server/tools/`  | Eight tools: narrative / image / deployer / lore / lore-extend / token-status / x-post / x-fetch-lore                                                                                    | Agent decision logic                      |
-| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key)                                                                                                                 | Persistence, multi-instance sync          |
+| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key) + AnchorLedger (AC3 keccak256 commitment log, upsert by anchorId)                                               | Persistence, multi-instance sync          |
 | `apps/server/x402/`   | paymentMiddleware plus three paid-endpoint handlers; `handleLore` is store-backed                                                                                                        | Agent runtime, wallet signing             |
 | `apps/server/chain/`  | viem client and the TokenManager2 partial ABI (both proxy and implementation are unverified on-chain, so the subset is hand-authored)                                                    | Agent business logic                      |
 | `apps/server/runs/`   | `RunStore` (Map + per-run EventEmitter); `runA2ADemo` as a pure function; POST/GET/SSE route handlers; CLI and HTTP share the same orchestration code path                               | Agent business logic, persistence         |
