@@ -424,9 +424,10 @@ describe('runShillerAgent', () => {
     expect(out.errorMessage).toBeUndefined();
 
     expect(out.toolCalls).toHaveLength(1);
-    expect(out.toolCalls[0].name).toBe('post_shill_for');
-    expect(out.toolCalls[0].isError).toBe(false);
-    expect(out.toolCalls[0].output).toMatchObject({ tweetId: 'tid-1' });
+    const [firstCall] = out.toolCalls;
+    expect(firstCall?.name).toBe('post_shill_for');
+    expect(firstCall?.isError).toBe(false);
+    expect(firstCall?.output).toMatchObject({ tweetId: 'tid-1' });
 
     expect(executeSpy).toHaveBeenCalledTimes(1);
   });
@@ -448,9 +449,10 @@ describe('runShillerAgent', () => {
     expect(out.tweetUrl).toBeUndefined();
 
     expect(out.toolCalls).toHaveLength(1);
-    expect(out.toolCalls[0].name).toBe('post_shill_for');
-    expect(out.toolCalls[0].isError).toBe(true);
-    expect(out.toolCalls[0].output).toMatchObject({ error: 'guard exhausted' });
+    const [firstCall] = out.toolCalls;
+    expect(firstCall?.name).toBe('post_shill_for');
+    expect(firstCall?.isError).toBe(true);
+    expect(firstCall?.output).toMatchObject({ error: 'guard exhausted' });
   });
 
   it('omits tokenSymbol from the tool input when the caller does not pass it', async () => {
@@ -465,7 +467,8 @@ describe('runShillerAgent', () => {
     });
 
     expect(executeSpy).toHaveBeenCalledTimes(1);
-    const calledWith = executeSpy.mock.calls[0][0] as PostShillForInput;
+    const [firstCallArgs] = executeSpy.mock.calls;
+    const calledWith = firstCallArgs?.[0] as PostShillForInput;
     expect(calledWith.orderId).toBe('order-3');
     expect(calledWith.tokenAddr).toBe(SHILL_TOKEN_ADDR);
     expect(calledWith.loreSnippet).toBe('lore text with a symbol inline');
@@ -494,13 +497,13 @@ describe('runShillerAgent', () => {
 
     // First log covers the start path and carries the creatorBrief in meta.
     const start = logs[0];
-    expect(start.level).toBe('info');
-    expect(start.message).toMatch(/shill mode/);
-    expect(start.meta).toMatchObject({ creatorBrief: 'please make it curious' });
+    expect(start?.level).toBe('info');
+    expect(start?.message).toMatch(/shill mode/);
+    expect(start?.meta).toMatchObject({ creatorBrief: 'please make it curious' });
 
     // Last log is the success completion.
     const end = logs[logs.length - 1];
-    expect(end.level).toBe('info');
-    expect(end.message).toMatch(/tweet posted/);
+    expect(end?.level).toBe('info');
+    expect(end?.message).toMatch(/tweet posted/);
   });
 });

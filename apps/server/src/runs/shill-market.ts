@@ -222,6 +222,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     kind: 'x402-tx',
     chain: 'base-sepolia',
     txHash: payment.paidTxHash,
+    explorerUrl: `https://sepolia.basescan.org/tx/${payment.paidTxHash}`,
     amountUsdc: payment.paidAmountUsdc,
     label: 'creator shill payment',
   };
