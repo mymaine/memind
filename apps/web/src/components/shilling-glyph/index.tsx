@@ -57,7 +57,11 @@ export interface ShillingGlyphProps {
 }
 
 const DEFAULT_IDLE_RANGE: readonly [number, number] = [8000, 15000];
-const DEFAULT_PRIMARY = '#00e5b4';
+// Matches `--color-accent` from apps/web/src/app/globals.css (design.md
+// Emerald Signal Green). Keeping the literal here instead of `var(...)` so
+// consumers that render the glyph outside the app shell still get the brand
+// color without needing the CSS custom property in scope.
+const DEFAULT_PRIMARY = '#00d992';
 const DEFAULT_ACCENT = '#f0b000';
 const VIEWBOX_WIDTH = 160;
 const VIEWBOX_HEIGHT = 80;

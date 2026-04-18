@@ -18,12 +18,6 @@
  * (Home / Market / Evidence) and a GitHub icon link. Nothing here touches
  * CSS — all styling is Tailwind v4 tokens already registered in
  * globals.css.
- *
- * TODO(lead): ShillingGlyph defaults to `#00e5b4` primary; design.md
- * specifies `--color-accent` (#00d992) for Shilling Market. Intentionally
- * left as default here so the canonical color pass can land as a single
- * theme-wide sweep (likely via CSS var override on `.glyph-root`) rather
- * than a one-off `primaryColor` prop at every call site.
  */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
