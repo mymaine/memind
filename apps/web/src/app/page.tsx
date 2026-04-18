@@ -1,12 +1,26 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { AgentId, AgentStatus } from '@hack-fourmeme/shared';
+import type { AgentId, AgentStatus, Artifact } from '@hack-fourmeme/shared';
 import { AgentStatusBar } from '@/components/agent-status-bar';
 import { ThemeInput } from '@/components/theme-input';
 import { LogPanel } from '@/components/log-panel';
 import { TxList } from '@/components/tx-list';
+import { MemeImageCard } from '@/components/meme-image-card';
 import { useRun, type RunState } from '@/hooks/useRun';
+
+/**
+ * Pull the latest meme-image artifact from the run, if any. We pick the most
+ * recent one because the Creator agent only emits a single image per run, but
+ * artifact lists are append-only so taking the tail is the safe default.
+ */
+function latestMemeImage(state: RunState): Extract<Artifact, { kind: 'meme-image' }> | null {
+  for (let i = state.artifacts.length - 1; i >= 0; i -= 1) {
+    const a = state.artifacts[i];
+    if (a && a.kind === 'meme-image') return a;
+  }
+  return null;
+}
 
 /**
  * Derive per-agent status from the run state. Rules:
@@ -44,6 +58,13 @@ function deriveAgentStatuses(state: RunState): Record<AgentId, AgentStatus> {
     if (artifact.kind === 'lore-cid' && artifact.author === 'narrator') {
       if (next.narrator !== 'error') next.narrator = 'done';
     }
+    if (artifact.kind === 'lore-cid' && artifact.author === 'creator') {
+      // Creator finishes once it has pinned its own lore chapter — that
+      // happens after the four-tool sequence completes successfully. The
+      // dry-run fallback also emits a creator lore-cid, so this single
+      // signal covers both paths.
+      if (next.creator !== 'error') next.creator = 'done';
+    }
     if (artifact.kind === 'x402-tx') {
       if (next['market-maker'] !== 'error') next['market-maker'] = 'done';
     }
@@ -65,6 +86,7 @@ function deriveAgentStatuses(state: RunState): Record<AgentId, AgentStatus> {
 export default function HomePage() {
   const { state, startRun } = useRun();
   const agentStatuses = useMemo(() => deriveAgentStatuses(state), [state]);
+  const memeImage = useMemo(() => latestMemeImage(state), [state]);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-12 px-6 py-10">
@@ -106,6 +128,22 @@ export default function HomePage() {
       </section>
 
       <AgentStatusBar statuses={agentStatuses} />
+
+      {memeImage ? (
+        <section
+          aria-label="creator output"
+          className="grid grid-cols-1 gap-4 md:grid-cols-[256px_1fr]"
+        >
+          <MemeImageCard artifact={memeImage} />
+          <div className="rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-4 text-[12px] text-fg-secondary">
+            <span className="font-[family-name:var(--font-mono)] text-fg-tertiary">
+              creator output ·{' '}
+            </span>
+            The Creator agent generated this meme image, pinned it to IPFS via Pinata, and is now
+            handing the freshly-minted token to the Narrator.
+          </div>
+        </section>
+      ) : null}
 
       <LogPanel logs={state.logs} />
 
