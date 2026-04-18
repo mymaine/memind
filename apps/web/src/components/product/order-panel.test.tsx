@@ -196,8 +196,12 @@ describe('<OrderPanel /> static markup', () => {
     expect(out).toContain('Order another');
     // x402 pill: at least one <a> tag pointing at basescan.
     expect(out).toMatch(/sepolia\.basescan\.org\/tx\/0x[c]+/);
-    // shill-tweet is surfaced via TweetPreviewCard only — not as a pill.
-    expect(out).not.toMatch(/<a[^>]*href="https:\/\/x\.com\/shiller_x/);
+    // shill-tweet is surfaced via TweetPreviewCard only — it must not
+    // appear inside the <ul data-testid="result-pills"> list. The tweet's
+    // own "View on X ↗" anchor (in TweetPreviewCard's footer) is allowed.
+    const pillsMatch = out.match(/data-testid="result-pills"[^>]*>([\s\S]*?)<\/ul>/);
+    expect(pillsMatch).not.toBeNull();
+    expect(pillsMatch?.[1] ?? '').not.toContain('x.com');
   });
 
   it('failed controller → "Shiller skipped" message + warning accent + `Order another`', () => {
