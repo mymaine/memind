@@ -51,6 +51,12 @@
 /* ---------- Base layer ---------- */
 :root {
   color-scheme: dark;
+
+  /* Easing tokens (design.md §7). Declared on :root so .scene and future
+     scene animations can reference them without per-component literals. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html,
@@ -133,10 +139,37 @@ body {
   stroke: var(--color-chain-bnb);
 }
 
+/*
+ * Scene reveal (AC-P4.7-8). Every top-level <section> in the 6-scene skeleton
+ * carries `.scene`; useScrollReveal adds `.scene--revealed` the first time the
+ * section enters the viewport (and never removes it). The reveal is one-way
+ * by design so re-scrolling past a seen section does not re-animate.
+ */
+.scene {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 350ms var(--ease-out),
+    transform 350ms var(--ease-out);
+}
+
+.scene--revealed {
+  opacity: 1;
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0ms !important;
+  }
+
+  /* Force scenes visible regardless of revealed state — the global rule above
+     only zeros transition-duration; the initial opacity/transform still applies
+     and would hide scenes from reduced-motion users until scroll fired. */
+  .scene {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
