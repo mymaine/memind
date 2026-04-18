@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import type { AgentId, AgentStatus, Artifact } from '@hack-fourmeme/shared';
-import { AgentStatusBar } from '@/components/agent-status-bar';
 import { ArchitectureDiagram } from '@/components/architecture-diagram';
 import { ThemeInput } from '@/components/theme-input';
 import { LogPanel } from '@/components/log-panel';
@@ -103,7 +102,11 @@ export default function HomePage() {
   const assistantText = state.phase === 'idle' ? EMPTY_ASSISTANT_TEXT : state.assistantText;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-12 px-6 py-10">
+    // V2-P5 Task 3: layout compressed for a single 1920x960 viewport.
+    // Budget breakdown (approx): header 36 + title+input 96 + architecture
+    // 170 + meme+view 380 + pills 80 + heartbeat (collapsed) 56 + footer 40
+    // + gaps 60 ≈ 918px. Heartbeat expands in place and scrolls internally.
+    <main className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 px-6 py-4">
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span
@@ -111,29 +114,24 @@ export default function HomePage() {
             className="inline-block h-3 w-3 rounded-full bg-accent"
             style={{ animation: 'signal-pulse 1500ms ease-in-out infinite' }}
           />
-          <span className="font-[family-name:var(--font-sans-display)] text-[20px] font-semibold uppercase tracking-[0.5px] text-fg-primary">
+          <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold uppercase tracking-[0.5px] text-fg-primary">
             Agent Swarm
           </span>
+          <span className="hidden font-[family-name:var(--font-sans-body)] text-[13px] text-fg-secondary md:inline">
+            · first agent-to-agent commerce on Four.Meme
+          </span>
         </div>
-        <span className="font-[family-name:var(--font-mono)] text-[12px] text-fg-tertiary">
+        <span className="font-[family-name:var(--font-mono)] text-[11px] text-fg-tertiary">
           four.meme × x402 · base-sepolia
         </span>
       </header>
 
-      <section className="flex flex-col gap-4">
-        <h1 className="font-[family-name:var(--font-sans-display)] text-[36px] font-normal leading-[1.11] tracking-[-0.9px] text-fg-primary">
-          First agent-to-agent commerce
-          <span className="text-accent"> on Four.Meme</span>
-        </h1>
-        <p className="max-w-[640px] text-[16px] leading-[1.5] text-fg-secondary">
-          Three agents cooperate: Creator deploys a four.meme token, Narrator writes lore, and
-          Market-maker auto-pays USDC via x402 to fetch it. One prompt. Five on-chain artifacts.
-        </p>
+      <section className="flex flex-col gap-2">
         <ThemeInput onRun={startRun} disabled={state.phase === 'running'} />
         {state.phase === 'error' ? (
           <div
             role="alert"
-            className="rounded-[var(--radius-card)] border border-[color:var(--color-danger)] p-4 text-[14px] text-fg-primary"
+            className="rounded-[var(--radius-card)] border border-[color:var(--color-danger)] p-2 text-[13px] text-fg-primary"
           >
             <span className="font-[family-name:var(--font-mono)] text-fg-tertiary">error · </span>
             {state.error}
@@ -143,56 +141,44 @@ export default function HomePage() {
 
       <ArchitectureDiagram statuses={agentStatuses} artifacts={state.artifacts} />
 
-      <AgentStatusBar statuses={agentStatuses} />
-
-      {memeImage ? (
-        <section
-          aria-label="creator output"
-          className="grid grid-cols-1 gap-4 md:grid-cols-[256px_1fr]"
-        >
-          <MemeImageCard artifact={memeImage} />
-          <div className="rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-4 text-[12px] text-fg-secondary">
-            <span className="font-[family-name:var(--font-mono)] text-fg-tertiary">
-              creator output ·{' '}
-            </span>
-            The Creator agent generated this meme image, pinned it to IPFS via Pinata, and is now
-            handing the freshly-minted token to the Narrator.
+      <section aria-label="Run view" className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div
+            role="tablist"
+            aria-label="Run view mode"
+            className="flex w-fit items-center gap-1 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-1"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'columns'}
+              onClick={() => setViewMode('columns')}
+              className={`rounded-[var(--radius-card)] px-3 py-1 font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] transition-colors ${
+                viewMode === 'columns'
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-fg-tertiary hover:text-fg-primary'
+              }`}
+            >
+              3 columns
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'timeline'}
+              onClick={() => setViewMode('timeline')}
+              className={`rounded-[var(--radius-card)] px-3 py-1 font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] transition-colors ${
+                viewMode === 'timeline'
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-fg-tertiary hover:text-fg-primary'
+              }`}
+            >
+              timeline
+            </button>
           </div>
-        </section>
-      ) : null}
-
-      <section aria-label="Run view" className="flex flex-col gap-3">
-        <div
-          role="tablist"
-          aria-label="Run view mode"
-          className="flex w-fit items-center gap-1 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-1"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={viewMode === 'columns'}
-            onClick={() => setViewMode('columns')}
-            className={`rounded-[var(--radius-card)] px-3 py-1 font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] transition-colors ${
-              viewMode === 'columns'
-                ? 'bg-accent/15 text-accent'
-                : 'text-fg-tertiary hover:text-fg-primary'
-            }`}
-          >
-            3 columns
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={viewMode === 'timeline'}
-            onClick={() => setViewMode('timeline')}
-            className={`rounded-[var(--radius-card)] px-3 py-1 font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] transition-colors ${
-              viewMode === 'timeline'
-                ? 'bg-accent/15 text-accent'
-                : 'text-fg-tertiary hover:text-fg-primary'
-            }`}
-          >
-            timeline
-          </button>
+          {/* V2-P5 Task 3: inline 96px meme thumb next to the tabs so the
+              Creator visual stays on the single-screen budget without its own
+              full-width row. Click opens the modal (full-size view). */}
+          {memeImage ? <MemeImageCard artifact={memeImage} /> : null}
         </div>
 
         {viewMode === 'columns' ? (

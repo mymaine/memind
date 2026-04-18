@@ -84,7 +84,9 @@ function AgentColumn({
       <ol
         ref={scrollRef}
         aria-label={`${agent} log column`}
-        className="max-h-[60vh] space-y-1 overflow-y-auto font-[family-name:var(--font-mono)] text-[13px] leading-[1.5]"
+        // V2-P5: capped at ~240px (tight 1920x960 single-screen budget).
+        // Older bound was 60vh which blew the budget on laptop viewports.
+        className="max-h-[240px] space-y-1 overflow-y-auto font-[family-name:var(--font-mono)] text-[12px] leading-[1.4]"
       >
         {logs.length === 0 ? (
           <li className="text-fg-tertiary">—</li>

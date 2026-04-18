@@ -28,74 +28,56 @@ export function MemeImageCard({
 
   if (!artifact) return null;
 
+  // V2-P5 Task 3: always render in compact inline mode so the card sits next
+  // to the run-view tab row without pushing the layout past 1920x960. Full
+  // image opens in the modal via the existing click handler.
   if (artifact.status === 'upload-failed') {
     return (
       <article
         aria-label="meme image (upload failed)"
         data-testid="meme-image-card"
         data-status="upload-failed"
-        className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-dashed border-[color:var(--color-danger)] bg-bg-primary p-3"
+        className="flex items-center gap-2 rounded-[var(--radius-card)] border border-dashed border-[color:var(--color-danger)] bg-bg-primary px-2 py-1"
+        title={`pinata: ${artifact.errorMessage ?? 'upload failed'}`}
       >
-        <header className="flex items-center justify-between">
-          <span className="font-[family-name:var(--font-sans-display)] text-[12px] font-semibold uppercase tracking-[0.5px] text-fg-tertiary">
-            meme image
-          </span>
-          <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-[color:var(--color-danger)]">
-            upload failed
-          </span>
-        </header>
-        <p className="line-clamp-2 text-[12px] text-fg-secondary">{artifact.prompt}</p>
-        <p
-          className="font-[family-name:var(--font-mono)] text-[11px] text-[color:var(--color-danger)]"
-          title={artifact.errorMessage}
-        >
-          pinata: {artifact.errorMessage}
-        </p>
+        <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-[color:var(--color-danger)]">
+          meme · upload failed
+        </span>
+        <span className="max-w-[200px] truncate text-[11px] text-fg-secondary">
+          {artifact.prompt}
+        </span>
       </article>
     );
   }
 
-  // status === 'ok' — render the actual thumbnail loaded from the IPFS gateway.
+  // status === 'ok' — compact 64px thumbnail with the full image in a modal.
   return (
     <>
-      <article
-        aria-label="meme image"
+      <button
+        type="button"
+        onClick={() => setShowModal(true)}
+        aria-label="meme image — click to enlarge"
         data-testid="meme-image-card"
         data-status="ok"
-        className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-border-default bg-bg-primary p-3"
+        className="group flex items-center gap-2 rounded-[var(--radius-card)] border border-border-default bg-bg-primary p-1 focus:outline-none focus:ring-2 focus:ring-accent"
+        title={artifact.prompt}
       >
-        <header className="flex items-center justify-between">
-          <span className="font-[family-name:var(--font-sans-display)] text-[12px] font-semibold uppercase tracking-[0.5px] text-fg-tertiary">
-            meme image
-          </span>
+        <img
+          src={artifact.gatewayUrl ?? ''}
+          alt={artifact.prompt}
+          width={56}
+          height={56}
+          className="h-[56px] w-[56px] rounded-[var(--radius-default)] object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+        />
+        <div className="flex flex-col pr-2">
           <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-[color:var(--color-chain-ipfs)]">
-            ipfs
+            meme · ipfs
           </span>
-        </header>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="group block overflow-hidden rounded-[var(--radius-card)] border border-border-default focus:outline-none focus:ring-2 focus:ring-accent"
-          aria-label="enlarge meme image"
-        >
-          {/*
-            Native <img>: the dashboard runs in a sandbox dev server with no
-            Next/Image loader configured for arbitrary IPFS gateways. The
-            artifact schema enforces an http(s) gatewayUrl so loading is safe.
-            Cap at 256px per AC-V2-2; preserve aspect with object-contain.
-          */}
-          <img
-            src={artifact.gatewayUrl ?? ''}
-            alt={artifact.prompt}
-            width={256}
-            height={256}
-            className="h-[256px] w-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
-          />
-        </button>
-        <p className="line-clamp-2 text-[12px] text-fg-secondary" title={artifact.prompt}>
-          {artifact.prompt}
-        </p>
-      </article>
+          <span className="max-w-[220px] truncate text-[11px] text-fg-secondary">
+            {artifact.prompt}
+          </span>
+        </div>
+      </button>
 
       {showModal ? (
         <div
