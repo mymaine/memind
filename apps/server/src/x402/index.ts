@@ -19,8 +19,19 @@ import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
  * and only settles once the handler finishes). That means the real
  * `PAYMENT-RESPONSE` header with the settled transaction hash is not available
  * at enqueue time. We still need `paidTxHash` to satisfy the ShillOrderStore
- * contract (non-empty string) so we write a zeroed sentinel and leave the
- * real-hash reconciliation to a follow-up task (see roadmap P4.6-1 notes).
+ * contract (non-empty string) so we write a zeroed sentinel.
+ *
+ * **MVP behaviour (Phase 4.6, shipped 2026-04-18)**: the sentinel is never
+ * reconciled — store entries keep the all-zero hash for their entire lifetime
+ * and the dashboard renders a `0x0000…pending` placeholder instead of a live
+ * BaseScan link. The actual on-chain settlement DID happen (evident from the
+ * 200 response with a valid `PAYMENT-RESPONSE` header); the client retains
+ * that hash if it wants. This is an accepted MVP trade-off, not a bug.
+ *
+ * **Reconciliation path (post-hackathon)**: add `ShillOrderStore.recordSettlement(orderId, txHash)`
+ * and wire it via `res.on('finish', …)` to decode `X-PAYMENT-RESPONSE` after
+ * the middleware has finalised the response. Tracked in the roadmap as
+ * "Day-2 改良: /shill paidTxHash 從 stub 補真" in docs/features/shilling-market.md.
  */
 const PENDING_PAID_TX_HASH = `0x${'0'.repeat(64)}`;
 

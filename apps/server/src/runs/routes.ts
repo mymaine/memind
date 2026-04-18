@@ -185,14 +185,28 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
       }
       const shillOrderStore = deps.shillOrderStore;
 
-      const tokenSymbol =
-        typeof paramsRecord.tokenSymbol === 'string' && paramsRecord.tokenSymbol.trim() !== ''
-          ? paramsRecord.tokenSymbol.trim()
-          : undefined;
-      const creatorBrief =
-        typeof paramsRecord.creatorBrief === 'string' && paramsRecord.creatorBrief.trim() !== ''
-          ? paramsRecord.creatorBrief.trim()
-          : undefined;
+      // Length caps mirror postShillForInputSchema so oversized payloads are
+      // rejected at the HTTP boundary before reaching the LLM context window.
+      const SHILL_SYMBOL_MAX = 32;
+      const SHILL_BRIEF_MAX = 500;
+      const rawSymbol =
+        typeof paramsRecord.tokenSymbol === 'string' ? paramsRecord.tokenSymbol.trim() : '';
+      if (rawSymbol.length > SHILL_SYMBOL_MAX) {
+        res.status(400).json({
+          error: `shill-market tokenSymbol must be <= ${String(SHILL_SYMBOL_MAX)} chars`,
+        });
+        return;
+      }
+      const rawBrief =
+        typeof paramsRecord.creatorBrief === 'string' ? paramsRecord.creatorBrief.trim() : '';
+      if (rawBrief.length > SHILL_BRIEF_MAX) {
+        res
+          .status(400)
+          .json({ error: `shill-market creatorBrief must be <= ${String(SHILL_BRIEF_MAX)} chars` });
+        return;
+      }
+      const tokenSymbol = rawSymbol !== '' ? rawSymbol : undefined;
+      const creatorBrief = rawBrief !== '' ? rawBrief : undefined;
 
       const tryResult = runStore.tryCreate({
         kind: 'shill-market',
