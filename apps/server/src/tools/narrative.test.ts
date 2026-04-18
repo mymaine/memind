@@ -70,6 +70,30 @@ describe('narrativeOutputSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects a name longer than 20 chars (four.meme create-api limit)', () => {
+    const result = narrativeOutputSchema.safeParse({
+      name: 'HBNB2026-DictatorDecree', // 21 chars
+      symbol: 'HBNB2026-DECREE',
+      description: 'a coin',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('strips shell-unsafe punctuation from description (apostrophe bug)', () => {
+    const result = narrativeOutputSchema.safeParse({
+      name: 'HBNB2026-Cat',
+      symbol: 'HBNB2026-CAT',
+      description: `Supreme Leader's "official" \`coin\` for $cats`,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // all of ', ", `, $, \ gone; plain letters remain
+      expect(result.data.description).not.toMatch(/['"`\\$]/);
+      expect(result.data.description).toContain('Supreme Leaders');
+      expect(result.data.description).toContain('official');
+    }
+  });
+
   it('rejects a symbol suffix with lowercase letters', () => {
     const result = narrativeOutputSchema.safeParse({
       name: 'HBNB2026-CatCoin',

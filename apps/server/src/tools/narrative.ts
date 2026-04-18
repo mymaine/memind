@@ -7,9 +7,12 @@ import { type AnthropicMessagesClient, extractText, parseJsonFromText } from './
  * four.meme-compatible token narrative.
  *
  * four.meme token rules enforced here:
- *   - name  <= 50 chars
+ *   - name  <= 20 chars (four.meme create-api: "size must be between 0 and 20")
  *   - symbol 3-8 uppercase letters/digits
- *   - description <= 200 chars
+ *   - description <= 200 chars, shell-safe (no apostrophes / quotes /
+ *     backticks / backslashes) because the downstream four-meme-ai CLI pipes
+ *     the description into an inner shell invocation that does not escape it
+ *     — an unbalanced quote crashes the deploy with `unexpected EOF`.
  *
  * Hackathon hard rule (AGENTS.md #4b): both `name` and `symbol` MUST start
  * with `HBNB2026-` so the demo tokens are not mistaken for real project
@@ -19,14 +22,29 @@ import { type AnthropicMessagesClient, extractText, parseJsonFromText } from './
 
 const HBNB_PREFIX = 'HBNB2026-';
 
-// Symbol body (after the `HBNB2026-` prefix) must still fit within the 3-8 char
-// four.meme rule? Actually four.meme allows up to 8 chars total; we relax the
-// rule for hackathon tokens — the literal `HBNB2026-` prefix is longer than
-// that on its own. Accept up to 32 chars total so the prefix plus a short
-// identifier fits. Document clearly below.
+// four.meme create-api hard-fails with `"size must be between 0 and 20"` above
+// 20 chars on `name`. The `HBNB2026-` prefix alone is 9 chars, leaving 11 for
+// the suffix — keep names terse.
+const NAME_MAX = 20;
+// Symbol body (after the `HBNB2026-` prefix) still fits four.meme's 3-8 char
+// rule in practice; we relax to 32 total so the literal `HBNB2026-` prefix
+// plus a short identifier fits.
 const SYMBOL_MAX = 32;
-const NAME_MAX = 50;
 const DESC_MAX = 200;
+
+// Shell-unsafe punctuation that the downstream four-meme-ai CLI fails to
+// escape before re-invoking /bin/sh (observed: `Supreme Leader's` → unbalanced
+// quote → `/bin/sh: unexpected EOF`). We strip rather than escape so the
+// description remains plain readable text. Curly quotes are replaced with
+// their straight equivalents so the sentence still reads well.
+const SHELL_UNSAFE_CHARS = /['"`\\$]/g;
+function sanitizeDescription(raw: string): string {
+  return raw
+    .replace(/[\u2018\u2019]/g, '')
+    .replace(/[\u201c\u201d]/g, '')
+    .replace(SHELL_UNSAFE_CHARS, '')
+    .trim();
+}
 
 export const narrativeInputSchema = z.object({
   theme: z.string().min(3, 'theme must be at least 3 chars').max(280, 'theme must be <= 280 chars'),
@@ -44,7 +62,7 @@ export const narrativeOutputSchema = z.object({
     .min(HBNB_PREFIX.length + 1)
     .max(SYMBOL_MAX)
     .regex(/^HBNB2026-[A-Z0-9]{1,8}$/, 'symbol must match HBNB2026-[A-Z0-9]{1,8}'),
-  description: z.string().min(1).max(DESC_MAX),
+  description: z.string().min(1).max(DESC_MAX).transform(sanitizeDescription),
 });
 export type NarrativeOutput = z.infer<typeof narrativeOutputSchema>;
 
@@ -59,6 +77,8 @@ Return ONLY a JSON object with these fields and no extra commentary:
 
 Rules:
 - The "${HBNB_PREFIX}" prefix on both name and symbol is MANDATORY. This is a hackathon identifier to keep demo tokens distinguishable from real tokens. Do not omit it.
+- Name has a HARD ${String(NAME_MAX)}-char cap. The prefix alone is ${String(HBNB_PREFIX.length)} chars, so the suffix has ${String(NAME_MAX - HBNB_PREFIX.length)} chars max — one short word, no spaces.
+- Do NOT use apostrophes ('), quotes ("), backticks, or backslashes anywhere in the description. The downstream deploy pipeline is shell-unsafe. Use plain prose, e.g. "Supreme Leaders coin" not "Supreme Leader's coin".
 - Keep the suffix short and memorable — a single word or acronym is ideal.
 - Do not wrap the JSON in markdown fences. Return raw JSON only.`;
 
