@@ -8,6 +8,15 @@
  * redeploy. Token address is taken from `--token <addr>` / env `DEMO_TOKEN_ADDR`
  * with a Phase 2 validated fallback.
  *
+ * Post-refactor note: the Narrator → Market-maker orchestration itself lives
+ * in `../runs/a2a.ts` as a pure function (`runA2ADemo`). This CLI is now a
+ * thin shell that:
+ *   1. Loads .env.local + CLI args.
+ *   2. Starts its own Express server (so /lore/:addr is paywalled).
+ *   3. Creates a RunStore + subscribes a stdout logger to the run.
+ *   4. Awaits `runA2ADemo`, prints the same final summary on success.
+ *   5. Preserves SIGINT / SIGTERM / timeout behaviour unchanged.
+ *
  * Usage (from repo root):
  *   pnpm --filter @hack-fourmeme/server demo:a2a
  *   pnpm --filter @hack-fourmeme/server demo:a2a -- --token 0xYourToken
@@ -27,19 +36,14 @@ import express from 'express';
 import { loadConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
 import { registerX402Routes } from '../x402/index.js';
-import { ToolRegistry } from '../tools/registry.js';
-import { createLoreExtendTool } from '../tools/lore-extend.js';
-import { createCheckTokenStatusTool } from '../tools/token-status.js';
-import { createXFetchLoreTool } from '../tools/x-fetch-lore.js';
-import { runNarratorAgent, type NarratorAgentOutput } from '../agents/narrator.js';
-import { runMarketMakerAgent, type MarketMakerAgentOutput } from '../agents/market-maker.js';
+import { RunStore } from '../runs/store.js';
+import { runA2ADemo, type RunA2ADemoArgs } from '../runs/a2a.js';
 
 const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 
 // OpenRouter Anthropic-compatible gateway — mirrors demo-creator-run.ts.
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
-const MODEL = 'anthropic/claude-sonnet-4-5';
 
 // Phase 2 validated BSC mainnet token — default when no --token/env provided.
 const DEFAULT_DEMO_TOKEN_ADDR = '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444';
@@ -47,13 +51,7 @@ const DEFAULT_DEMO_TOKEN_NAME = 'HBNB2026-DemoToken';
 const DEFAULT_DEMO_TOKEN_SYMBOL = 'HBNB2026';
 const DEMO_TIMEOUT_MS = 3 * 60 * 1000;
 
-interface DemoArgs {
-  tokenAddr: string;
-  tokenName: string;
-  tokenSymbol: string;
-}
-
-function parseArgs(): DemoArgs {
+function parseArgs(): RunA2ADemoArgs {
   const argv = process.argv.slice(2);
   let tokenAddr: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
@@ -69,12 +67,11 @@ function parseArgs(): DemoArgs {
   };
 }
 
-function orchestratorLog(message: string): void {
-  const ts = new Date().toISOString().slice(11, 19);
-  console.info(`[${ts}] demo-orchestrator ${message}`);
-}
-
-function agentLogSink(e: {
+/**
+ * Format a LogEvent for stdout in the existing `[HH:MM:SS] agent.tool [level] message`
+ * shape so the CLI transcript looks the same as before the refactor.
+ */
+function printLogEvent(e: {
   ts: string;
   agent: string;
   tool: string;
@@ -103,22 +100,32 @@ async function closeServer(server: Server | null): Promise<void> {
   await new Promise<void>((resolveFn) => server.close(() => resolveFn()));
 }
 
-function printSummary(
-  args: DemoArgs,
-  narrator: NarratorAgentOutput,
-  mm: MarketMakerAgentOutput,
-): void {
-  const bcp =
-    mm.tokenStatus.bondingCurveProgress === null
-      ? 'n/a'
-      : mm.tokenStatus.bondingCurveProgress.toFixed(2);
-  const settlement = mm.loreFetch
+/**
+ * Pull the final lore-cid + x402-tx artifacts out of the completed run to
+ * reconstruct the summary block that the pre-refactor CLI printed. Keeps the
+ * user-visible success output byte-compatible with the Phase 3 recording.
+ */
+function printSummary(args: RunA2ADemoArgs, runStore: RunStore, runId: string): void {
+  const record = runStore.get(runId);
+  if (!record) return;
+
+  const lore = record.artifacts.find(
+    (a): a is Extract<(typeof record.artifacts)[number], { kind: 'lore-cid' }> =>
+      a.kind === 'lore-cid',
+  );
+  const x402 = record.artifacts.find(
+    (a): a is Extract<(typeof record.artifacts)[number], { kind: 'x402-tx' }> =>
+      a.kind === 'x402-tx',
+  );
+
+  const settlement = x402
     ? [
         '  x402 settlement (Base Sepolia USDC):',
-        `    tx:          ${mm.loreFetch.settlementTxHash}`,
-        `    basescan:    ${mm.loreFetch.baseSepoliaExplorerUrl}`,
+        `    tx:          ${x402.txHash}`,
+        `    basescan:    ${x402.explorerUrl}`,
       ].join('\n')
     : '  x402 settlement: SKIPPED (market-maker declined purchase)';
+
   console.info(
     [
       '',
@@ -130,14 +137,9 @@ function printSummary(
       `    bscscan:     https://bscscan.com/token/${args.tokenAddr}`,
       '',
       '  Narrator chapter (Pinata IPFS):',
-      `    CID:         ${narrator.ipfsHash}`,
-      `    gateway:     https://gateway.pinata.cloud/ipfs/${narrator.ipfsHash}`,
-      `    chapter #:   ${narrator.chapterNumber.toString()}`,
-      '',
-      '  Market-maker decision:',
-      `    decision:    ${mm.decision}`,
-      `    holders:     ${mm.tokenStatus.holderCount.toString()}`,
-      `    bondingCurveProgress: ${bcp}`,
+      `    CID:         ${lore?.cid ?? '<missing>'}`,
+      `    gateway:     ${lore?.gatewayUrl ?? '<missing>'}`,
+      `    chapter #:   ${lore?.chapterNumber?.toString() ?? '<missing>'}`,
       '',
       settlement,
       '',
@@ -157,90 +159,64 @@ async function main(): Promise<void> {
   const args = parseArgs();
   const config = loadConfig();
 
-  // Fail fast on missing secrets so the root cause surfaces immediately.
-  // Accept either OPENROUTER_API_KEY (preferred, Phase 3) or ANTHROPIC_API_KEY
-  // (Phase 2 legacy name) — both point at the same OpenRouter secret.
+  // Resolve the OpenRouter key once up front so the Anthropic client can be
+  // constructed even though runA2ADemo also checks for its presence and will
+  // throw with a precise error if it's missing.
   const openrouterKey = config.openrouter.apiKey ?? config.anthropic.apiKey ?? '';
-  if (openrouterKey.trim() === '')
-    throw new Error(
-      'demo-a2a: OPENROUTER_API_KEY (preferred) or ANTHROPIC_API_KEY missing from .env.local',
-    );
-  if (config.wallets.agent.privateKey === undefined)
-    throw new Error('demo-a2a: AGENT_WALLET_PRIVATE_KEY missing from .env.local');
-  if (config.pinata.jwt === undefined)
-    throw new Error('demo-a2a: PINATA_JWT missing from .env.local');
-
-  orchestratorLog(`token: ${args.tokenAddr} (${args.tokenName} / ${args.tokenSymbol})`);
-  orchestratorLog(`model: ${MODEL} port: ${config.port.toString()}`);
-  orchestratorLog(`x402: ${config.x402.network} via ${config.x402.facilitatorUrl}`);
-
   const anthropic = new Anthropic({ apiKey: openrouterKey, baseURL: OPENROUTER_BASE_URL });
-  const store = new LoreStore();
+
+  const loreStore = new LoreStore();
+  const runStore = new RunStore();
+  const runRecord = runStore.create('a2a');
+  // Subscribe early so orchestrator-level log events emitted before the
+  // Narrator phase also reach stdout. Replay-then-live is a no-op here (the
+  // run has no buffered events yet) but keeps the contract identical to the
+  // HTTP SSE client.
+  const unsubscribe = runStore.subscribe(runRecord.runId, (event) => {
+    if (event.type === 'log') {
+      printLogEvent(event.data);
+    }
+  });
 
   let server: Server | null = null;
   try {
-    server = await startServer(config.port, store, config);
+    server = await startServer(config.port, loreStore, config);
     activeServer = server;
-    orchestratorLog(`x402 server listening on http://localhost:${config.port.toString()}`);
-
-    // --- Narrator: produce + pin chapter 1, upsert into LoreStore. ---
-    const narratorRegistry = new ToolRegistry();
-    narratorRegistry.register(
-      createLoreExtendTool({ anthropic, pinataJwt: config.pinata.jwt, model: MODEL }),
-    );
-    orchestratorLog(
-      `narrator tools: ${narratorRegistry
-        .list()
-        .map((t) => t.name)
-        .join(', ')}`,
-    );
-    orchestratorLog('running Narrator agent ...');
-    const narrator = await runNarratorAgent({
-      client: anthropic,
-      registry: narratorRegistry,
-      store,
-      tokenAddr: args.tokenAddr,
-      tokenName: args.tokenName,
-      tokenSymbol: args.tokenSymbol,
-      previousChapters: [],
-      model: MODEL,
-      onLog: agentLogSink,
-    });
-    orchestratorLog(
-      `narrator published chapter ${narrator.chapterNumber.toString()} (CID ${narrator.ipfsHash})`,
-    );
-
-    // --- Market-maker: read on-chain state, auto-pay x402, fetch lore. ---
-    const mmRegistry = new ToolRegistry();
-    mmRegistry.register(createCheckTokenStatusTool({ rpcUrl: config.bsc.rpcUrl }));
-    mmRegistry.register(
-      createXFetchLoreTool({
-        agentPrivateKey: config.wallets.agent.privateKey as `0x${string}`,
-        network: config.x402.network,
-      }),
-    );
-    orchestratorLog(
-      `market-maker tools: ${mmRegistry
-        .list()
-        .map((t) => t.name)
-        .join(', ')}`,
-    );
-    const loreEndpointUrl = `http://localhost:${config.port.toString()}/lore/${args.tokenAddr}`;
-    orchestratorLog(`running Market-maker agent against ${loreEndpointUrl} ...`);
-    const marketMaker = await runMarketMakerAgent({
-      client: anthropic,
-      registry: mmRegistry,
-      tokenAddr: args.tokenAddr,
-      loreEndpointUrl,
-      model: MODEL,
-      onLog: agentLogSink,
+    // Log the server-listening line via the RunStore so it flows through the
+    // same sink as every other orchestrator-level message.
+    runStore.addLog(runRecord.runId, {
+      ts: new Date().toISOString(),
+      agent: 'narrator',
+      tool: 'orchestrator',
+      level: 'info',
+      message: `x402 server listening on http://localhost:${config.port.toString()}`,
     });
 
-    printSummary(args, narrator, marketMaker);
+    await runA2ADemo({
+      config,
+      anthropic,
+      store: runStore,
+      runId: runRecord.runId,
+      args,
+      loreStore,
+    });
+    runStore.setStatus(runRecord.runId, 'done');
+    printSummary(args, runStore, runRecord.runId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    runStore.setStatus(runRecord.runId, 'error', message);
+    throw err;
   } finally {
+    unsubscribe();
     await closeServer(server);
     activeServer = null;
-    orchestratorLog('x402 server closed');
+    runStore.addLog(runRecord.runId, {
+      ts: new Date().toISOString(),
+      agent: 'narrator',
+      tool: 'orchestrator',
+      level: 'info',
+      message: 'x402 server closed',
+    });
   }
 }
 
@@ -267,7 +243,7 @@ function installShutdownHandler(signal: 'SIGINT' | 'SIGTERM', exitCode: number):
     if (handled) return;
     handled = true;
     clearTimeout(timeoutHandle);
-    orchestratorLog(`received ${signal}, shutting down ...`);
+    console.info(`[demo-a2a] received ${signal}, shutting down ...`);
     void (async () => {
       try {
         await closeServer(activeServer);
