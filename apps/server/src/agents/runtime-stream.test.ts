@@ -189,9 +189,7 @@ describe('runAgentLoop streaming', () => {
     });
 
     expect(startEvents).toEqual([{ toolUseId: 'tu_1', toolName: 'add', input: { a: 2, b: 3 } }]);
-    expect(endEvents).toEqual([
-      { toolUseId: 'tu_1', isError: false, output: { sum: 5 } },
-    ]);
+    expect(endEvents).toEqual([{ toolUseId: 'tu_1', isError: false, output: { sum: 5 } }]);
     expect(result.toolCalls[0]?.output).toEqual({ sum: 5 });
     expect(addSpy).toHaveBeenCalledWith({ a: 2, b: 3 });
   });
