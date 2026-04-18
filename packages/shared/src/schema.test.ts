@@ -244,8 +244,107 @@ describe('createRunRequestSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts heartbeat kind with tokenAddress param (V2-P3)', () => {
+    const result = createRunRequestSchema.safeParse({
+      kind: 'heartbeat',
+      params: { tokenAddress: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444' },
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects unknown kind', () => {
     const result = createRunRequestSchema.safeParse({ kind: 'rogue' });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─── heartbeat-tick / heartbeat-decision artifact kinds (V2-P3) ───────────────
+// Heartbeat runs emit one `heartbeat-tick` per tick for the UI counter
+// (`03 / 03 ticks`) and zero-or-more `heartbeat-decision` when the agent
+// resolves on an action within a tick. Both carry `ts` so the TweetFeed / UI
+// can order them independently of log arrival.
+describe('artifactSchema heartbeat-tick', () => {
+  it('accepts a heartbeat-tick with tickNumber + empty decisions', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'heartbeat-tick',
+      tickNumber: 1,
+      totalTicks: 3,
+      decisions: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a heartbeat-tick with non-empty decisions array', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'heartbeat-tick',
+      tickNumber: 2,
+      totalTicks: 3,
+      decisions: ['check_status', 'post'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a heartbeat-tick with tickNumber=0 (ticks are 1-indexed)', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'heartbeat-tick',
+      tickNumber: 0,
+      totalTicks: 3,
+      decisions: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a heartbeat-tick with tickNumber > totalTicks', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'heartbeat-tick',
+      tickNumber: 4,
+      totalTicks: 3,
+      decisions: [],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('artifactSchema heartbeat-decision', () => {
+  it('accepts a decision with action=post + reason', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'heartbeat-decision',
+      tickNumber: 1,
+      action: 'post',
+      reason: 'bonding curve progress changed; posting announcement',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts action=extend_lore and action=skip', () => {
+    for (const action of ['extend_lore', 'skip'] as const) {
+      const result = artifactSchema.safeParse({
+        kind: 'heartbeat-decision',
+        tickNumber: 2,
+        action,
+        reason: 'fallback path',
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('rejects heartbeat-decision with unknown action', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'heartbeat-decision',
+      tickNumber: 1,
+      action: 'dance',
+      reason: 'none',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects heartbeat-decision with empty reason', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'heartbeat-decision',
+      tickNumber: 1,
+      action: 'post',
+      reason: '',
+    });
     expect(result.success).toBe(false);
   });
 });
