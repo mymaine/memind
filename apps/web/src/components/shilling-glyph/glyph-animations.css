@@ -336,7 +336,7 @@
   transform: scaleY(0.08);
 }
 
-.glyph--sleep [data-part='eye-right'] line {
+.glyph--sleep [data-part='eye-right'] circle {
   transform-box: fill-box;
   transform-origin: center;
   transform: scaleY(0.1);
@@ -663,7 +663,7 @@
   /* Keep mood-specific static end states (sleep eyes closed, think mouth flat)
    * so the character still reads correctly even without motion. */
   .glyph--sleep [data-part='eye-left'] circle,
-  .glyph--sleep [data-part='eye-right'] line {
+  .glyph--sleep [data-part='eye-right'] circle {
     transform: scaleY(0.1);
   }
   .glyph--surprise .glyph-symbols__bang,

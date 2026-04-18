@@ -3,10 +3,13 @@
 /**
  * Core face SVG — the pieces that are always on screen regardless of mood:
  *   - left square bracket `[`
- *   - left eye dot `·`
- *   - right eye `|-` (vertical stroke + horizontal hint)
- *   - smirk mouth `⌣` (cubic curve, right end lifts)
+ *   - two symmetric round eyes at (46, 40) and (76, 40)
+ *   - cheerful mouth — cubic curve with deep mid-sag for a clear upturned smile
  *   - right cursor `|` with yellow tip cap
+ *
+ * Mouth path endpoints stay at y=52 so `sleep` / `think` moods can swap in a
+ * flat `M 88 52 L 116 52` without visual misalignment; only the control points
+ * differ for the idle smile.
  *
  * Each part carries a stable `data-part` attribute so unit tests can verify
  * structural contracts without depending on CSS selectors.
@@ -37,39 +40,24 @@ export function GlyphFace(): ReactElement {
         <circle cx={46} cy={40} r={4} fill="var(--glyph-primary)" />
       </g>
 
-      {/* Right eye |- — vertical stroke with a tiny horizontal hint on its
-          left side. The horizontal hint gives the smirk its lopsided charm. */}
+      {/* Right eye — matches the left eye for a symmetric, readable face.
+          Moods that need the right eye closed (sleep) or widened (surprise)
+          transform this circle at the container level in glyph-animations.css. */}
       <g data-part="eye-right" className="glyph-face__eye-right">
-        <line
-          x1={68}
-          y1={40}
-          x2={74}
-          y2={40}
-          stroke="var(--glyph-primary)"
-          strokeWidth={5}
-          strokeLinecap="square"
-        />
-        <line
-          x1={76}
-          y1={28}
-          x2={76}
-          y2={52}
-          stroke="var(--glyph-primary)"
-          strokeWidth={5}
-          strokeLinecap="square"
-        />
+        <circle cx={76} cy={40} r={4} fill="var(--glyph-primary)" />
       </g>
 
-      {/* Smirk mouth ⌣ — cubic curve. Left ends a touch low, right tip lifts
-          ~2px to give the asymmetric smirk read. */}
+      {/* Cheerful smile — cubic with deep mid-sag so the upturn reads even at
+          32px. Endpoints stay at y=52 so sleep / think moods can flatten it
+          to a straight line (`M 88 52 L 116 52`) without offset. */}
       <g data-part="mouth" className="glyph-face__mouth">
         <path
-          d="M 88 52 C 96 60, 106 60, 116 50"
+          d="M 88 52 C 96 66, 106 66, 116 52"
           fill="none"
           stroke="var(--glyph-primary)"
           strokeWidth={5}
-          strokeLinecap="square"
-          strokeLinejoin="miter"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </g>
 
