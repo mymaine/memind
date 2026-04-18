@@ -112,6 +112,27 @@ body {
   }
 }
 
+/*
+ * x402-flow — golden flowing dash on the Market-maker → Narrator edge.
+ * Triggered when a fresh `x402-tx` artifact arrives. The SVG line carries
+ * `stroke-dasharray` so animating `stroke-dashoffset` produces the moving
+ * pulse effect. AC-V2-5: 1.2s linear, 3 iterations (managed by the React
+ * component which adds the class then strips it after 3.6s).
+ */
+@keyframes x402-flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.x402-edge-animate {
+  animation: x402-flow 1200ms linear 3;
+  stroke: var(--color-chain-bnb);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0ms !important;

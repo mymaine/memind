@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import type { AgentId, AgentStatus, Artifact } from '@hack-fourmeme/shared';
 import { AgentStatusBar } from '@/components/agent-status-bar';
+import { ArchitectureDiagram } from '@/components/architecture-diagram';
 import { ThemeInput } from '@/components/theme-input';
 import { LogPanel } from '@/components/log-panel';
 import { TxList } from '@/components/tx-list';
@@ -127,6 +128,8 @@ export default function HomePage() {
           </div>
         ) : null}
       </section>
+
+      <ArchitectureDiagram statuses={agentStatuses} artifacts={state.artifacts} />
 
       <AgentStatusBar statuses={agentStatuses} />
 
