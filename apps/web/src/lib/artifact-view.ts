@@ -81,5 +81,32 @@ export function describeArtifact(a: Artifact): ArtifactDisplay {
         kindLabel: a.label ?? 'tweet',
       };
     }
+    case 'meme-image': {
+      // Meme PNGs live on IPFS once Pinata accepts the upload, so we re-use the
+      // IPFS chain colour. On `upload-failed` we still surface an artifact so
+      // the dashboard renders a placeholder card; the pill href falls back to
+      // `#` (a no-op anchor) and the kindLabel includes the failure note so the
+      // tooltip is self-explanatory.
+      // Schema enforces `cid != null && gatewayUrl != null` when status='ok'
+      // via superRefine, but TS sees nullable fields on this branch — explicit
+      // null guard keeps the renderer typesafe and falls through to the
+      // placeholder if a malformed payload ever sneaks past validation.
+      if (a.status === 'ok' && a.cid !== null && a.gatewayUrl !== null) {
+        return {
+          chainLabel: 'IPFS',
+          chainColorVar: '--color-chain-ipfs',
+          primaryText: `IMG ${shortHash(a.cid, 6, 4)}`,
+          href: a.gatewayUrl,
+          kindLabel: a.label ?? 'meme image',
+        };
+      }
+      return {
+        chainLabel: 'IMG',
+        chainColorVar: '--color-danger',
+        primaryText: 'IMG upload-failed',
+        href: '#',
+        kindLabel: a.label ?? `meme image (Pinata: ${a.errorMessage ?? 'unknown error'})`,
+      };
+    }
   }
 }

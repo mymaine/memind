@@ -37,7 +37,13 @@ export function TxList({ artifacts = [] }: { artifacts?: Artifact[] }) {
                     ? a.cid
                     : a.kind === 'x402-tx'
                       ? a.txHash
-                      : a.tweetId;
+                      : a.kind === 'tweet-url'
+                        ? a.tweetId
+                        : // meme-image: cid is null on upload-failed; fall back
+                          // to a `prompt:<truncated>` so the title tooltip still
+                          // shows something meaningful and the React key stays
+                          // unique across multiple failed-upload artifacts.
+                          (a.cid ?? `prompt:${a.prompt.slice(0, 32)}`);
             return (
               <li key={`${a.kind}-${fullId}-${i}`}>
                 <a
