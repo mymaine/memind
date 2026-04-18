@@ -214,6 +214,82 @@ describe('registerRunRoutes', () => {
     });
   });
 
+  // ─── V2-P1 Task 6: end-to-end SSE delivery of the meme-image artifact ────
+  // Playwright would be the natural fit but the project ban on new deps
+  // takes priority — instead we drive the dashboard contract (POST + SSE
+  // with the new artifact kind) through real HTTP so any wire-format
+  // regression on meme-image still trips a CI gate.
+  describe('end-to-end SSE wire format for meme-image artifact', () => {
+    beforeEach(async () => {
+      const fakeRun: RunA2ADemoFn = async (deps) => {
+        // Synthetic Creator emission so we can assert the meme-image artifact
+        // round-trips end-to-end. The real Creator phase emits the same shape
+        // via runs/creator-phase.ts.
+        deps.store.addArtifact(deps.runId, {
+          kind: 'meme-image',
+          status: 'ok',
+          cid: 'bafybeiTESTMEME',
+          gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafybeiTESTMEME',
+          prompt: 'a cyberpunk neko detective',
+        });
+        deps.store.addArtifact(deps.runId, {
+          kind: 'meme-image',
+          status: 'upload-failed',
+          cid: null,
+          gatewayUrl: null,
+          prompt: 'a different theme',
+          errorMessage: 'pinata timed out',
+        });
+      };
+      harness = await startHarness(fakeRun);
+    });
+
+    it('streams both meme-image variants verbatim through SSE', async () => {
+      const create = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'a2a' }),
+      });
+      expect(create.status).toBe(201);
+      const { runId } = (await create.json()) as { runId: string };
+
+      // Drive the SSE end-to-end by collecting up to ~1.5s of events.
+      const received = await new Promise<string>((resolveFn, rejectFn) => {
+        const url = new URL(`${harness.baseUrl}/api/runs/${runId}/events`);
+        const req = http.request(
+          {
+            hostname: url.hostname,
+            port: Number(url.port),
+            path: url.pathname,
+            method: 'GET',
+            headers: { accept: 'text/event-stream' },
+          },
+          (res) => {
+            expect(res.statusCode).toBe(200);
+            let buf = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => {
+              buf += chunk;
+            });
+            res.on('end', () => resolveFn(buf));
+            res.on('error', rejectFn);
+          },
+        );
+        req.on('error', rejectFn);
+        req.end();
+        // Mark the run done after a short delay so the SSE handler closes
+        // the connection and resolves the buffer.
+        setTimeout(() => harness.runStore.setStatus(runId, 'done'), 120);
+      });
+
+      expect(received).toMatch(/"kind":"meme-image"/);
+      expect(received).toMatch(/"status":"ok"/);
+      expect(received).toMatch(/"cid":"bafybeiTESTMEME"/);
+      expect(received).toMatch(/"status":"upload-failed"/);
+      expect(received).toMatch(/"errorMessage":"pinata timed out"/);
+    }, 5_000);
+  });
+
   describe('GET /api/runs/:id', () => {
     beforeEach(async () => {
       const fakeRun: RunA2ADemoFn = async () => {
