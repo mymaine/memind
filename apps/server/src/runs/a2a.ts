@@ -100,6 +100,46 @@ function orchestratorLog(
   });
 }
 
+const EVM_TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+
+/**
+ * Emit the Phase 2 "already exists" artifacts so all 5 AC4 pills can light up
+ * in a single a2a run. Only the bsc-token (derived from args.tokenAddr) is
+ * unconditional; the other two depend on env vars since their full hashes can
+ * only come from a prior real run and must stay private per .env.local.
+ */
+function emitPreSeedArtifacts(store: RunStore, runId: string, tokenAddr: string): void {
+  store.addArtifact(runId, {
+    kind: 'bsc-token',
+    chain: 'bsc-mainnet',
+    address: tokenAddr as `0x${string}`,
+    explorerUrl: `https://bscscan.com/token/${tokenAddr}`,
+    label: 'four.meme token (BSC mainnet)',
+  });
+
+  const deployTx = process.env.DEMO_TOKEN_DEPLOY_TX?.trim();
+  if (deployTx && EVM_TX_HASH_REGEX.test(deployTx)) {
+    store.addArtifact(runId, {
+      kind: 'token-deploy-tx',
+      chain: 'bsc-mainnet',
+      txHash: deployTx,
+      explorerUrl: `https://bscscan.com/tx/${deployTx}`,
+      label: 'Creator deploy tx (Phase 2)',
+    });
+  }
+
+  const creatorLoreCid = process.env.DEMO_CREATOR_LORE_CID?.trim();
+  if (creatorLoreCid) {
+    store.addArtifact(runId, {
+      kind: 'lore-cid',
+      cid: creatorLoreCid,
+      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${creatorLoreCid}`,
+      author: 'creator',
+      label: 'Creator lore chapter (Phase 2)',
+    });
+  }
+}
+
 export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
   const { config, anthropic, store, runId, args, loreStore } = deps;
   const loreEndpointBaseUrl =
@@ -121,6 +161,14 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
   }
 
   store.setStatus(runId, 'running');
+
+  // ─── Pre-seed artifacts (Phase 2 validated) ──────────────────────────────
+  // Emit artifacts that exist before this run started so the AC4 dashboard
+  // lights all 5 pills. bsc-token is always known (args.tokenAddr). Phase 2's
+  // deploy tx and creator lore CID are full-hash values from a prior run —
+  // callers pass them via env so defaults stay in the operator's .env.local.
+  // Missing env → that pill is simply not emitted.
+  emitPreSeedArtifacts(store, runId, args.tokenAddr);
 
   // ─── Narrator phase ──────────────────────────────────────────────────────
   orchestratorLog(
