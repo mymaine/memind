@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AgentId, AgentStatus, Artifact } from '@hack-fourmeme/shared';
 import { ArchitectureDiagram } from '@/components/architecture-diagram';
+import { HeroScene } from '@/components/scenes/hero-scene';
 import { ThemeInput } from '@/components/theme-input';
 import { LogPanel } from '@/components/log-panel';
 import { TimelineView } from '@/components/timeline-view';
@@ -128,7 +129,8 @@ export default function HomePage() {
           the page-level "Agent Swarm" header block lived here before and
           has been removed. The min-h/padding tuning for the now-shorter
           viewport lands in V4.7-P1 Task 5 (min-h-[calc(100vh-56px)]). */}
-      <section className="flex flex-col gap-2">
+      <HeroScene />
+      <section id="launch-panel" className="flex flex-col gap-2">
         <ThemeInput onRun={startRun} disabled={state.phase === 'running'} />
         {state.phase === 'error' ? (
           <div
