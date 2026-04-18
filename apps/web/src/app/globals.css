@@ -213,6 +213,34 @@ body {
   opacity: 0;
 }
 
+/*
+ * TweetTypewriter caret (AC-P4.7-2 Hero + AC-P4.7-5 OrderPanel posted).
+ * A solid block glyph after the last visible char so the viewer reads the
+ * partial text as "actively typing" rather than "truncated". `steps(2, end)`
+ * gives a hard blink with no fade, matching a terminal cursor. The
+ * reduced-motion media query below freezes this via the global
+ * `animation-duration: 0ms !important` rule.
+ */
+@keyframes tw-caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.tw-caret {
+  display: inline-block;
+  width: 0.5ch;
+  height: 1em;
+  background: currentColor;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: tw-caret-blink 800ms steps(2, end) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0ms !important;
