@@ -151,6 +151,25 @@ function GenericArtifactRow({ artifact }: { artifact: Artifact }): React.ReactEl
       </div>
     );
   }
+  if (artifact.kind === 'lore-anchor') {
+    // Inline summary: the full Anchor Evidence panel lives on the main page.
+    // Here we show a terse one-liner so the timeline keeps the anchor in its
+    // chronological slot without stealing focus from the agent log flow.
+    const hashShort = `${artifact.contentHash.slice(0, 10)}…${artifact.contentHash.slice(-4)}`;
+    return (
+      <div className="rounded-[var(--radius-card)] border border-[color:var(--color-chain-ipfs)] bg-bg-surface px-3 py-2 text-[12px]">
+        <span className="font-[family-name:var(--font-mono)] text-[color:var(--color-chain-ipfs)]">
+          lore anchor ch{artifact.chapterNumber.toString()}
+        </span>
+        <span className="ml-2 font-[family-name:var(--font-mono)] text-fg-tertiary">
+          {hashShort}
+        </span>
+        {artifact.onChainTxHash !== undefined ? (
+          <span className="ml-2 text-fg-secondary">· on-chain</span>
+        ) : null}
+      </div>
+    );
+  }
   // BSC / IPFS / token-deploy-tx all reuse the pill-style describe helper for
   // their visual identity (chain colour + short hash + explorer link).
   const d = describeArtifact(artifact);

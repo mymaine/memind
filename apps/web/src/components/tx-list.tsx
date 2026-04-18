@@ -30,23 +30,33 @@ export function TxList({ artifacts = [] }: { artifacts?: Artifact[] }) {
           {pillArtifacts.map((a, i) => {
             const d = describeArtifact(a);
             // Full text for the `title` tooltip: prefer the underlying hash /
-            // cid / id so hovers reveal what the pill abbreviates.
-            const fullId =
-              a.kind === 'bsc-token'
-                ? a.address
-                : a.kind === 'token-deploy-tx'
-                  ? a.txHash
-                  : a.kind === 'lore-cid'
-                    ? a.cid
-                    : a.kind === 'x402-tx'
-                      ? a.txHash
-                      : a.kind === 'tweet-url'
-                        ? a.tweetId
-                        : // meme-image: cid is null on upload-failed; fall back
-                          // to a `prompt:<truncated>` so the title tooltip still
-                          // shows something meaningful and the React key stays
-                          // unique across multiple failed-upload artifacts.
-                          (a.cid ?? `prompt:${a.prompt.slice(0, 32)}`);
+            // cid / id so hovers reveal what the pill abbreviates. Exhaustive
+            // switch over the pill-eligible kinds keeps TS narrowing tight.
+            let fullId: string;
+            switch (a.kind) {
+              case 'bsc-token':
+                fullId = a.address;
+                break;
+              case 'token-deploy-tx':
+                fullId = a.txHash;
+                break;
+              case 'lore-cid':
+                fullId = a.cid;
+                break;
+              case 'x402-tx':
+                fullId = a.txHash;
+                break;
+              case 'tweet-url':
+                fullId = a.tweetId;
+                break;
+              case 'meme-image':
+                // `cid` is null on upload-failed; fall back to a
+                // `prompt:<truncated>` so the title tooltip still shows
+                // something meaningful and the React key stays unique across
+                // multiple failed-upload artifacts.
+                fullId = a.cid ?? `prompt:${a.prompt.slice(0, 32)}`;
+                break;
+            }
             return (
               <li key={`${a.kind}-${fullId}-${i}`}>
                 <a

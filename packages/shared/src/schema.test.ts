@@ -349,6 +349,142 @@ describe('artifactSchema heartbeat-decision', () => {
   });
 });
 
+// ─── lore-anchor artifact kind (AC3) ─────────────────────────────────────────
+// Narrator emits a `lore-anchor` after every chapter upsert. Layer 1 (always
+// on) carries `contentHash` (keccak256 commitment) + `anchorId` + `ts`.
+// Layer 2 (opt-in via ANCHOR_ON_CHAIN=true) populates the optional
+// `onChainTxHash` / `chain` / `explorerUrl` trio once the zero-value self-tx
+// lands. The optional trio must be all-present or all-absent so the UI never
+// renders a broken explorer link.
+describe('artifactSchema lore-anchor', () => {
+  it('accepts a layer-1 only anchor (no on-chain fields)', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0x4e39d254c716d88ae52d9ca136f0a029c5f74444-1',
+      tokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      chapterNumber: 1,
+      loreCid: 'bafkreibxxxxx',
+      contentHash: `0x${'a'.repeat(64)}`,
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a layer-2 anchor with all three on-chain fields populated', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0x4e39d254c716d88ae52d9ca136f0a029c5f74444-2',
+      tokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      chapterNumber: 2,
+      loreCid: 'bafkreibyyyyy',
+      contentHash: `0x${'b'.repeat(64)}`,
+      onChainTxHash: `0x${'c'.repeat(64)}`,
+      chain: 'bsc-mainnet',
+      explorerUrl:
+        'https://bscscan.com/tx/0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      ts: '2026-04-20T10:01:00.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects lore-anchor with a contentHash that is not 32 bytes', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0xaaa-1',
+      tokenAddr: '0xAAA',
+      chapterNumber: 1,
+      loreCid: 'bafy',
+      contentHash: '0xabc',
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects lore-anchor with chapterNumber=0 (chapters are 1-indexed)', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0xaaa-0',
+      tokenAddr: '0xAAA',
+      chapterNumber: 0,
+      loreCid: 'bafy',
+      contentHash: `0x${'a'.repeat(64)}`,
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects lore-anchor with empty loreCid', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0xaaa-1',
+      tokenAddr: '0xAAA',
+      chapterNumber: 1,
+      loreCid: '',
+      contentHash: `0x${'a'.repeat(64)}`,
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects lore-anchor when onChainTxHash is set but chain/explorerUrl are missing', () => {
+    // All-or-nothing on the optional on-chain trio: having only the tx hash
+    // without an explorer link would give the dashboard a broken pill.
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0xaaa-1',
+      tokenAddr: '0xAAA',
+      chapterNumber: 1,
+      loreCid: 'bafy',
+      contentHash: `0x${'a'.repeat(64)}`,
+      onChainTxHash: `0x${'c'.repeat(64)}`,
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects lore-anchor when chain is set without the matching tx hash', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0xaaa-1',
+      tokenAddr: '0xAAA',
+      chapterNumber: 1,
+      loreCid: 'bafy',
+      contentHash: `0x${'a'.repeat(64)}`,
+      chain: 'bsc-mainnet',
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects lore-anchor with malformed explorerUrl', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      anchorId: '0xaaa-1',
+      tokenAddr: '0xAAA',
+      chapterNumber: 1,
+      loreCid: 'bafy',
+      contentHash: `0x${'a'.repeat(64)}`,
+      onChainTxHash: `0x${'c'.repeat(64)}`,
+      chain: 'bsc-mainnet',
+      explorerUrl: 'not-a-url',
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects lore-anchor with missing anchorId', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'lore-anchor',
+      tokenAddr: '0xAAA',
+      chapterNumber: 1,
+      loreCid: 'bafy',
+      contentHash: `0x${'a'.repeat(64)}`,
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('statusEventPayloadSchema', () => {
   it('accepts a running status without errorMessage', () => {
     const result = statusEventPayloadSchema.safeParse({

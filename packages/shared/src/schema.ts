@@ -209,13 +209,55 @@ export const heartbeatDecisionArtifactSchema = z.object({
   label: z.string().optional(),
 });
 
+// `lore-anchor` artifact (AC3 on-chain anchor fallback) — emitted after the
+// Narrator upserts a chapter into the LoreStore. Layer 1 (always on) carries
+// a keccak256 `contentHash` commitment over
+// `${tokenAddr}:${chapterNumber}:${loreCid}` plus the anchor bookkeeping
+// fields. Layer 2 is an OPTIONAL zero-value self-tx memo on BSC mainnet,
+// gated by the `ANCHOR_ON_CHAIN=true` env; when the tx lands we stamp the
+// full `{onChainTxHash, chain, explorerUrl}` trio onto the artifact. The
+// three fields are all-or-nothing so the UI never renders a half-built
+// explorer link. The tx-hash regex matches the existing 32-byte EVM tx-hash
+// convention used by `tokenDeployTxArtifactSchema` above.
+const LORE_ANCHOR_CONTENT_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+export const loreAnchorArtifactSchema = z
+  .object({
+    kind: z.literal('lore-anchor'),
+    /** Deterministic unique key, shape `${tokenAddr-lowercased}-${chapterNumber}`. */
+    anchorId: z.string().min(1),
+    tokenAddr: z.string().min(1),
+    chapterNumber: z.number().int().positive(),
+    loreCid: z.string().min(1),
+    /** 32-byte keccak256 commitment, 0x-prefixed lowercase hex. */
+    contentHash: z.string().regex(LORE_ANCHOR_CONTENT_HASH_REGEX),
+    ts: z.string().datetime(),
+    /** Layer-2 on-chain trio. All three must be present together, or all absent. */
+    onChainTxHash: z.string().regex(LORE_ANCHOR_CONTENT_HASH_REGEX).optional(),
+    chain: z.literal('bsc-mainnet').optional(),
+    explorerUrl: z.string().url().optional(),
+    label: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const onChainFields = [value.onChainTxHash, value.chain, value.explorerUrl];
+    const setCount = onChainFields.filter((v) => v !== undefined).length;
+    if (setCount !== 0 && setCount !== 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['onChainTxHash'],
+        message:
+          'on-chain trio (onChainTxHash, chain, explorerUrl) must be all present or all absent',
+      });
+    }
+  });
+
 // Note on `discriminatedUnion` vs `union`:
-//   `memeImageArtifactSchema` + `heartbeatTickArtifactSchema` are ZodEffects
-//   (they use `.superRefine`), which `discriminatedUnion` cannot index by a
-//   literal `kind`. We keep the plain-object kinds in the discriminated union
-//   (for narrowing + clearer zod errors) and union the effects schemas on
-//   top. TypeScript's structural narrow on `kind` still works on the
-//   resulting union because every branch declares `kind` as a literal.
+//   `memeImageArtifactSchema` + `heartbeatTickArtifactSchema` +
+//   `loreAnchorArtifactSchema` are ZodEffects (they use `.superRefine`), which
+//   `discriminatedUnion` cannot index by a literal `kind`. We keep the plain-
+//   object kinds in the discriminated union (for narrowing + clearer zod
+//   errors) and union the effects schemas on top. TypeScript's structural
+//   narrow on `kind` still works on the resulting union because every branch
+//   declares `kind` as a literal.
 const baseArtifactSchema = z.discriminatedUnion('kind', [
   bscTokenArtifactSchema,
   tokenDeployTxArtifactSchema,
@@ -229,6 +271,7 @@ export const artifactSchema = z.union([
   baseArtifactSchema,
   memeImageArtifactSchema,
   heartbeatTickArtifactSchema,
+  loreAnchorArtifactSchema,
 ]);
 export type Artifact = z.infer<typeof artifactSchema>;
 export type ArtifactKind = Artifact['kind'];

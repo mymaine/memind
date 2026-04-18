@@ -79,6 +79,11 @@ function artifactKey(a: Artifact, index: number): string {
       return `heartbeat-tick:${a.tickNumber.toString()}`;
     case 'heartbeat-decision':
       return `heartbeat-decision:${a.tickNumber.toString()}:${a.action}`;
+    case 'lore-anchor':
+      // `anchorId` is already `${tokenAddr-lower}-${chapterNumber}`, so it is
+      // unique across rewrites of the same chapter for the same token and
+      // stable enough for React reconciliation.
+      return `lore-anchor:${a.anchorId}`;
   }
 }
 

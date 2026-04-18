@@ -32,18 +32,19 @@ function shortHash(value: string, head = 6, tail = 4): string {
 
 /**
  * Artifacts that belong in the pill row at the bottom of the dashboard. The
- * Heartbeat section owns its own renderer for tick / decision artifacts, so
- * those two kinds deliberately do NOT participate in the TxList: the pill row
- * stays focused on the 5 cross-chain hashes evaluators look for.
+ * Heartbeat section owns its own renderer for tick / decision artifacts, and
+ * the Anchor Evidence panel owns `lore-anchor`, so those kinds deliberately do
+ * NOT participate in the TxList: the pill row stays focused on the 5 cross-
+ * chain hashes evaluators look for.
  */
 export function isPillArtifact(
   a: Artifact,
-): a is Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' }> {
-  return a.kind !== 'heartbeat-tick' && a.kind !== 'heartbeat-decision';
+): a is Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' | 'lore-anchor' }> {
+  return a.kind !== 'heartbeat-tick' && a.kind !== 'heartbeat-decision' && a.kind !== 'lore-anchor';
 }
 
 export function describeArtifact(
-  a: Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' }>,
+  a: Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' | 'lore-anchor' }>,
 ): ArtifactDisplay {
   switch (a.kind) {
     case 'bsc-token':
