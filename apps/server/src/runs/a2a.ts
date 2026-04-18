@@ -162,15 +162,25 @@ function orchestratorLog(
   });
 }
 
-const EVM_TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
-
 /**
- * Emit the Phase 2 "already exists" artifacts so all 5 AC4 pills can light up
- * in a single a2a run. Only the bsc-token (derived from args.tokenAddr) is
- * unconditional; the other two depend on env vars since their full hashes can
- * only come from a prior real run and must stay private per .env.local.
+ * Demo-day fallback path that bypasses the live Creator agent and forges
+ * the same artifact set from env-supplied values. Activated only when
+ * `CREATOR_DRY_RUN=true` (see runA2ADemo). Kept as a private helper to keep
+ * the env-parsing constants (regex, env var names) co-located with the only
+ * code path that consumes them.
+ *
+ * History: this used to be `emitPreSeedArtifacts` and was called
+ * unconditionally on every a2a run as a Phase 4 hard-gate workaround. V2-P1
+ * makes the Creator agent the default path; this helper now only fires under
+ * the explicit dry-run opt-in. The rename happens in a Contract commit so
+ * `git log` shows the moment we stopped pre-seeding by default.
  */
-function emitPreSeedArtifacts(store: RunStore, runId: string, tokenAddr: string): void {
+function emitDryRunFallbackArtifacts(store: RunStore, runId: string, tokenAddr: string): void {
+  // Full 32-byte EVM tx hash regex — env-supplied DEMO_TOKEN_DEPLOY_TX must
+  // match before we ship it as an artifact, otherwise downstream UI would
+  // render a broken explorer link.
+  const EVM_TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+
   store.addArtifact(runId, {
     kind: 'bsc-token',
     chain: 'bsc-mainnet',
@@ -186,7 +196,7 @@ function emitPreSeedArtifacts(store: RunStore, runId: string, tokenAddr: string)
       chain: 'bsc-mainnet',
       txHash: deployTx,
       explorerUrl: `https://bscscan.com/tx/${deployTx}`,
-      label: 'Creator deploy tx (Phase 2)',
+      label: 'Creator deploy tx (dry-run fallback)',
     });
   }
 
@@ -197,7 +207,7 @@ function emitPreSeedArtifacts(store: RunStore, runId: string, tokenAddr: string)
       cid: creatorLoreCid,
       gatewayUrl: `https://gateway.pinata.cloud/ipfs/${creatorLoreCid}`,
       author: 'creator',
-      label: 'Creator lore chapter (Phase 2)',
+      label: 'Creator lore chapter (dry-run fallback)',
     });
   }
 }
@@ -392,7 +402,7 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
       'CREATOR_DRY_RUN=true — skipping Creator phase, emitting env-fed pre-seed artifacts',
       'warn',
     );
-    emitPreSeedArtifacts(store, runId, args.tokenAddr);
+    emitDryRunFallbackArtifacts(store, runId, args.tokenAddr);
   } else {
     orchestratorLog(store, runId, 'creator', 'running Creator agent ...');
     const creatorOut = await runCreator({
