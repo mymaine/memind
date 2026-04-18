@@ -92,22 +92,9 @@ export default function MarketPage(): React.ReactElement {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-5 px-6 py-4">
-      <header className="flex flex-col gap-1">
-        <div className="flex items-center gap-3">
-          <span
-            aria-hidden
-            className="inline-block h-3 w-3 rounded-full bg-accent"
-            style={{ animation: 'signal-pulse 1500ms ease-in-out infinite' }}
-          />
-          <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold uppercase tracking-[0.5px] text-fg-primary">
-            Shilling Market
-          </span>
-        </div>
-        <span className="font-[family-name:var(--font-sans-body)] text-[13px] text-fg-secondary">
-          Pay 0.01 USDC, an AI agent shills for you.
-        </span>
-      </header>
-
+      {/* Shared <Header /> is mounted at the layout level (V4.7-P1 Task 4);
+          the page-level "Shilling Market" header block lived here before
+          and has been removed. Market-hero narrative lands in V4.7-P4. */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-[360px_1fr]">
         <section
           aria-label="Order form"

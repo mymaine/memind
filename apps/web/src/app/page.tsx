@@ -124,25 +124,10 @@ export default function HomePage() {
     // 170 + meme+view 380 + pills 80 + heartbeat (collapsed) 56 + footer 40
     // + gaps 60 ≈ 918px. Heartbeat expands in place and scrolls internally.
     <main className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 px-6 py-4">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span
-            aria-hidden
-            className="inline-block h-3 w-3 rounded-full bg-accent"
-            style={{ animation: 'signal-pulse 1500ms ease-in-out infinite' }}
-          />
-          <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold uppercase tracking-[0.5px] text-fg-primary">
-            Agent Swarm
-          </span>
-          <span className="hidden font-[family-name:var(--font-sans-body)] text-[13px] text-fg-secondary md:inline">
-            · first agent-to-agent commerce on Four.Meme
-          </span>
-        </div>
-        <span className="font-[family-name:var(--font-mono)] text-[11px] text-fg-tertiary">
-          four.meme × x402 · base-sepolia
-        </span>
-      </header>
-
+      {/* Shared <Header /> is mounted at the layout level (V4.7-P1 Task 4);
+          the page-level "Agent Swarm" header block lived here before and
+          has been removed. The min-h/padding tuning for the now-shorter
+          viewport lands in V4.7-P1 Task 5 (min-h-[calc(100vh-56px)]). */}
       <section className="flex flex-col gap-2">
         <ThemeInput onRun={startRun} disabled={state.phase === 'running'} />
         {state.phase === 'error' ? (

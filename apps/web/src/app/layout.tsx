@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
-import { TopNav } from '@/components/top-nav';
+import { Header } from '@/components/header';
 import './globals.css';
 
 // Inter drives `--font-sans-body` (design.md §3); system-ui already backs
@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body>
-        <TopNav />
+        <Header />
         {children}
       </body>
     </html>

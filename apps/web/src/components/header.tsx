@@ -27,10 +27,15 @@
  */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useScrollProgress } from '../hooks/useScrollProgress.js';
-import { BRAND_NAME } from '../lib/narrative-copy.js';
-import { ShillingGlyph } from './shilling-glyph/index.js';
-import { NAV_ITEMS, headerOuterClass, isActiveNavItem, type NavItem } from './header-utils.js';
+import { useScrollProgress } from '@/hooks/useScrollProgress';
+import { BRAND_NAME } from '@/lib/narrative-copy';
+import { ShillingGlyph } from '@/components/shilling-glyph';
+import {
+  NAV_ITEMS,
+  headerOuterClass,
+  isActiveNavItem,
+  type NavItem,
+} from '@/components/header-utils';
 
 // TODO(lead): swap in the canonical repo URL once the hackathon submission
 // picks a public GitHub mirror. Placeholder `#` keeps the icon harmless in
