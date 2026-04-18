@@ -11,6 +11,7 @@ import {
   applyAssistantDelta,
   applyToolUseEnd,
   applyToolUseStart,
+  describeStartRunError,
 } from './useRun-state.js';
 
 describe('applyToolUseStart', () => {
@@ -150,5 +151,28 @@ describe('applyAssistantDelta', () => {
     );
     expect(after.creator).toBe('C');
     expect(after.narrator).toBe('N');
+  });
+});
+
+// V2-P5 Task 6 — 409 toast formatting.
+describe('describeStartRunError', () => {
+  it('formats 409 run_in_progress into a user-facing toast string', () => {
+    const msg = describeStartRunError(409, {
+      error: 'run_in_progress',
+      existingRunId: 'run_abc',
+    });
+    expect(msg).toMatch(/already in progress/i);
+  });
+
+  it('falls back to the server error field on a plain 400', () => {
+    const msg = describeStartRunError(400, { error: 'invalid request' });
+    expect(msg).toMatch(/bad request/i);
+    expect(msg).toMatch(/invalid request/);
+  });
+
+  it('emits a generic server-error message on 5xx', () => {
+    const msg = describeStartRunError(503, null);
+    expect(msg).toMatch(/server error/i);
+    expect(msg).toMatch(/503/);
   });
 });

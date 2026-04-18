@@ -26,6 +26,7 @@ import {
   applyAssistantDelta,
   applyToolUseEnd,
   applyToolUseStart,
+  describeStartRunError,
   type AssistantTextByAgent,
   type ToolCallState,
   type ToolCallsByAgent,
@@ -121,8 +122,15 @@ export function useRun(): UseRunResult {
         body: JSON.stringify(input),
       });
       if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`POST /api/runs failed: ${res.status} ${text || res.statusText}`);
+        // V2-P5 Task 6: parse the server error body and turn it into a toast-
+        // friendly message (concurrency 409 gets a specific phrase).
+        let parsed: { error?: unknown; existingRunId?: unknown } | null = null;
+        try {
+          parsed = (await res.json()) as { error?: unknown; existingRunId?: unknown };
+        } catch {
+          parsed = null;
+        }
+        throw new Error(describeStartRunError(res.status, parsed));
       }
       const body = (await res.json()) as CreateRunResponse;
       const { runId } = body;

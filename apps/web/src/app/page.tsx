@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AgentId, AgentStatus, Artifact } from '@hack-fourmeme/shared';
 import { ArchitectureDiagram } from '@/components/architecture-diagram';
 import { ThemeInput } from '@/components/theme-input';
@@ -9,6 +9,7 @@ import { TimelineView } from '@/components/timeline-view';
 import { TxList } from '@/components/tx-list';
 import { MemeImageCard } from '@/components/meme-image-card';
 import { HeartbeatSection } from '@/components/heartbeat-section';
+import { Toast } from '@/components/toast';
 import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS } from '@/hooks/useRun-state';
 import { useRun, type RunState } from '@/hooks/useRun';
 
@@ -95,6 +96,21 @@ export default function HomePage() {
   // V2-P4: 3-column vs Timeline view toggle. State lives here so switching
   // does not unsubscribe SSE; the underlying run state stays in `useRun`.
   const [viewMode, setViewMode] = useState<ViewMode>('columns');
+
+  // V2-P5 Task 6: surface 409 concurrency errors as a toast. The `error`
+  // phase already shows an inline alert; the toast adds a right-corner flash
+  // that decays after 3s so subsequent successful runs read cleanly.
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Extracted so the effect dep is a simple string|null, not a ternary.
+  const errorMessage = state.phase === 'error' ? state.error : null;
+  useEffect(() => {
+    if (errorMessage !== null && errorMessage.length > 0) {
+      setToastMessage(errorMessage);
+    }
+  }, [errorMessage]);
+  const clearToast = useCallback(() => {
+    setToastMessage(null);
+  }, []);
 
   // Both renderers want toolCalls / assistantText in the post-idle state; we
   // pre-compute once so the JSX below stays slim.
@@ -200,11 +216,13 @@ export default function HomePage() {
           the deliberate decoupling rationale). */}
       <HeartbeatSection />
 
-      <footer className="border-t border-border-default pt-6 text-[12px] text-fg-tertiary">
+      <footer className="border-t border-border-default pt-2 text-[11px] text-fg-tertiary">
         <span className="font-[family-name:var(--font-mono)]">
           Four.Meme AI Sprint · submission 2026-04-22 UTC 15:59
         </span>
       </footer>
+
+      <Toast message={toastMessage} onDismiss={clearToast} />
     </main>
   );
 }
