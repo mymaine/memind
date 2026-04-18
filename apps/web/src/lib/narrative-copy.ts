@@ -244,7 +244,7 @@ export const FOOTER_TAGLINE = 'Four.Meme AI Sprint · submission 2026-04-22 UTC 
 // ─── Stats badges ───────────────────────────────────────────────────────────
 
 export const STATS_BADGES = [
-  '427 tests green',
+  '692 tests green',
   'strict TypeScript',
   'AGPL-3.0 open source',
 ] as const;
