@@ -293,6 +293,68 @@ body {
   animation-play-state: paused;
 }
 
+/*
+ * Solution scene · 3-step cards (AC-P4.7-4).
+ *
+ * Base `.scene-card` carries the transition so hover and the one-shot reveal
+ * pulse both slide into / out of the accent colour smoothly. Hover lifts the
+ * card 2px and flips its border to accent; the pulse keyframe cycles the
+ * border back to default so the reveal reads as a single flash rather than a
+ * latched colour change. Infinite loops are avoided deliberately — spec calls
+ * for a "y 輕浮 + 邊框 accent 閃" one-shot, not a looping glow.
+ *
+ * The middle card's tx pill uses a separate keyframe (`tx-pill-flash`) that
+ * breathes a drop-shadow in the chain-base blue so the viewer reads it as
+ * "settlement on Base". The flashing variant loops (4s cadence); the static
+ * variant — used in freeze and reduced-motion modes — keeps the drop-shadow
+ * ON so the pill still reads as lit.
+ */
+.scene-card {
+  transition:
+    transform 200ms var(--ease-out),
+    border-color 200ms var(--ease-out),
+    background-color 200ms var(--ease-out);
+}
+
+.scene-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-accent);
+}
+
+@keyframes scene-card-reveal-pulse {
+  0% {
+    border-color: var(--color-border-default);
+  }
+  40% {
+    border-color: var(--color-accent);
+  }
+  100% {
+    border-color: var(--color-border-default);
+  }
+}
+
+.scene-card--revealed {
+  animation: scene-card-reveal-pulse 1200ms ease-out 1;
+}
+
+@keyframes tx-pill-flash {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: drop-shadow(0 0 6px var(--color-chain-base));
+  }
+}
+
+.tx-pill--flashing {
+  animation: tx-pill-flash 4s ease-in-out infinite;
+}
+
+.tx-pill--static {
+  filter: drop-shadow(0 0 6px var(--color-chain-base));
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0ms !important;
@@ -306,5 +368,26 @@ body {
   .scene {
     opacity: 1 !important;
     transform: none !important;
+  }
+
+  /* Solution cards: no lift, no accent border. Hover only swaps the surface
+     colour so the card still acknowledges pointer intent. Reveal pulse is
+     cancelled outright (the global `animation-duration: 0ms` would collapse
+     it to a flash; being explicit makes the intent obvious at read time). */
+  .scene-card:hover {
+    transform: none !important;
+    border-color: var(--color-border-default) !important;
+    background-color: var(--color-bg-elevated);
+  }
+  .scene-card--revealed {
+    animation: none !important;
+  }
+
+  /* Tx pill stays lit rather than blinking — the global `animation-duration:
+     0ms` would freeze it on an arbitrary frame (possibly transparent), so we
+     force the drop-shadow on explicitly. */
+  .tx-pill--flashing {
+    animation: none !important;
+    filter: drop-shadow(0 0 6px var(--color-chain-base)) !important;
   }
 }
