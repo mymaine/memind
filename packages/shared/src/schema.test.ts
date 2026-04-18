@@ -4,6 +4,7 @@ import {
   assistantDeltaEventPayloadSchema,
   createRequestSchema,
   createRunRequestSchema,
+  runKindSchema,
   runSnapshotSchema,
   statusEventPayloadSchema,
   toolUseEndEventPayloadSchema,
@@ -606,6 +607,153 @@ describe('assistantDeltaEventPayloadSchema', () => {
       agent: 'creator',
       delta: 'hi',
     });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─── shill-order / shill-tweet artifact kinds (Phase 4.6) ────────────────────
+// Shilling Market path: creators pay 0.01 USDC via x402 for an agent to shill
+// their token on X. `shill-order` carries the paid queue entry (queued →
+// processing → done / failed); `shill-tweet` is emitted once the Shiller agent
+// posts the promotional tweet from its own X account. See
+// docs/features/shilling-market.md "SSE schema 追加" section for shape.
+describe('artifactSchema shill-order', () => {
+  it('accepts a complete shill-order payload including optional creatorBrief', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-order',
+      orderId: 'order_abc123',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      creatorBrief: 'lean cyberpunk angle, emphasise curiosity',
+      paidTxHash: `0x${'a'.repeat(64)}`,
+      paidAmountUsdc: '0.01',
+      status: 'queued',
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a shill-order omitting the optional creatorBrief field', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-order',
+      orderId: 'order_abc124',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      paidTxHash: `0x${'b'.repeat(64)}`,
+      paidAmountUsdc: '0.01',
+      status: 'processing',
+      ts: '2026-04-20T10:00:01.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects shill-order with a malformed targetTokenAddr (not an EVM address)', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-order',
+      orderId: 'order_abc125',
+      targetTokenAddr: '0xnotAnAddress',
+      paidTxHash: `0x${'c'.repeat(64)}`,
+      paidAmountUsdc: '0.01',
+      status: 'queued',
+      ts: '2026-04-20T10:00:02.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects shill-order with a status outside the allowed enum', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-order',
+      orderId: 'order_abc126',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      paidTxHash: `0x${'d'.repeat(64)}`,
+      paidAmountUsdc: '0.01',
+      status: 'pending',
+      ts: '2026-04-20T10:00:03.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects shill-order with a short (non-32-byte) paidTxHash', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-order',
+      orderId: 'order_abc127',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      paidTxHash: '0xabc',
+      paidAmountUsdc: '0.01',
+      status: 'queued',
+      ts: '2026-04-20T10:00:04.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('artifactSchema shill-tweet', () => {
+  it('accepts a complete shill-tweet payload', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-tweet',
+      orderId: 'order_abc123',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      tweetId: '1843219876543210000',
+      tweetUrl: 'https://x.com/shiller/status/1843219876543210000',
+      tweetText: '$MEMEA — stumbled on this one, the lore reads like a fever dream',
+      ts: '2026-04-20T10:01:00.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects shill-tweet when tweetUrl is not a URL', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-tweet',
+      orderId: 'order_abc123',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      tweetId: '1843219876543210000',
+      tweetUrl: 'not-a-url',
+      tweetText: '$MEMEA curious find',
+      ts: '2026-04-20T10:01:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects shill-tweet with empty tweetText', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-tweet',
+      orderId: 'order_abc123',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      tweetId: '1843219876543210000',
+      tweetUrl: 'https://x.com/shiller/status/1843219876543210000',
+      tweetText: '',
+      ts: '2026-04-20T10:01:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects shill-tweet with tweetText exceeding the 280-char X cap', () => {
+    const result = artifactSchema.safeParse({
+      kind: 'shill-tweet',
+      orderId: 'order_abc123',
+      targetTokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      tweetId: '1843219876543210000',
+      tweetUrl: 'https://x.com/shiller/status/1843219876543210000',
+      tweetText: 'a'.repeat(281),
+      ts: '2026-04-20T10:01:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('runKindSchema (Phase 4.6 adds shill-market)', () => {
+  it('accepts shill-market as a new run kind', () => {
+    const result = runKindSchema.safeParse('shill-market');
+    expect(result.success).toBe(true);
+  });
+
+  it('still accepts the pre-existing creator / a2a / heartbeat kinds', () => {
+    for (const kind of ['creator', 'a2a', 'heartbeat'] as const) {
+      const result = runKindSchema.safeParse(kind);
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('rejects an unknown run kind', () => {
+    const result = runKindSchema.safeParse('unknown-kind');
     expect(result.success).toBe(false);
   });
 });
