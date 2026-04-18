@@ -84,6 +84,12 @@ function artifactKey(a: Artifact, index: number): string {
       // unique across rewrites of the same chapter for the same token and
       // stable enough for React reconciliation.
       return `lore-anchor:${a.anchorId}`;
+    case 'shill-order':
+      // One orderId may emit multiple status transitions; suffix with status
+      // so each row keys uniquely while staying deterministic across renders.
+      return `shill-order:${a.orderId}:${a.status}`;
+    case 'shill-tweet':
+      return `shill-tweet:${a.orderId}:${a.tweetId}`;
   }
 }
 

@@ -32,20 +32,30 @@ function shortHash(value: string, head = 6, tail = 4): string {
 
 /**
  * Artifacts that belong in the pill row at the bottom of the dashboard. The
- * Heartbeat section owns its own renderer for tick / decision artifacts, and
- * the Anchor Evidence panel owns `lore-anchor`, so those kinds deliberately do
+ * Heartbeat section owns its own renderer for tick / decision artifacts, the
+ * Anchor Evidence panel owns `lore-anchor`, and the Shilling Market panel owns
+ * `shill-order` / `shill-tweet` (Phase 4.6) — so those kinds deliberately do
  * NOT participate in the TxList: the pill row stays focused on the 5 cross-
  * chain hashes evaluators look for.
  */
-export function isPillArtifact(
-  a: Artifact,
-): a is Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' | 'lore-anchor' }> {
-  return a.kind !== 'heartbeat-tick' && a.kind !== 'heartbeat-decision' && a.kind !== 'lore-anchor';
+type NonPillKind =
+  | 'heartbeat-tick'
+  | 'heartbeat-decision'
+  | 'lore-anchor'
+  | 'shill-order'
+  | 'shill-tweet';
+
+export function isPillArtifact(a: Artifact): a is Exclude<Artifact, { kind: NonPillKind }> {
+  return (
+    a.kind !== 'heartbeat-tick' &&
+    a.kind !== 'heartbeat-decision' &&
+    a.kind !== 'lore-anchor' &&
+    a.kind !== 'shill-order' &&
+    a.kind !== 'shill-tweet'
+  );
 }
 
-export function describeArtifact(
-  a: Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' | 'lore-anchor' }>,
-): ArtifactDisplay {
+export function describeArtifact(a: Exclude<Artifact, { kind: NonPillKind }>): ArtifactDisplay {
   switch (a.kind) {
     case 'bsc-token':
       return {

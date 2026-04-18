@@ -170,6 +170,31 @@ function GenericArtifactRow({ artifact }: { artifact: Artifact }): React.ReactEl
       </div>
     );
   }
+  if (artifact.kind === 'shill-order') {
+    // The full ShillOrderPanel lives on /market. Timeline mode just reports
+    // the status transition in place so the chronological order is visible.
+    const orderIdShort = `${artifact.orderId.slice(0, 8)}…${artifact.orderId.slice(-4)}`;
+    return (
+      <div className="rounded-[var(--radius-card)] border border-border-default bg-bg-surface px-3 py-2 text-[12px]">
+        <span className="font-[family-name:var(--font-mono)] text-accent-text">
+          shill-order {orderIdShort}
+        </span>
+        <span className="ml-2 font-[family-name:var(--font-mono)] text-fg-tertiary">
+          {artifact.status}
+        </span>
+      </div>
+    );
+  }
+  if (artifact.kind === 'shill-tweet') {
+    return (
+      <div className="rounded-[var(--radius-card)] border border-accent bg-bg-surface px-3 py-2 text-[12px]">
+        <span className="font-[family-name:var(--font-mono)] text-accent-text">
+          shill-tweet · #{artifact.tweetId.slice(-6)}
+        </span>
+        <span className="ml-2 text-fg-primary">{artifact.tweetText.slice(0, 80)}</span>
+      </div>
+    );
+  }
   // BSC / IPFS / token-deploy-tx all reuse the pill-style describe helper for
   // their visual identity (chain colour + short hash + explorer link).
   const d = describeArtifact(artifact);

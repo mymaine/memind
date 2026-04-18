@@ -80,7 +80,9 @@ describe('describeArtifact', () => {
     if (
       a.kind === 'heartbeat-tick' ||
       a.kind === 'heartbeat-decision' ||
-      a.kind === 'lore-anchor'
+      a.kind === 'lore-anchor' ||
+      a.kind === 'shill-order' ||
+      a.kind === 'shill-tweet'
     ) {
       throw new Error('unreachable: test fixture is a meme-image');
     }
