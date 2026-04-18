@@ -10,20 +10,19 @@
  *   - <Header /> is the client shell: calls usePathname() and
  *     useScrollProgress(80) to wire the view to live browser state.
  *
- * The left side carries the <ShillingGlyph mood='idle' /> brand mark — an
- * SVG face with breathing idle animation and occasional blink / wink
- * micros — next to the BRAND_NAME wordmark. The Header context pins the
- * mood to `idle` and never changes it; mood-driven variants live on the
- * Hero / Mascot surfaces instead. The right side hosts three nav links
- * (Home / Market / Evidence) and a GitHub icon link. Nothing here touches
- * CSS — all styling is Tailwind v4 tokens already registered in
- * globals.css.
+ * The left side carries the <PixelHumanGlyph mood='idle' /> brand mark —
+ * a pixel-art chibi with breathing idle animation — next to the BRAND_NAME
+ * wordmark. The Header context pins the mood to `idle` and never changes
+ * it; mood-driven variants live on the Hero / Mascot surfaces instead.
+ * The right side hosts three nav links (Home / Market / Evidence) and a
+ * GitHub icon link. Nothing here touches CSS — all styling is Tailwind v4
+ * tokens already registered in globals.css.
  */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useScrollProgress } from '@/hooks/useScrollProgress';
 import { BRAND_NAME } from '@/lib/narrative-copy';
-import { ShillingGlyph } from '@/components/shilling-glyph';
+import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
 import {
   NAV_ITEMS,
   headerOuterClass,
@@ -58,19 +57,16 @@ export function HeaderView(props: HeaderViewProps): React.ReactElement {
       data-scrolled={scrolled ? 'true' : 'false'}
     >
       <div className="mx-auto flex w-full max-w-[1400px] items-center gap-6 px-6">
-        {/* Brand mark — <ShillingGlyph> at mood=idle paired with the
-            wordmark. The glyph's own CSS drives the breathing + idle
-            micros (blink / wink / smirk-amp), replacing the earlier
-            signal-pulse dot with a proper face. ShillingGlyph is a
-            'use client' component but its initial SSR markup is stable
-            (reduced-motion server snapshot returns false), so it renders
-            cleanly through renderToStaticMarkup in tests. */}
+        {/* Brand mark — <PixelHumanGlyph> at mood=idle paired with the
+            wordmark. 'use client' but SSR-stable (reduced-motion server
+            snapshot returns false), so it renders cleanly through
+            renderToStaticMarkup in tests. */}
         <Link
           href="/"
           aria-label={`${brandName} — Home`}
           className="flex items-center gap-3 text-fg-primary"
         >
-          <ShillingGlyph size={32} mood="idle" ariaLabel={`${brandName} logo`} />
+          <PixelHumanGlyph size={44} mood="idle" ariaLabel={`${brandName} logo`} />
           <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold uppercase tracking-[0.5px]">
             {brandName}
           </span>
