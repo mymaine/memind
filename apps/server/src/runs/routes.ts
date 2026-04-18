@@ -19,9 +19,11 @@ import {
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { AnchorLedger } from '../state/anchor-ledger.js';
+import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
+import { type runShillMarketDemo } from './shill-market.js';
 
 /**
  * Default Phase 2 validated BSC mainnet demo token — mirrors the CLI
@@ -48,6 +50,12 @@ export type RunA2ADemoFn = typeof runA2ADemo;
  */
 export type RunHeartbeatDemoFn = typeof runHeartbeatDemo;
 
+/**
+ * Signature of the P4.6-3 shill-market orchestrator. Injectable so routes.test
+ * can feed a fake and the real `runShillMarketDemo` is wired in production.
+ */
+export type RunShillMarketDemoFn = typeof runShillMarketDemo;
+
 export interface RegisterRunRoutesDeps {
   config: AppConfig;
   anthropic: Anthropic;
@@ -61,12 +69,22 @@ export interface RegisterRunRoutesDeps {
    */
   anchorLedger?: AnchorLedger;
   /**
+   * Shared ShillOrderStore instance (Phase 4.6). Required when the caller
+   * wants `kind: 'shill-market'` runs to work — the orchestrator hands it to
+   * every phase so the x402 producer and the Shiller consumer hit the same
+   * queue. Optional so legacy boot paths (CLI demos) that only use `a2a` /
+   * `heartbeat` modes keep compiling without wiring a queue they don't need.
+   */
+  shillOrderStore?: ShillOrderStore;
+  /**
    * Test hook — overrides the real `runA2ADemo` pure function. Production
    * callers leave this undefined.
    */
   runA2ADemoImpl?: RunA2ADemoFn;
   /** Test hook — overrides the real `runHeartbeatDemo`. */
   runHeartbeatDemoImpl?: RunHeartbeatDemoFn;
+  /** Test hook — overrides the real `runShillMarketDemo`. */
+  runShillMarketDemoImpl?: RunShillMarketDemoFn;
 }
 
 const SSE_KEEPALIVE_MS = 20_000;

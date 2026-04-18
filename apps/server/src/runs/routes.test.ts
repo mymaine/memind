@@ -6,8 +6,14 @@ import type Anthropic from '@anthropic-ai/sdk';
 import express from 'express';
 import type { AppConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
+import { ShillOrderStore } from '../state/shill-order-store.js';
 import { RunStore } from './store.js';
-import { registerRunRoutes, type RunA2ADemoFn, type RunHeartbeatDemoFn } from './routes.js';
+import {
+  registerRunRoutes,
+  type RunA2ADemoFn,
+  type RunHeartbeatDemoFn,
+  type RunShillMarketDemoFn,
+} from './routes.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
 import type { AgentLoopResult, runAgentLoop } from '../agents/runtime.js';
 
@@ -55,10 +61,28 @@ interface Harness {
   baseUrl: string;
   runStore: RunStore;
   loreStore: LoreStore;
+  shillOrderStore?: ShillOrderStore;
   close: () => Promise<void>;
 }
 
-function startHarness(runImpl: RunA2ADemoFn, heartbeatImpl?: RunHeartbeatDemoFn): Promise<Harness> {
+interface StartHarnessOptions {
+  heartbeatImpl?: RunHeartbeatDemoFn;
+  shillMarketImpl?: RunShillMarketDemoFn;
+  shillOrderStore?: ShillOrderStore;
+}
+
+function startHarness(
+  runImpl: RunA2ADemoFn,
+  optsOrHeartbeat?: RunHeartbeatDemoFn | StartHarnessOptions,
+): Promise<Harness> {
+  // Backwards-compat: older tests pass a heartbeat impl as the 2nd positional
+  // arg. New shill-market tests pass an options object. Normalise here so the
+  // existing call sites need no edits.
+  const opts: StartHarnessOptions =
+    typeof optsOrHeartbeat === 'function'
+      ? { heartbeatImpl: optsOrHeartbeat }
+      : (optsOrHeartbeat ?? {});
+
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   const runStore = new RunStore();
@@ -70,7 +94,9 @@ function startHarness(runImpl: RunA2ADemoFn, heartbeatImpl?: RunHeartbeatDemoFn)
     runStore,
     loreStore,
     runA2ADemoImpl: runImpl,
-    ...(heartbeatImpl !== undefined ? { runHeartbeatDemoImpl: heartbeatImpl } : {}),
+    ...(opts.heartbeatImpl !== undefined ? { runHeartbeatDemoImpl: opts.heartbeatImpl } : {}),
+    ...(opts.shillMarketImpl !== undefined ? { runShillMarketDemoImpl: opts.shillMarketImpl } : {}),
+    ...(opts.shillOrderStore !== undefined ? { shillOrderStore: opts.shillOrderStore } : {}),
   });
 
   const server = app.listen(0);
@@ -84,6 +110,7 @@ function startHarness(runImpl: RunA2ADemoFn, heartbeatImpl?: RunHeartbeatDemoFn)
         baseUrl,
         runStore,
         loreStore,
+        ...(opts.shillOrderStore !== undefined ? { shillOrderStore: opts.shillOrderStore } : {}),
         close: () => new Promise<void>((r) => server.close(() => r())),
       });
     });
@@ -388,6 +415,95 @@ describe('registerRunRoutes', () => {
         body: JSON.stringify({ kind: 'nope' }),
       });
       expect(response.status).toBe(400);
+    });
+  });
+
+  // ─── P4.6-3: shill-market mode dispatch ─────────────────────────────────
+  describe('POST /api/runs (shill-market dispatch)', () => {
+    const tokenAddr = '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444';
+
+    it('returns 201 + runId and invokes runShillMarketDemoImpl with the tokenAddr', async () => {
+      let observedTokenAddr: string | undefined;
+      let observedTokenSymbol: string | undefined;
+      let observedCreatorBrief: string | undefined;
+      let observedRunId: string | undefined;
+      const shillOrderStore = new ShillOrderStore();
+      const fakeShillMarket: RunShillMarketDemoFn = async (deps) => {
+        observedTokenAddr = deps.args.tokenAddr;
+        observedTokenSymbol = deps.args.tokenSymbol;
+        observedCreatorBrief = deps.args.creatorBrief;
+        observedRunId = deps.runId;
+      };
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, {
+        shillMarketImpl: fakeShillMarket,
+        shillOrderStore,
+      });
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'shill-market',
+          params: {
+            tokenAddr,
+            tokenSymbol: 'HBNB2026-BAT',
+            creatorBrief: 'make it weird',
+          },
+        }),
+      });
+      expect(response.status).toBe(201);
+      const body = (await response.json()) as { runId?: string };
+      expect(typeof body.runId).toBe('string');
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(observedTokenAddr).toBe(tokenAddr);
+      expect(observedTokenSymbol).toBe('HBNB2026-BAT');
+      expect(observedCreatorBrief).toBe('make it weird');
+      expect(observedRunId).toBe(body.runId);
+    });
+
+    it('returns 400 for kind=shill-market with invalid tokenAddr', async () => {
+      const shillOrderStore = new ShillOrderStore();
+      const fakeShillMarket: RunShillMarketDemoFn = async () => {};
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, {
+        shillMarketImpl: fakeShillMarket,
+        shillOrderStore,
+      });
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'shill-market',
+          params: { tokenAddr: 'not-an-address' },
+        }),
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error?: string };
+      expect(body.error).toMatch(/tokenAddr/);
+    });
+
+    it('returns 500 for kind=shill-market when shillOrderStore is not wired', async () => {
+      const fakeShillMarket: RunShillMarketDemoFn = async () => {};
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      // No `shillOrderStore` passed — the route layer must refuse with 500.
+      harness = await startHarness(fakeA2A, {
+        shillMarketImpl: fakeShillMarket,
+      });
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'shill-market',
+          params: { tokenAddr },
+        }),
+      });
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as { error?: string };
+      expect(body.error).toMatch(/shillOrderStore/);
     });
   });
 
