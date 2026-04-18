@@ -7,6 +7,7 @@ import type { Network } from '@x402/core/types';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
+import type { ShillOrderStore } from '../state/shill-order-store.js';
 import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
 
 /**
@@ -19,6 +20,13 @@ import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
  */
 export interface RegisterX402RoutesOpts {
   loreStore?: LoreStore;
+  /**
+   * Plugs the Shiller agent's order queue into the `/shill/:tokenAddr` endpoint
+   * (Phase 4.6). When provided, paid shill requests are enqueued for the Shiller
+   * agent to post; when omitted, the endpoint still returns 200 + orderId so the
+   * x402 paywall contract stays intact in demos that stub out the Shiller.
+   */
+  shillOrderStore?: ShillOrderStore;
 }
 
 /**
@@ -180,4 +188,20 @@ function handleMetadata(req: Request, res: Response): void {
     symbol: 'HBNB2026-MOCK',
     imageUrl: 'https://placeholder.example.com/mock-token.png',
   });
+}
+
+/**
+ * Phase 4.6 stub for the `/shill/:tokenAddr` POST handler.
+ *
+ * The real implementation decodes the settled x402 payment, generates an
+ * orderId, and enqueues a shill order into ShillOrderStore. Exported here
+ * so the red tests in index.test.ts can import the symbol without an ESM
+ * resolution error before the green commit fills in the behaviour.
+ */
+export function createShillHandler(
+  _opts: { shillOrderStore?: ShillOrderStore } = {},
+): RequestHandler {
+  return (_req: Request, res: Response): void => {
+    res.status(501).json({ error: 'createShillHandler not yet implemented' });
+  };
 }
