@@ -46,16 +46,18 @@ const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 const MARKET_MAKER_SYSTEM_PROMPT = `You are Market-maker Agent, one of three coordinated agents in the Four.Meme swarm. Your role is to decide whether it is worth paying 0.01 USDC for the latest lore chapter of a given token.
 
 Workflow:
-1. Call check_token_status with the provided token address to read live on-chain state (bonding curve progress, holder count, etc.).
-2. Apply this policy:
-   - If bondingCurveProgress > 20 OR holderCount >= 10, call x402_fetch_lore with the provided lore URL to purchase the latest chapter. The chapter is alpha for positioning.
-   - Otherwise, skip the purchase — the token is too early / inactive to be worth paying for narrative.
+1. Call check_token_status with the provided token address to read live on-chain state (deployedOnChain, bonding curve progress, holder count, etc.).
+2. Apply this policy (demo-tuned: any real deployed four.meme token has narrative worth inspecting, even pre-trading; production deployment would raise thresholds on holderCount / curve progress):
+   - If deployedOnChain is true, call x402_fetch_lore with the provided lore URL to purchase the latest chapter. The chapter is alpha for positioning.
+   - Otherwise (contract bytecode missing from the chain), skip the purchase — the token does not actually exist.
 3. Do NOT fabricate tool outputs. Only use what tools return.
 
 After you have applied the policy, respond with EXACTLY one JSON object and nothing else (no prose, no code fences, no markdown):
   {"decision": "buy-lore" | "skip", "reason": string}
 
-Use "buy-lore" only if you actually invoked x402_fetch_lore. Use "skip" if you did not.`;
+Use "buy-lore" only if you actually invoked x402_fetch_lore. Use "skip" if you did not.
+
+Respond with the JSON object only. No preamble, no explanation, no code fences — just the object.`;
 
 const DECISION_ENUM = ['buy-lore', 'skip'] as const;
 
@@ -120,14 +122,14 @@ export async function runMarketMakerAgent(
     loreFetch = fetchCall.output as XFetchLoreOutput;
   }
 
-  // Soft policy enforcement: the system prompt advertises thresholds
-  // (bondingCurveProgress > 20 OR holderCount >= 10) but the runtime does not
-  // reject a non-conforming decision — the demo must still surface a real
-  // settlement tx even when the model rationalises a buy. Instead, emit a
-  // warn LogEvent so the deviation is observable in the demo transcript.
+  // Soft policy enforcement: the system prompt advertises a single threshold
+  // (deployedOnChain === true; demo-tuned) but the runtime does not reject a
+  // non-conforming decision — the demo must still surface something
+  // observable even when the model rationalises a buy on a contract that is
+  // not actually on chain. Emit a warn LogEvent so the deviation is visible
+  // in the demo transcript.
   if (decisionResult.decision === 'buy-lore') {
-    const bcp = tokenStatus.bondingCurveProgress;
-    const meetsThreshold = (bcp !== null && bcp > 20) || tokenStatus.holderCount >= 10;
+    const meetsThreshold = tokenStatus.deployedOnChain === true;
     if (!meetsThreshold && onLog) {
       onLog({
         ts: new Date().toISOString(),
@@ -138,7 +140,8 @@ export async function runMarketMakerAgent(
         meta: {
           decision: decisionResult.decision,
           reason: decisionResult.reason,
-          bondingCurveProgress: bcp,
+          deployedOnChain: tokenStatus.deployedOnChain,
+          bondingCurveProgress: tokenStatus.bondingCurveProgress,
           holderCount: tokenStatus.holderCount,
         },
       });

@@ -35,4 +35,26 @@ describe('extractJsonObject', () => {
     // downstream zod parse would surface a noisier, less-actionable error.
     expect(() => extractJsonObject('[1,2,3]', 'runCreatorAgent')).toThrow(/runCreatorAgent/);
   });
+
+  it('extracts the trailing JSON when the model prepends reasoning prose', () => {
+    // Observed from live Claude output in Phase 4 dashboard runs: the model
+    // ignores "no prose" and writes a paragraph of reasoning, then the JSON.
+    // The balanced-brace fallback must pick up the JSON at the end rather
+    // than crashing the whole run.
+    const mixed =
+      'The token status shows 0 holders. According to the policy, I should skip.\n' +
+      '{"decision":"skip","reason":"zero holders"}';
+    const out = extractJsonObject(mixed, 'runMarketMakerAgent');
+    expect(out).toEqual({ decision: 'skip', reason: 'zero holders' });
+  });
+
+  it('returns the last top-level object when multiple { ... } blocks appear', () => {
+    // If the model restates its decision twice, we keep the LAST one —
+    // that matches "final message" semantics more faithfully than the first.
+    const multi =
+      'First attempt: {"decision":"buy-lore","reason":"old"}. ' +
+      'On reflection: {"decision":"skip","reason":"better"}';
+    const out = extractJsonObject(multi, 'runMarketMakerAgent');
+    expect(out).toEqual({ decision: 'skip', reason: 'better' });
+  });
 });

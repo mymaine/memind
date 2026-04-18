@@ -135,13 +135,17 @@ const HIGH_STATUS: FakeStatus = {
   warnings: [],
 };
 
+// Contract NOT on chain — falls below the demo-tuned soft policy threshold
+// (deployedOnChain === true). Used to exercise the skip branch and the
+// policy-violation warn branch when the model rationalises a buy on a
+// non-existent contract.
 const LOW_STATUS: FakeStatus = {
   tokenAddr: TOKEN_ADDR,
-  deployedOnChain: true,
-  holderCount: 1,
-  bondingCurveProgress: 4.2,
+  deployedOnChain: false,
+  holderCount: 0,
+  bondingCurveProgress: 0,
   volume24hBnb: null,
-  marketCapBnb: 0.01,
+  marketCapBnb: 0,
   inspectedAtBlock: '100000',
   warnings: [],
 };
@@ -187,13 +191,13 @@ describe('runMarketMakerAgent', () => {
     expect(out.toolCalls.map((c) => c.name)).toEqual(['check_token_status', 'x402_fetch_lore']);
   });
 
-  it('skip branch: only invokes check_token_status when progress is low', async () => {
+  it('skip branch: only invokes check_token_status when the contract is not on chain', async () => {
     const registry = buildRegistry(LOW_STATUS, LORE_FETCH_OUT);
     const { client } = fakeClient([
       toolUseResponse('m1', [
         { id: 'tu_status', name: 'check_token_status', input: { tokenAddr: TOKEN_ADDR } },
       ]),
-      textResponse(JSON.stringify({ decision: 'skip', reason: 'progress 4.2% < 20%' })),
+      textResponse(JSON.stringify({ decision: 'skip', reason: 'contract not deployed on chain' })),
     ]);
 
     const out = await runMarketMakerAgent({
@@ -295,10 +299,11 @@ describe('runMarketMakerAgent', () => {
   });
 
   it('emits a policy-violation warn LogEvent when buy-lore is chosen below threshold, but still returns successfully', async () => {
-    // Policy thresholds are soft: the system prompt hard-codes
-    // `bondingCurveProgress > 20 OR holderCount >= 10`, but the runtime does
-    // NOT enforce them. That's by design — the demo must still produce an
-    // observable settlement tx even when the model rationalises a buy. This
+    // Policy threshold is soft: the system prompt hard-codes
+    // `deployedOnChain === true` (demo-tuned), but the runtime does NOT
+    // reject a non-conforming decision. That's by design — the demo must
+    // still produce an observable settlement tx even when the model
+    // rationalises a buy on a contract that is not actually on chain. This
     // test locks in the contract: warn gets logged, run succeeds.
     const registry = buildRegistry(LOW_STATUS, LORE_FETCH_OUT);
     const { client } = fakeClient([
@@ -335,6 +340,7 @@ describe('runMarketMakerAgent', () => {
     expect(policyWarn?.message).toMatch(/policy violation/i);
     expect(policyWarn?.meta).toMatchObject({
       decision: 'buy-lore',
+      deployedOnChain: LOW_STATUS.deployedOnChain,
       bondingCurveProgress: LOW_STATUS.bondingCurveProgress,
       holderCount: LOW_STATUS.holderCount,
     });
