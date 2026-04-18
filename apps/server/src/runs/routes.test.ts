@@ -625,5 +625,77 @@ describe('registerRunRoutes', () => {
       expect(artifactIdx).toBeGreaterThan(logIdx);
       expect(doneIdx).toBeGreaterThan(artifactIdx);
     }, 10_000);
+
+    // AC3: lore-anchor artifacts must round-trip through the same SSE event
+    // surface. The dashboard's AnchorLedgerPanel subscribes to the standard
+    // `artifact` event and filters client-side — no dedicated SSE event name
+    // is needed.
+    it('streams a lore-anchor artifact verbatim through the artifact event', async () => {
+      const record = harness.runStore.create('a2a');
+      const TOKEN = '0x4e39d254c716d88ae52d9ca136f0a029c5f74444';
+      const CONTENT_HASH = `0x${'a'.repeat(64)}` as const;
+      const TX_HASH = `0x${'c'.repeat(64)}` as const;
+
+      const received = await new Promise<string>((resolveFn, rejectFn) => {
+        const url = new URL(`${harness.baseUrl}/api/runs/${record.runId}/events`);
+        const req = http.request(
+          {
+            hostname: url.hostname,
+            port: Number(url.port),
+            path: url.pathname,
+            method: 'GET',
+            headers: { accept: 'text/event-stream' },
+          },
+          (res) => {
+            expect(res.statusCode).toBe(200);
+            let buf = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => {
+              buf += chunk;
+            });
+            res.on('end', () => resolveFn(buf));
+            res.on('error', rejectFn);
+          },
+        );
+        req.on('error', rejectFn);
+        req.end();
+
+        setTimeout(() => {
+          // Layer-1 anchor emission.
+          harness.runStore.addArtifact(record.runId, {
+            kind: 'lore-anchor',
+            anchorId: `${TOKEN}-1`,
+            tokenAddr: TOKEN,
+            chapterNumber: 1,
+            loreCid: 'bafkreibxxxxx',
+            contentHash: CONTENT_HASH,
+            ts: '2026-04-20T10:00:00.000Z',
+          });
+          // Layer-2 upgrade emission (same anchorId, now with tx details).
+          harness.runStore.addArtifact(record.runId, {
+            kind: 'lore-anchor',
+            anchorId: `${TOKEN}-1`,
+            tokenAddr: TOKEN,
+            chapterNumber: 1,
+            loreCid: 'bafkreibxxxxx',
+            contentHash: CONTENT_HASH,
+            onChainTxHash: TX_HASH,
+            chain: 'bsc-mainnet',
+            explorerUrl: `https://bscscan.com/tx/${TX_HASH}`,
+            ts: '2026-04-20T10:00:10.000Z',
+          });
+          harness.runStore.setStatus(record.runId, 'done');
+        }, 50);
+      });
+
+      // Both anchor emissions flow through the `artifact` SSE event.
+      const anchorFrameMatches = received.match(
+        /event: artifact\ndata: \{[^\n]*"kind":"lore-anchor"/g,
+      );
+      expect(anchorFrameMatches?.length ?? 0).toBe(2);
+      // Layer-2 emission carries the on-chain trio.
+      expect(received).toMatch(/"onChainTxHash":"0xcccccccc/);
+      expect(received).toMatch(/"explorerUrl":"https:\/\/bscscan.com\/tx\/0xcccccccc/);
+    }, 10_000);
   });
 });
