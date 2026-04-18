@@ -72,6 +72,19 @@ describe('<HeaderView /> static render', () => {
     expect(before).toContain('bg-transparent');
     expect(after).toContain('backdrop-blur-md');
   });
+
+  it('renders <ShillingGlyph mood=idle> as the brand mark (logo)', () => {
+    // The glyph replaces the old signal-pulse dot. We assert its root
+    // <svg> attributes so a future refactor that accidentally drops the
+    // logo (or flips mood away from idle) fails loudly. `glyph-root` is
+    // the stable class marker on ShillingGlyph's root element; mood=idle
+    // resolves to `glyph--idle` via the registry.
+    const out = render();
+    expect(out).toContain('aria-label="Shilling Market logo"');
+    expect(out).toContain('glyph-root');
+    expect(out).toContain('glyph--idle');
+    expect(out).toContain('data-mood="idle"');
+  });
 });
 
 describe('<Header /> export contract', () => {

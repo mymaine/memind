@@ -10,19 +10,26 @@
  *   - <Header /> is the client shell: calls usePathname() and
  *     useScrollProgress(80) to wire the view to live browser state.
  *
- * The left side carries a minimal pulse dot (reuses the `signal-pulse`
- * keyframe already declared in globals.css) next to the BRAND_NAME
- * wordmark. The right side hosts three nav links (Home / Market /
- * Evidence) and a GitHub icon link. Nothing here touches CSS — all
- * styling is Tailwind v4 tokens already registered in globals.css.
+ * The left side carries the <ShillingGlyph mood='idle' /> brand mark — an
+ * SVG face with breathing idle animation and occasional blink / wink
+ * micros — next to the BRAND_NAME wordmark. The Header context pins the
+ * mood to `idle` and never changes it; mood-driven variants live on the
+ * Hero / Mascot surfaces instead. The right side hosts three nav links
+ * (Home / Market / Evidence) and a GitHub icon link. Nothing here touches
+ * CSS — all styling is Tailwind v4 tokens already registered in
+ * globals.css.
  *
- * Future wiring (Task 4 of V4.7-P1) replaces the old <TopNav /> inside
- * layout.tsx with this component; this commit only introduces the file.
+ * TODO(lead): ShillingGlyph defaults to `#00e5b4` primary; design.md
+ * specifies `--color-accent` (#00d992) for Shilling Market. Intentionally
+ * left as default here so the canonical color pass can land as a single
+ * theme-wide sweep (likely via CSS var override on `.glyph-root`) rather
+ * than a one-off `primaryColor` prop at every call site.
  */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useScrollProgress } from '../hooks/useScrollProgress.js';
 import { BRAND_NAME } from '../lib/narrative-copy.js';
+import { ShillingGlyph } from './shilling-glyph/index.js';
 import { NAV_ITEMS, headerOuterClass, isActiveNavItem, type NavItem } from './header-utils.js';
 
 // TODO(lead): swap in the canonical repo URL once the hackathon submission
@@ -52,19 +59,19 @@ export function HeaderView(props: HeaderViewProps): React.ReactElement {
       data-scrolled={scrolled ? 'true' : 'false'}
     >
       <div className="mx-auto flex w-full max-w-[1400px] items-center gap-6 px-6">
-        {/* Brand mark — minimal pulse dot + wordmark. The animation is inline
-            because it reuses the `signal-pulse` keyframe from globals.css,
-            matching the pattern already used on the existing page headers. */}
+        {/* Brand mark — <ShillingGlyph> at mood=idle paired with the
+            wordmark. The glyph's own CSS drives the breathing + idle
+            micros (blink / wink / smirk-amp), replacing the earlier
+            signal-pulse dot with a proper face. ShillingGlyph is a
+            'use client' component but its initial SSR markup is stable
+            (reduced-motion server snapshot returns false), so it renders
+            cleanly through renderToStaticMarkup in tests. */}
         <Link
           href="/"
           aria-label={`${brandName} — Home`}
           className="flex items-center gap-3 text-fg-primary"
         >
-          <span
-            aria-hidden="true"
-            className="h-3 w-3 rounded-full bg-accent"
-            style={{ animation: 'signal-pulse 1500ms ease-in-out infinite' }}
-          />
+          <ShillingGlyph size={32} mood="idle" ariaLabel={`${brandName} logo`} />
           <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold uppercase tracking-[0.5px]">
             {brandName}
           </span>
