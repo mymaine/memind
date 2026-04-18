@@ -8,6 +8,7 @@
     "demo:creator": "tsx src/demos/demo-creator-run.ts",
     "demo:a2a": "tsx src/demos/demo-a2a-run.ts",
     "demo:heartbeat": "tsx src/demos/demo-heartbeat-run.ts",
+    "demo:shill": "tsx src/demos/demo-shill-run.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
