@@ -88,6 +88,16 @@ export interface UseRunResult {
   startRun: (input: CreateRunRequest) => Promise<void>;
 }
 
+// Bypass the Next.js dev rewrite proxy for the SSE stream. The rewrite is
+// implemented via undici fetch under the hood and buffers the response body,
+// which kills the live log stream (events only flush after the run finishes).
+// POST /api/runs still goes through the proxy — buffering a single JSON
+// response is fine. EventSource needs to hit the origin server directly.
+const SSE_ORIGIN =
+  typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SERVER_ORIGIN
+    ? process.env.NEXT_PUBLIC_SERVER_ORIGIN
+    : 'http://localhost:4000';
+
 export function useRun(): UseRunResult {
   const [state, setState] = useState<RunState>(IDLE_STATE);
   // Hold the EventSource across renders so cleanup can close it, and so the
@@ -146,7 +156,7 @@ export function useRun(): UseRunResult {
         error: null,
       });
 
-      const es = new EventSource(`/api/runs/${runId}/events`);
+      const es = new EventSource(`${SSE_ORIGIN}/api/runs/${runId}/events`);
       esRef.current = es;
 
       es.addEventListener('log', (e: MessageEvent) => {
