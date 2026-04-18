@@ -29,7 +29,7 @@ import {
   type AssistantTextByAgent,
   type ToolCallState,
   type ToolCallsByAgent,
-} from './useRun-state.js';
+} from './useRun-state';
 
 // Re-export so existing consumers can import these from useRun.
 export type { AssistantTextByAgent, ToolCallState, ToolCallsByAgent };
