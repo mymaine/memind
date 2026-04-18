@@ -27,6 +27,24 @@ function render(props: Parameters<typeof VisionScene>[0] = {}): string {
   return renderToStaticMarkup(<VisionScene {...props} />);
 }
 
+/**
+ * Extract the class attribute of the element carrying a given data-testid,
+ * regardless of attribute order. React renders attributes in prop-declaration
+ * order so we cannot assume `data-testid` comes after `class`; a simple
+ * positional regex would fail. This helper returns the class string (or
+ * `undefined`) so callers can assert on it with a plain substring / regex.
+ */
+function classForTestid(html: string, testid: string): string | undefined {
+  // Match `<tag ...attrs... data-testid="${testid}" ...attrs...>` in either
+  // order: grab every attribute chunk and scan for class="...".
+  const escaped = testid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tagRe = new RegExp(`<[a-zA-Z][^>]*data-testid="${escaped}"[^>]*>`);
+  const tag = html.match(tagRe)?.[0];
+  if (!tag) return undefined;
+  const classMatch = tag.match(/\sclass="([^"]*)"/);
+  return classMatch?.[1];
+}
+
 describe('<VisionScene /> structural contract', () => {
   it('marks the outer landmark with aria-label="Vision"', () => {
     const out = render();
@@ -50,7 +68,9 @@ describe('<VisionScene /> structural contract', () => {
     // A single shipped SKU exists in narrative-copy; it MUST carry the
     // breathing-border variant so reduced-motion CSS can collapse it to a
     // static glow (per reduced-motion matrix "Vision SKU pulse" row).
-    expect(out).toMatch(/data-testid="sku-card-Shill"[^>]+class="[^"]*\bsku-card--shipped\b/);
+    const cls = classForTestid(out, 'sku-card-Shill');
+    expect(cls).toBeDefined();
+    expect(cls).toMatch(/\bsku-card--shipped\b/);
   });
 
   it('does NOT mark the non-shipped SKUs (Snipe / LP Provisioning / Alpha Feed) as shipped', () => {
@@ -58,14 +78,12 @@ describe('<VisionScene /> structural contract', () => {
     for (const sku of VISION_SKUS) {
       if (sku.status === 'shipped') continue;
       // Extract the class attribute for each non-shipped SKU card and assert
-      // the shipped marker class is absent. We use a per-testid regex so a
-      // shared container class does not false-positive the assertion.
-      const re = new RegExp(
-        `data-testid="sku-card-${sku.name.replace(/ /g, '\\ ')}"[^>]+class="([^"]*)"`,
-      );
-      const match = out.match(re);
-      expect(match).not.toBeNull();
-      expect(match?.[1] ?? '').not.toMatch(/\bsku-card--shipped\b/);
+      // the shipped marker class is absent. A shared container class ("sku-card")
+      // is expected; only the variant class ("sku-card--shipped") must be
+      // absent on non-shipped cards.
+      const cls = classForTestid(out, `sku-card-${sku.name}`);
+      expect(cls).toBeDefined();
+      expect(cls).not.toMatch(/\bsku-card--shipped\b/);
     }
   });
 
@@ -100,18 +118,19 @@ describe('<VisionScene /> structural contract', () => {
     // The highlighted phase (Phase 2) is this project — the viewer must
     // register it as "you are here". We assert both the semantic class and
     // the animation class so reduced-motion CSS can target either.
-    expect(out).toMatch(/data-testid="phase-node-2"[^>]+class="[^"]*\bphase-node--highlighted\b/);
-    expect(out).toMatch(/data-testid="phase-node-2"[^>]+class="[^"]*\bsignal-pulse\b/);
+    const cls = classForTestid(out, 'phase-node-2');
+    expect(cls).toBeDefined();
+    expect(cls).toMatch(/\bphase-node--highlighted\b/);
+    expect(cls).toMatch(/\bsignal-pulse\b/);
   });
 
   it('does NOT highlight Phase 1 / Phase 3 (single-primary invariant)', () => {
     const out = render();
     for (const phaseId of [1, 3]) {
-      const re = new RegExp(`data-testid="phase-node-${phaseId}"[^>]+class="([^"]*)"`);
-      const match = out.match(re);
-      expect(match).not.toBeNull();
-      expect(match?.[1] ?? '').not.toMatch(/\bphase-node--highlighted\b/);
-      expect(match?.[1] ?? '').not.toMatch(/\bsignal-pulse\b/);
+      const cls = classForTestid(out, `phase-node-${phaseId.toString()}`);
+      expect(cls).toBeDefined();
+      expect(cls).not.toMatch(/\bphase-node--highlighted\b/);
+      expect(cls).not.toMatch(/\bsignal-pulse\b/);
     }
   });
 

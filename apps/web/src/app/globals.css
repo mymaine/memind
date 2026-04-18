@@ -355,6 +355,48 @@ body {
   filter: drop-shadow(0 0 6px var(--color-chain-base));
 }
 
+/*
+ * Vision scene · SKU matrix + phase map (AC-P4.7-6 / V4.7-P5 Task 1).
+ *
+ * SKU card "shipped" variant — the only card currently ✅ shipped (Shill)
+ * carries a breathing accent border so the viewer's eye locks onto it vs the
+ * three muted roadmap cards beside it. The keyframe cycles a box-shadow in
+ * the accent colour (instead of swapping border-color) so the border itself
+ * stays steady and the motion reads as a soft glow rather than a blink.
+ *
+ * Phase map connectors — the line between Phase 1 and Phase 2 is an accent-
+ * gradient (shipped + live path); the line between Phase 2 and Phase 3 is a
+ * dashed "future" connector. Both are purely decorative (aria-hidden on the
+ * rendering component) so the keyboard landmark order stays clean.
+ *
+ * Reduced-motion handling for both is below in the media query block —
+ * SKU shipped collapses to a static glow, phase-node pulse is disabled via
+ * the existing global `animation-duration: 0ms` override.
+ */
+@keyframes sku-shipped-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(0, 217, 146, 0.3);
+  }
+}
+
+.sku-card--shipped {
+  animation: sku-shipped-breathe 1800ms ease-in-out infinite;
+}
+
+.phase-line {
+  height: 1px;
+  background: linear-gradient(to right, var(--color-accent), var(--color-border-default));
+}
+
+.phase-line--future {
+  background: none;
+  border-top: 1px dashed var(--color-border-default);
+}
+
 /* ---------- Dev Logs Drawer (AC-P4.7-5a) ---------- */
 /* Slide-up entry animation played on first expand. The drawer itself is
    always sticky-bottom; only the content region animates so we do not have
@@ -444,5 +486,16 @@ body {
   .devlogs-tab--active {
     animation: none !important;
     transition: none !important;
+  }
+
+  /* Vision scene · SKU shipped card keeps a static accent glow instead of
+     the 1.8s breathing loop. The global `animation-duration: 0ms` override
+     above would freeze the keyframe on an arbitrary frame (possibly the
+     "shadow transparent" keyframe at 0%/100%), leaving the card flat — we
+     pin the box-shadow ON so the viewer still reads it as "live". Matches
+     reduced-motion matrix row "Vision SKU pulse / Phase 2 節點 pulse". */
+  .sku-card--shipped {
+    animation: none !important;
+    box-shadow: 0 0 12px rgba(0, 217, 146, 0.3) !important;
   }
 }
