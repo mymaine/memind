@@ -16,7 +16,9 @@
  * - `description` / `mimeType` surface in the 402 response body for clients.
  */
 export interface PaidRoute {
-  readonly method: 'GET';
+  // `POST` was added in Phase 4.6 for `/shill/:tokenAddr` — creators submit an
+  // optional brief in the JSON body, so GET-only is no longer sufficient.
+  readonly method: 'GET' | 'POST';
   readonly path: string;
   readonly price: `$${string}`;
   readonly description: string;
@@ -47,6 +49,13 @@ export const PAID_ROUTES: readonly PaidRoute[] = [
     path: '/metadata/:tokenAddr',
     price: '$0.005',
     description: 'Token metadata bundle (name, symbol, image URL)',
+    mimeType: 'application/json',
+  },
+  {
+    method: 'POST',
+    path: '/shill/:tokenAddr',
+    price: '$0.01',
+    description: 'Shill order: AI agent posts a promotional tweet for this token (Phase 4.6)',
     mimeType: 'application/json',
   },
 ] as const;

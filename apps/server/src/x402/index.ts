@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Express, Request, RequestHandler, Response } from 'express';
 import { privateKeyToAccount } from 'viem/accounts';
 import { paymentMiddleware } from '@x402/express';
@@ -9,6 +10,19 @@ import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { ShillOrderStore } from '../state/shill-order-store.js';
 import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
+
+/**
+ * Stub tx hash used when the handler enqueues before x402 settlement completes.
+ *
+ * The express paymentMiddleware runs settlement *after* the handler calls
+ * `res.end()` (see @x402/express/dist/cjs/index.js — it buffers writeHead/write/end
+ * and only settles once the handler finishes). That means the real
+ * `PAYMENT-RESPONSE` header with the settled transaction hash is not available
+ * at enqueue time. We still need `paidTxHash` to satisfy the ShillOrderStore
+ * contract (non-empty string) so we write a zeroed sentinel and leave the
+ * real-hash reconciliation to a follow-up task (see roadmap P4.6-1 notes).
+ */
+const PENDING_PAID_TX_HASH = `0x${'0'.repeat(64)}`;
 
 /**
  * Optional runtime wiring for the x402 routes.
@@ -69,6 +83,9 @@ export function registerX402Routes(
   app.get('/lore/:tokenAddr', createLoreHandler({ loreStore: opts.loreStore }));
   app.get('/alpha/:tokenAddr', handleAlpha);
   app.get('/metadata/:tokenAddr', handleMetadata);
+  // Phase 4.6 shilling market endpoint. Store-aware on enqueue; the Shiller
+  // agent consumes from the same ShillOrderStore on its tick.
+  app.post('/shill/:tokenAddr', createShillHandler({ shillOrderStore: opts.shillOrderStore }));
 }
 
 /**
@@ -191,17 +208,63 @@ function handleMetadata(req: Request, res: Response): void {
 }
 
 /**
- * Phase 4.6 stub for the `/shill/:tokenAddr` POST handler.
+ * Build the POST `/shill/:tokenAddr` handler (Phase 4.6).
  *
- * The real implementation decodes the settled x402 payment, generates an
- * orderId, and enqueues a shill order into ShillOrderStore. Exported here
- * so the red tests in index.test.ts can import the symbol without an ESM
- * resolution error before the green commit fills in the behaviour.
+ * Single responsibility — turn a paid request into a queued ShillOrder and
+ * return an orderId the caller can poll. LLM-driven tweet generation and
+ * X-API posting are the Shiller agent's job on its tick, not this handler's.
+ *
+ * Behaviour:
+ *   - Generates a UUID `orderId`.
+ *   - Normalises `tokenAddr` to lowercase (ShillOrderStore does the same
+ *     internally, but we echo the lowercased value in the 200 body so the
+ *     dashboard/SSE client does not have to double-normalise).
+ *   - Reads optional `creatorBrief` from the JSON body. Requires
+ *     `express.json()` to be mounted upstream; when absent, `req.body` is
+ *     `undefined` and `creatorBrief` stays undefined — the handler still
+ *     enqueues successfully.
+ *   - If `shillOrderStore` is provided, enqueues with a pending sentinel
+ *     `paidTxHash` (see PENDING_PAID_TX_HASH for why real settlement hash is
+ *     unavailable here) and `paidAmountUsdc: '0.01'` matching PAID_ROUTES.
+ *   - Always returns 200 + `{ orderId, status: 'queued', targetTokenAddr,
+ *     estimatedReadyMs }` so that callers have a deterministic response shape
+ *     even when the store is not wired (demo / test scenarios).
+ *
+ * `estimatedReadyMs` is a UX hint for the dashboard: the Shiller agent ticks
+ * every ~10s, so worst-case handoff latency is ~10s.
  */
 export function createShillHandler(
-  _opts: { shillOrderStore?: ShillOrderStore } = {},
+  opts: { shillOrderStore?: ShillOrderStore } = {},
 ): RequestHandler {
-  return (_req: Request, res: Response): void => {
-    res.status(501).json({ error: 'createShillHandler not yet implemented' });
+  const { shillOrderStore } = opts;
+  return (req: Request, res: Response): void => {
+    const rawTokenAddr = typeof req.params.tokenAddr === 'string' ? req.params.tokenAddr : '';
+    const targetTokenAddr = rawTokenAddr.toLowerCase();
+
+    const body = (req.body ?? {}) as { creatorBrief?: unknown };
+    const creatorBrief =
+      typeof body.creatorBrief === 'string' && body.creatorBrief.length > 0
+        ? body.creatorBrief
+        : undefined;
+
+    const orderId = randomUUID();
+
+    if (shillOrderStore) {
+      shillOrderStore.enqueue({
+        orderId,
+        targetTokenAddr,
+        creatorBrief,
+        paidTxHash: PENDING_PAID_TX_HASH,
+        paidAmountUsdc: '0.01',
+        ts: new Date().toISOString(),
+      });
+    }
+
+    res.status(200).json({
+      orderId,
+      status: 'queued',
+      targetTokenAddr,
+      estimatedReadyMs: 10_000,
+    });
   };
 }
