@@ -244,6 +244,16 @@ describe('registerRunRoutes', () => {
       });
       expect(second.status).toBe(409);
     });
+  });
+
+  // Restore these `POST /api/runs` error cases that got pulled into the
+  // heartbeat describe block above; they need the a2a-flavoured beforeEach
+  // harness (no special heartbeat fake required).
+  describe('POST /api/runs (body validation)', () => {
+    beforeEach(async () => {
+      const fakeRun: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeRun);
+    });
 
     it('returns 400 for a body missing kind', async () => {
       const response = await fetch(`${harness.baseUrl}/api/runs`, {

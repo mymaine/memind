@@ -25,11 +25,14 @@ status: locked
 The 2025 "X Basic tier $200/month" information is obsolete. Current 2026 regime:
 
 - **Pay-per-usage credit model** (no subscriptions)
-- **Content: Create = $0.010 per request** (post a tweet or media)
+- **Content: Create = $0.010 per request** (post a tweet or media) — _see note below, X is reportedly rolling out a price revision on/around 2026-04-20; re-verify in console before demo day_
+- **Posts containing URLs may price separately (up to $0.20/post)** — if this applies, **demo tweets must not embed bscscan links directly**; reference the token via `$SYMBOL` + separate pill on the dashboard instead
 - **User Interaction: Create = $0.015 per request** (follow / like / RT / reply)
 - **Posts: Read = $0.005 per resource**
 
 Source: https://docs.x.com/x-api/getting-started/pricing (pulled from the pricing page after signing into console.x.com).
+
+> **Re-verify before burning demo credit.** The figures above were valid on 2026-04-19. Unconfirmed reports on X devcommunity suggest a 2026-04-20 adjustment (owned-reads drop, post unit price up, URL-post surcharge). Lead must re-check the pricing page the day before demo recording and update the Four-day budget estimate table below if any unit price moved. Pay-per-usage has no lock-in, so worst case the demo switches to `--dry-run`.
 
 ### 2. Four-day budget estimate (~$3.70 total)
 

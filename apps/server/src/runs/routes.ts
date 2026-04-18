@@ -20,6 +20,7 @@ import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
+import { runHeartbeatDemo } from './heartbeat-runner.js';
 
 /**
  * Default Phase 2 validated BSC mainnet demo token — mirrors the CLI
@@ -39,6 +40,13 @@ export const DEFAULT_DEMO_ARGS: RunA2ADemoArgs = {
  */
 export type RunA2ADemoFn = typeof runA2ADemo;
 
+/**
+ * Signature of the V2-P3 dashboard heartbeat runner. Mirrors `RunA2ADemoFn`:
+ * injectable so routes.test can feed a fake and a real runHeartbeatDemo is
+ * wired in production.
+ */
+export type RunHeartbeatDemoFn = typeof runHeartbeatDemo;
+
 export interface RegisterRunRoutesDeps {
   config: AppConfig;
   anthropic: Anthropic;
@@ -49,13 +57,21 @@ export interface RegisterRunRoutesDeps {
    * callers leave this undefined.
    */
   runA2ADemoImpl?: RunA2ADemoFn;
+  /** Test hook — overrides the real `runHeartbeatDemo`. */
+  runHeartbeatDemoImpl?: RunHeartbeatDemoFn;
 }
 
 const SSE_KEEPALIVE_MS = 20_000;
 
+// Minimal EVM address shape — used to validate the heartbeat mode payload.
+// Kept local so the route layer doesn't drag the tool-status schema in for a
+// one-liner check.
+const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
 export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): void {
   const { config, anthropic, runStore, loreStore } = deps;
   const runImpl = deps.runA2ADemoImpl ?? runA2ADemo;
+  const heartbeatImpl = deps.runHeartbeatDemoImpl ?? runHeartbeatDemo;
 
   // ─── POST /api/runs ──────────────────────────────────────────────────────
   app.post('/api/runs', (req: Request, res: Response) => {
@@ -65,6 +81,59 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
       return;
     }
     const body: CreateRunRequest = parsed.data;
+
+    // ─── V2-P3: heartbeat dispatch ─────────────────────────────────────────
+    if (body.kind === 'heartbeat') {
+      const paramsRecord = body.params;
+      const rawTokenAddress =
+        paramsRecord && typeof paramsRecord.tokenAddress === 'string'
+          ? paramsRecord.tokenAddress.trim()
+          : '';
+      if (rawTokenAddress === '') {
+        res
+          .status(400)
+          .json({ error: 'heartbeat mode requires params.tokenAddress (BSC mainnet address)' });
+        return;
+      }
+      if (!EVM_ADDRESS_REGEX.test(rawTokenAddress)) {
+        res.status(400).json({
+          error: 'heartbeat mode tokenAddress must match /^0x[a-fA-F0-9]{40}$/',
+          tokenAddress: rawTokenAddress,
+        });
+        return;
+      }
+
+      const tryResult = runStore.tryCreate({
+        kind: 'heartbeat',
+        tokenAddress: rawTokenAddress,
+      });
+      if (!tryResult.ok) {
+        res.status(409).json({
+          error: tryResult.error,
+          existingRunId: tryResult.existingRunId,
+        });
+        return;
+      }
+      const record = tryResult.record;
+      res.status(201).json({ runId: record.runId });
+
+      void heartbeatImpl({
+        anthropic,
+        store: runStore,
+        runId: record.runId,
+        tokenAddress: rawTokenAddress,
+        config,
+      })
+        .then(() => {
+          runStore.setStatus(record.runId, 'done');
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          runStore.setStatus(record.runId, 'error', message);
+        });
+      return;
+    }
+
     if (body.kind !== 'a2a') {
       res.status(400).json({ error: 'kind not yet implemented', kind: body.kind });
       return;
