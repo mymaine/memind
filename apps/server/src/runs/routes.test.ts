@@ -7,7 +7,7 @@ import express from 'express';
 import type { AppConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
 import { RunStore } from './store.js';
-import { registerRunRoutes, type RunA2ADemoFn } from './routes.js';
+import { registerRunRoutes, type RunA2ADemoFn, type RunHeartbeatDemoFn } from './routes.js';
 
 /**
  * Route-level coverage for POST /api/runs + GET /api/runs/:id + GET
@@ -56,7 +56,7 @@ interface Harness {
   close: () => Promise<void>;
 }
 
-function startHarness(runImpl: RunA2ADemoFn): Promise<Harness> {
+function startHarness(runImpl: RunA2ADemoFn, heartbeatImpl?: RunHeartbeatDemoFn): Promise<Harness> {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   const runStore = new RunStore();
@@ -68,6 +68,7 @@ function startHarness(runImpl: RunA2ADemoFn): Promise<Harness> {
     runStore,
     loreStore,
     runA2ADemoImpl: runImpl,
+    ...(heartbeatImpl !== undefined ? { runHeartbeatDemoImpl: heartbeatImpl } : {}),
   });
 
   const server = app.listen(0);
@@ -139,6 +140,109 @@ describe('registerRunRoutes', () => {
       const body = (await response.json()) as { error?: string; kind?: string };
       expect(body.error).toMatch(/not yet implemented/);
       expect(body.kind).toBe('creator');
+    });
+
+    // ─── V2-P3 Task 3: heartbeat dispatch ──────────────────────────────────
+    it('returns 400 for kind=heartbeat without tokenAddress', async () => {
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'heartbeat' }),
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error?: string };
+      expect(body.error).toMatch(/tokenAddress/);
+    });
+
+    it('returns 400 for kind=heartbeat with malformed tokenAddress', async () => {
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'heartbeat',
+          params: { tokenAddress: 'not-an-address' },
+        }),
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/runs (heartbeat dispatch)', () => {
+    const tokenAddress = '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444';
+
+    it('returns 201 + runId and invokes the heartbeat runner with the tokenAddress', async () => {
+      let observedToken: string | undefined;
+      let observedRunId: string | undefined;
+      const fakeHeartbeat: RunHeartbeatDemoFn = async (deps) => {
+        observedToken = deps.tokenAddress;
+        observedRunId = deps.runId;
+        deps.store.addArtifact(deps.runId, {
+          kind: 'heartbeat-tick',
+          tickNumber: 1,
+          totalTicks: 3,
+          decisions: [],
+        });
+      };
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, fakeHeartbeat);
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'heartbeat', params: { tokenAddress } }),
+      });
+      expect(response.status).toBe(201);
+      const body = (await response.json()) as { runId?: string };
+      expect(typeof body.runId).toBe('string');
+
+      // Give the fire-and-forget dispatch a tick to land.
+      await new Promise((r) => setTimeout(r, 20));
+      expect(observedToken).toBe(tokenAddress);
+      expect(observedRunId).toBe(body.runId);
+    });
+
+    it('returns 409 when a second heartbeat run targets the same tokenAddress', async () => {
+      const longRunningFake: RunHeartbeatDemoFn = () => new Promise(() => {});
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, longRunningFake);
+
+      const first = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'heartbeat', params: { tokenAddress } }),
+      });
+      expect(first.status).toBe(201);
+      const firstBody = (await first.json()) as { runId?: string };
+
+      const second = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'heartbeat', params: { tokenAddress } }),
+      });
+      expect(second.status).toBe(409);
+      const secondBody = (await second.json()) as { error?: string; existingRunId?: string };
+      expect(secondBody.error).toBe('run_in_progress');
+      expect(secondBody.existingRunId).toBe(firstBody.runId);
+    });
+
+    it('returns 409 when a heartbeat run collides with an active a2a run on the same tokenAddress', async () => {
+      const longRunningA2A: RunA2ADemoFn = () => new Promise(() => {});
+      const fakeHeartbeat: RunHeartbeatDemoFn = async () => {};
+      harness = await startHarness(longRunningA2A, fakeHeartbeat);
+
+      const first = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'a2a', params: { tokenAddr: tokenAddress } }),
+      });
+      expect(first.status).toBe(201);
+
+      const second = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'heartbeat', params: { tokenAddress } }),
+      });
+      expect(second.status).toBe(409);
     });
 
     it('returns 400 for a body missing kind', async () => {
