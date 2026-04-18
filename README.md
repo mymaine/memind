@@ -2,14 +2,14 @@
 
 > **Shilling Market** — a creator-to-agent promotion service on four.meme, paid over [x402](https://github.com/coinbase/x402). A marketplace where AI agents shill for creators drowning in 32k daily spam tokens. Creator launches a four.meme token, pays 0.01 USDC per shill post; the shiller agent reads the lore, writes a promotional tweet, and posts it from its own aged X account. Agentic Mode Phase 2 — shipped as a Creator Discovery tool.
 
-[![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-427%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#evidence-on-chain--in-repo)
+[![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-692%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#evidence-on-chain--in-repo)
 
 ## TL;DR for Judges
 
 - Creator launches a real **BSC mainnet** token in a **67-second autonomous run** (one-line prompt → deploy + IPFS lore + meme PNG).
 - Creator pays **0.01 USDC on Base Sepolia via x402** to order a shill; the Shiller agent reads the lore, writes a single on-voice tweet, and posts it from its own aged X account.
-- **4 agents, 9 typed tools, 427 green tests** — x402 integration settles real USDC every `pnpm test`.
-- Dashboard streams LLM tokens, tool calls, and settlements over native SSE; pills link straight to BscScan / BaseScan / Pinata.
+- **4 agents, 9 typed tools, 692 green tests** — x402 integration settles real USDC every `pnpm test`.
+- **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; engineering detail (logs / timeline / tx pills / architecture) is a `D`-to-open Developer Drawer — judge-first up-front, engineer-deep on demand.
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint) · Deadline: 2026-04-22 UTC 15:59
 - Demo video: <!-- TODO: record per docs/runbooks/demo-recording.md and paste URL -->
 - Runbook: [`docs/runbooks/demo-recording.md`](./docs/runbooks/demo-recording.md) · Architecture: [`docs/architecture.md`](./docs/architecture.md)
@@ -25,7 +25,7 @@ Four.meme saw 32k spam tokens land in a single October 2025 day, and across meme
 - **Typed tool registry** (`AgentTool<TIn, TOut>`): `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for`, `x402_fetch_lore`.
 - **x402 server on `@x402/express` v2**, four paid endpoints: `/shill/:tokenAddr` (0.01 USDC, creator-facing), `/lore/:addr` (0.01, `LoreStore`-backed), `/alpha/:addr` (0.01), `/metadata/:addr` (0.005).
 - **In-memory `LoreStore` + `ShillOrderStore`**: Narrator publishes, Shiller consumes — same runtime, opposite directions.
-- **Next.js 15 dashboard** (Terminal Cyber on Tailwind v4) with Runs REST + native SSE, three live agent log columns, meme thumbnails, animated architecture diagram, Timeline toggle, explorer-linked artifact pills. `/market` route renders the Shill Order Panel (queue, settlement tx, live tweet URLs).
+- **Next.js 15 product dashboard** (Terminal Cyber on Tailwind v4): two routes share a 6-scene skeleton — Hero (6s Creator→USDC→Shiller→Tweet loop with a typewriter tweet) · Problem (32k-ticker marquee) · Solution (3-step cards + embedded x402 micro-animation) · Product (LaunchPanel on `/` · OrderPanel on `/market`, both driven by pure `derive-*-state` reducers over `useRun()` SSE) · Vision (SKU matrix + 3-tier take-rate + Phase map) · Evidence (5 fixed on-chain pills). All legacy engineering panels (3-column logs, timeline, architecture diagram, tx list, anchor ledger, heartbeat, shill orders) live inside a collapsible `DevLogsDrawer` (`D` to open, `1–6` to tab, `Esc` to close, `prefers-reduced-motion` fully respected).
 - **CLI demos** sharing the orchestration path: `demo:creator`, `demo:a2a`, `demo:heartbeat`, `demo:shill`.
 
 ## Architecture
@@ -101,7 +101,7 @@ Every row links to a real explorer page. Run #3 hash reproduces a Base Sepolia s
 
 **Run #3 note**: `from` and `to` both resolve to `0xaE2E51D0…D6d78` because a single agent EOA carries both x402 roles in the demo — Market-maker as payer, Narrator's `/lore/:addr` as `payTo`. EIP-3009 `transferWithAuthorization`, facilitator relay, and 0.01 USDC movement are all real on-chain; wallet multiplexing is demo-only and would split into `AGENT_WALLET_*` and a future `NARRATOR_WALLET_*` in production.
 
-In-repo evidence: **427 green tests** (`packages/shared` 67 / `apps/server` 295 / `apps/web` 65) including real Base Sepolia x402 settle integration on every `pnpm test`; `tsc --noEmit` clean across the workspace; Phase gates traceable via `git log 7c06cf0` (Phase 1), `1a088dd..e0c4233` (Phase 2 67s Creator), `ec936b9..8d2591e` (Phase 3 a2a + Heartbeat), `2429f70..a04b849` (Phase 4 Dashboard Run #3).
+In-repo evidence: **692 green tests** (`packages/shared` 67 / `apps/server` 303 / `apps/web` 322) including real Base Sepolia x402 settle integration on every `pnpm test`; `tsc --noEmit` clean across the workspace; Phase gates traceable via `git log 7c06cf0` (Phase 1), `1a088dd..e0c4233` (Phase 2 67s Creator), `ec936b9..8d2591e` (Phase 3 a2a + Heartbeat), `2429f70..a04b849` (Phase 4 Dashboard Run #3), `28a13fd..HEAD` (Phase 4.7 Shilling Market Product UI — 6-scene narrative + DevLogsDrawer).
 
 ## Tech stack
 
