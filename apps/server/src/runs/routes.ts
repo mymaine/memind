@@ -151,6 +151,14 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
     ) {
       args.tokenAddr = paramsRecord.tokenAddr;
     }
+    // V2-P5 Task 1: surface the user's theme from ThemeInput → Creator agent.
+    if (
+      paramsRecord &&
+      typeof paramsRecord.theme === 'string' &&
+      paramsRecord.theme.trim() !== ''
+    ) {
+      args.theme = paramsRecord.theme.trim();
+    }
 
     // Per-tokenAddress concurrency mutex (V2-P1 AC-V2-9). When the client
     // supplies a tokenAddr we forward it to RunStore.tryCreate; a second

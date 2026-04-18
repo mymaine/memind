@@ -211,6 +211,69 @@ describe('runA2ADemo (V2-P1)', () => {
     expect(narratorArgs?.tokenName).toBe('CreatorToken');
   });
 
+  // ─── V2-P5 Task 1: theme plumbing ──────────────────────────────────────
+  // ThemeInput → POST /api/runs → runA2ADemo → Creator phase. When the caller
+  // provides `theme`, the orchestrator must forward it verbatim to the Creator
+  // phase callback. When `theme` is absent / blank, a sensible default is
+  // passed so the Creator prompt is never empty.
+  it('forwards the caller-supplied theme to the Creator phase', async () => {
+    const record = store.create('a2a');
+    const runCreator = vi.fn<RunCreatorPhaseFn>().mockResolvedValue({
+      tokenAddr: SAMPLE_TOKEN,
+      tokenName: 'x',
+      tokenSymbol: 'y',
+      tokenDeployTx: SAMPLE_DEPLOY_TX,
+    });
+
+    await runA2ADemo({
+      config: makeConfigStub(),
+      anthropic,
+      store,
+      runId: record.runId,
+      args: {
+        tokenAddr: SAMPLE_TOKEN,
+        tokenName: 'x',
+        tokenSymbol: 'y',
+        theme: 'Shiba Astronaut on Mars building a moon colony',
+      },
+      loreStore,
+      runCreatorImpl: runCreator,
+      runNarratorImpl: fakeNarrator,
+      runMarketMakerImpl: fakeMarketMaker,
+    });
+
+    expect(runCreator).toHaveBeenCalledTimes(1);
+    const call = runCreator.mock.calls[0]?.[0];
+    expect(call?.theme).toBe('Shiba Astronaut on Mars building a moon colony');
+  });
+
+  it('falls back to a default theme when args.theme is absent or blank', async () => {
+    const record = store.create('a2a');
+    const runCreator = vi.fn<RunCreatorPhaseFn>().mockResolvedValue({
+      tokenAddr: SAMPLE_TOKEN,
+      tokenName: 'x',
+      tokenSymbol: 'y',
+      tokenDeployTx: SAMPLE_DEPLOY_TX,
+    });
+
+    await runA2ADemo({
+      config: makeConfigStub(),
+      anthropic,
+      store,
+      runId: record.runId,
+      // theme omitted entirely
+      args: { tokenAddr: SAMPLE_TOKEN, tokenName: 'x', tokenSymbol: 'y' },
+      loreStore,
+      runCreatorImpl: runCreator,
+      runNarratorImpl: fakeNarrator,
+      runMarketMakerImpl: fakeMarketMaker,
+    });
+
+    const call = runCreator.mock.calls[0]?.[0];
+    expect(typeof call?.theme).toBe('string');
+    expect((call?.theme ?? '').length).toBeGreaterThan(0);
+  });
+
   it('throws when secrets are missing (preserves Phase 4 fail-fast behaviour)', async () => {
     const record = store.create('a2a');
     const config = makeConfigStub();

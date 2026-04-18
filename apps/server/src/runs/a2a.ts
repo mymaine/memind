@@ -46,7 +46,18 @@ export interface RunA2ADemoArgs {
   tokenAddr: string;
   tokenName: string;
   tokenSymbol: string;
+  /**
+   * Optional user-supplied theme (e.g. from the dashboard ThemeInput). When
+   * provided and non-blank, the orchestrator forwards it verbatim to the
+   * Creator phase so the LLM pivots narrative / image / lore around this
+   * string. When absent, a sensible default fires so the Creator prompt is
+   * never empty. V2-P5 Task 1 — AC-V2-7.
+   */
+  theme?: string;
 }
+
+/** Default theme used when the caller does not provide one. */
+export const DEFAULT_THEME = 'a meme celebrating BNB Chain 2026 agentic commerce';
 
 export interface RunA2ADemoDeps {
   config: AppConfig;
@@ -412,17 +423,18 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
     );
     emitDryRunFallbackArtifacts(store, runId, args.tokenAddr);
   } else {
-    orchestratorLog(store, runId, 'creator', 'running Creator agent ...');
+    // V2-P5 Task 1: forward the caller's theme (from ThemeInput) to the
+    // Creator phase. Blank / omitted values fall back to DEFAULT_THEME so the
+    // Creator prompt is never empty.
+    const rawTheme = args.theme?.trim() ?? '';
+    const resolvedTheme = rawTheme.length > 0 ? rawTheme : DEFAULT_THEME;
+    orchestratorLog(store, runId, 'creator', `running Creator agent (theme: ${resolvedTheme}) ...`);
     const creatorOut = await runCreator({
       config,
       anthropic,
       store,
       runId,
-      // Theme defaults to a project-prefix-safe phrase if the caller doesn't
-      // supply one yet (the HTTP entry point will gain a `theme` param in a
-      // follow-up; the CLI currently uses the default token args so we keep
-      // a sensible fallback here).
-      theme: 'a meme celebrating BNB Chain 2026 agentic commerce',
+      theme: resolvedTheme,
     });
     nextTokenAddr = creatorOut.tokenAddr;
     nextTokenName = creatorOut.tokenName;

@@ -132,6 +132,30 @@ describe('registerRunRoutes', () => {
       expect(body.runId).toMatch(/^run_/);
     });
 
+    // V2-P5 Task 1: params.theme surfaces through to runA2ADemo args.
+    it('forwards params.theme to runA2ADemo args', async () => {
+      let observedTheme: string | undefined;
+      const fakeRun: RunA2ADemoFn = async (deps) => {
+        observedTheme = deps.args.theme;
+      };
+      // Restart the harness with a theme-observing fake (previous harness uses
+      // the default beforeEach fake).
+      await harness.close();
+      harness = await startHarness(fakeRun);
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'a2a',
+          params: { theme: 'Cyberpunk Neko detective in Neo-Tokyo 2099' },
+        }),
+      });
+      expect(response.status).toBe(201);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(observedTheme).toBe('Cyberpunk Neko detective in Neo-Tokyo 2099');
+    });
+
     it('returns 400 for kind=creator (not yet implemented)', async () => {
       const response = await fetch(`${harness.baseUrl}/api/runs`, {
         method: 'POST',
