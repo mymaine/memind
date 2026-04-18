@@ -9,6 +9,7 @@ import { TimelineView } from '@/components/timeline-view';
 import { TxList } from '@/components/tx-list';
 import { MemeImageCard } from '@/components/meme-image-card';
 import { HeartbeatSection } from '@/components/heartbeat-section';
+import { AnchorLedgerPanel } from '@/components/anchor-ledger-panel';
 import { Toast } from '@/components/toast';
 import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS } from '@/hooks/useRun-state';
 import { useRun, type RunState } from '@/hooks/useRun';
@@ -209,6 +210,11 @@ export default function HomePage() {
       </section>
 
       <TxList artifacts={state.artifacts} />
+
+      {/* AC3 Anchor Evidence — collapsible so the main single-screen budget
+          stays intact. The header row always reports anchor counts so the
+          evidence is discoverable even when the body is collapsed. */}
+      <AnchorLedgerPanel artifacts={state.phase === 'idle' ? [] : state.artifacts} />
 
       {/* V2-P3 Heartbeat section — owns its own useRun instance so the a2a
           flow above and this independent run never share state. Users paste
