@@ -179,9 +179,10 @@ function resolveLoreSnippet(
     `no lore chapter found for ${tokenAddr} — using fallback snippet`,
     'warn',
   );
-  // Intentionally short, non-empty, and URL-free so the Shiller agent's
-  // content guard (see post-shill-for.ts GUARD_PATTERNS) never rejects it.
-  return `A mysterious token surfaces on four.meme under the address ${tokenAddr}. No one has written its lore yet, but whispers hint at something curious worth watching.`;
+  // Intentionally short, non-empty, and free of any token-substring that the
+  // Shiller's post-generation guard (see post-shill-for.ts GUARD_PATTERNS)
+  // would reject: no URLs, no block-explorer names, no platform domain.
+  return `A mysterious token appears at address ${tokenAddr}. No one has written its lore yet, but whispers hint at something curious worth watching.`;
 }
 
 export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<void> {
