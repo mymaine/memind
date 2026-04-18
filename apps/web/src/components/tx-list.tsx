@@ -1,5 +1,5 @@
 import type { Artifact } from '@hack-fourmeme/shared';
-import { describeArtifact } from '@/lib/artifact-view';
+import { describeArtifact, isPillArtifact } from '@/lib/artifact-view';
 
 /**
  * A read-only list of pill-shaped links for each on-chain artifact emitted by
@@ -7,6 +7,9 @@ import { describeArtifact } from '@/lib/artifact-view';
  * lives in docs/design.md §4 "Tx Hash Pill".
  */
 export function TxList({ artifacts = [] }: { artifacts?: Artifact[] }) {
+  // Drop heartbeat-tick / heartbeat-decision before rendering — those belong
+  // to the HeartbeatPanel and are not part of the "5 chain artifacts" pill row.
+  const pillArtifacts = artifacts.filter(isPillArtifact);
   return (
     <section
       aria-label="On-chain artifacts"
@@ -17,14 +20,14 @@ export function TxList({ artifacts = [] }: { artifacts?: Artifact[] }) {
           On-chain artifacts
         </span>
         <span className="font-[family-name:var(--font-mono)] text-[12px] text-fg-tertiary">
-          {artifacts.length} / 5
+          {pillArtifacts.length} / 5
         </span>
       </header>
-      {artifacts.length === 0 ? (
+      {pillArtifacts.length === 0 ? (
         <p className="text-[14px] text-fg-secondary">No artifacts yet — run a swarm to populate.</p>
       ) : (
         <ul className="flex flex-wrap gap-2">
-          {artifacts.map((a, i) => {
+          {pillArtifacts.map((a, i) => {
             const d = describeArtifact(a);
             // Full text for the `title` tooltip: prefer the underlying hash /
             // cid / id so hovers reveal what the pill abbreviates.

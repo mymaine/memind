@@ -30,7 +30,21 @@ function shortHash(value: string, head = 6, tail = 4): string {
   return `${value.slice(0, head)}..${value.slice(-tail)}`;
 }
 
-export function describeArtifact(a: Artifact): ArtifactDisplay {
+/**
+ * Artifacts that belong in the pill row at the bottom of the dashboard. The
+ * Heartbeat section owns its own renderer for tick / decision artifacts, so
+ * those two kinds deliberately do NOT participate in the TxList: the pill row
+ * stays focused on the 5 cross-chain hashes evaluators look for.
+ */
+export function isPillArtifact(
+  a: Artifact,
+): a is Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' }> {
+  return a.kind !== 'heartbeat-tick' && a.kind !== 'heartbeat-decision';
+}
+
+export function describeArtifact(
+  a: Exclude<Artifact, { kind: 'heartbeat-tick' | 'heartbeat-decision' }>,
+): ArtifactDisplay {
   switch (a.kind) {
     case 'bsc-token':
       return {

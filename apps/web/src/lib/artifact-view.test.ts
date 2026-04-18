@@ -77,6 +77,9 @@ describe('describeArtifact', () => {
       gatewayUrl: null,
       prompt: 'p',
     } as Artifact;
+    if (a.kind === 'heartbeat-tick' || a.kind === 'heartbeat-decision') {
+      throw new Error('unreachable: test fixture is a meme-image');
+    }
     const d = describeArtifact(a);
     expect(d.kindLabel).toMatch(/unknown error/);
   });

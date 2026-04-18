@@ -172,22 +172,64 @@ export const memeImageArtifactSchema = z
     }
   });
 
+// `heartbeat-tick` artifact (V2-P3) — emitted once per tick the dashboard-
+// driven Heartbeat run executes. Carries a 1-indexed `tickNumber` + fixed
+// `totalTicks` so the UI can render `01 / 03 ticks` without having to know
+// the cadence up front. `decisions` is an ordered trail of short-id decisions
+// the agent took within this tick (e.g. ["check_status", "post"]); kept
+// open-ended as strings because the tool choices are driven by LLM output.
+export const heartbeatTickArtifactSchema = z
+  .object({
+    kind: z.literal('heartbeat-tick'),
+    tickNumber: z.number().int().positive(),
+    totalTicks: z.number().int().positive(),
+    decisions: z.array(z.string()),
+    label: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.tickNumber > value.totalTicks) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tickNumber'],
+        message: 'tickNumber must be <= totalTicks',
+      });
+    }
+  });
+
+// `heartbeat-decision` artifact (V2-P3) — emitted when the Heartbeat agent
+// resolves on a concrete action within a tick. `action` is constrained to the
+// three outcomes the tick prompt allows; `reason` is the agent's short
+// rationale and is always non-empty so the UI can render it verbatim in the
+// decision tree.
+export const heartbeatDecisionArtifactSchema = z.object({
+  kind: z.literal('heartbeat-decision'),
+  tickNumber: z.number().int().positive(),
+  action: z.enum(['post', 'extend_lore', 'skip']),
+  reason: z.string().min(1),
+  label: z.string().optional(),
+});
+
 // Note on `discriminatedUnion` vs `union`:
-//   `memeImageArtifactSchema` is a `ZodEffects` (because of `.superRefine`),
-//   which `discriminatedUnion` cannot index by a literal `kind`. We therefore
-//   keep the original 5 kinds in a `discriminatedUnion` (preserves narrowing
-//   for the existing UI code) and union the meme-image effects schema on top.
-//   TypeScript's structural narrow on `kind` still works on the resulting
-//   union because every branch declares `kind` as a literal.
+//   `memeImageArtifactSchema` + `heartbeatTickArtifactSchema` are ZodEffects
+//   (they use `.superRefine`), which `discriminatedUnion` cannot index by a
+//   literal `kind`. We keep the plain-object kinds in the discriminated union
+//   (for narrowing + clearer zod errors) and union the effects schemas on
+//   top. TypeScript's structural narrow on `kind` still works on the
+//   resulting union because every branch declares `kind` as a literal.
 const baseArtifactSchema = z.discriminatedUnion('kind', [
   bscTokenArtifactSchema,
   tokenDeployTxArtifactSchema,
   loreCidArtifactSchema,
   x402TxArtifactSchema,
   tweetUrlArtifactSchema,
+  heartbeatDecisionArtifactSchema,
 ]);
 
-export const artifactSchema = z.union([baseArtifactSchema, memeImageArtifactSchema]);
+export const artifactSchema = z.union([
+  baseArtifactSchema,
+  memeImageArtifactSchema,
+  heartbeatTickArtifactSchema,
+]);
 export type Artifact = z.infer<typeof artifactSchema>;
 export type ArtifactKind = Artifact['kind'];
 
