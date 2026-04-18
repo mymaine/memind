@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AppConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
+import { AnchorLedger } from '../state/anchor-ledger.js';
 import { RunStore } from './store.js';
 import {
   runA2ADemo,
@@ -272,6 +273,66 @@ describe('runA2ADemo (V2-P1)', () => {
     const call = runCreator.mock.calls[0]?.[0];
     expect(typeof call?.theme).toBe('string');
     expect((call?.theme ?? '').length).toBeGreaterThan(0);
+  });
+
+  // ─── AC3 anchor ledger plumbing ────────────────────────────────────────────
+  // The Narrator phase callback must receive the AnchorLedger the orchestrator
+  // was configured with, so the default narrator implementation can register
+  // an anchor after the chapter upsert and emit the lore-anchor artifact
+  // through the RunStore.
+  it('forwards the anchorLedger dependency to the Narrator phase', async () => {
+    const record = store.create('a2a');
+    const anchorLedger = new AnchorLedger();
+    const runCreator = vi.fn<RunCreatorPhaseFn>().mockResolvedValue({
+      tokenAddr: SAMPLE_TOKEN,
+      tokenName: 'x',
+      tokenSymbol: 'y',
+      tokenDeployTx: SAMPLE_DEPLOY_TX,
+    });
+    const narratorSpy = vi.fn<RunNarratorPhaseFn>().mockImplementation(fakeNarrator);
+
+    await runA2ADemo({
+      config: makeConfigStub(),
+      anthropic,
+      store,
+      runId: record.runId,
+      args: { tokenAddr: SAMPLE_TOKEN, tokenName: 'x', tokenSymbol: 'y' },
+      loreStore,
+      anchorLedger,
+      runCreatorImpl: runCreator,
+      runNarratorImpl: narratorSpy,
+      runMarketMakerImpl: fakeMarketMaker,
+    });
+
+    expect(narratorSpy).toHaveBeenCalledTimes(1);
+    const deps = narratorSpy.mock.calls[0]?.[0];
+    expect(deps?.anchorLedger).toBe(anchorLedger);
+  });
+
+  it('omitting anchorLedger keeps the Narrator phase deps.anchorLedger undefined', async () => {
+    const record = store.create('a2a');
+    const runCreator = vi.fn<RunCreatorPhaseFn>().mockResolvedValue({
+      tokenAddr: SAMPLE_TOKEN,
+      tokenName: 'x',
+      tokenSymbol: 'y',
+      tokenDeployTx: SAMPLE_DEPLOY_TX,
+    });
+    const narratorSpy = vi.fn<RunNarratorPhaseFn>().mockImplementation(fakeNarrator);
+
+    await runA2ADemo({
+      config: makeConfigStub(),
+      anthropic,
+      store,
+      runId: record.runId,
+      args: { tokenAddr: SAMPLE_TOKEN, tokenName: 'x', tokenSymbol: 'y' },
+      loreStore,
+      runCreatorImpl: runCreator,
+      runNarratorImpl: narratorSpy,
+      runMarketMakerImpl: fakeMarketMaker,
+    });
+
+    const deps = narratorSpy.mock.calls[0]?.[0];
+    expect(deps?.anchorLedger).toBeUndefined();
   });
 
   it('throws when secrets are missing (preserves Phase 4 fail-fast behaviour)', async () => {

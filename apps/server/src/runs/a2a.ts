@@ -30,6 +30,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { AgentId, Artifact, LogEvent } from '@hack-fourmeme/shared';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
+import type { AnchorLedger } from '../state/anchor-ledger.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createLoreExtendTool } from '../tools/lore-extend.js';
 import { createCheckTokenStatusTool } from '../tools/token-status.js';
@@ -72,6 +73,13 @@ export interface RunA2ADemoDeps {
    * sides see.
    */
   loreStore: LoreStore;
+  /**
+   * Shared AnchorLedger (AC3 layer 1). When provided, the Narrator phase
+   * appends a keccak256 anchor record after every chapter upsert and emits a
+   * `lore-anchor` artifact through the RunStore. Omitted for the existing a2a
+   * test fixtures, which don't care about anchor evidence.
+   */
+  anchorLedger?: AnchorLedger;
   /**
    * Override the base URL used to build the lore endpoint the Market-maker
    * fetches from. Defaults to `http://localhost:${config.port}`. The CLI
@@ -118,6 +126,13 @@ export type RunNarratorPhaseFn = (deps: {
   store: RunStore;
   runId: string;
   loreStore: LoreStore;
+  /**
+   * Optional AnchorLedger. When the orchestrator supplies one, the default
+   * narrator implementation wires it into runNarratorAgent so every chapter
+   * upsert records an anchor and emits a lore-anchor artifact. Absence means
+   * the callback runs without anchor capture (Phase 2 demo callers, tests).
+   */
+  anchorLedger?: AnchorLedger;
   tokenAddr: string;
   tokenName: string;
   tokenSymbol: string;
@@ -230,7 +245,17 @@ function emitDryRunFallbackArtifacts(store: RunStore, runId: string, tokenAddr: 
  * defaults to it.
  */
 const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
-  const { config, anthropic, store, runId, loreStore, tokenAddr, tokenName, tokenSymbol } = deps;
+  const {
+    config,
+    anthropic,
+    store,
+    runId,
+    loreStore,
+    anchorLedger,
+    tokenAddr,
+    tokenName,
+    tokenSymbol,
+  } = deps;
   if (config.pinata.jwt === undefined) {
     throw new Error('narrator phase: PINATA_JWT missing');
   }
@@ -273,6 +298,15 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
     onToolUseStart: (event) => store.addToolUseStart(runId, event),
     onToolUseEnd: (event) => store.addToolUseEnd(runId, event),
     onAssistantDelta: (event) => store.addAssistantDelta(runId, event),
+    // AC3 layer 1: when the orchestrator wired an AnchorLedger, capture the
+    // commitment + emit a lore-anchor artifact through the same RunStore the
+    // SSE stream is subscribed to.
+    ...(anchorLedger
+      ? {
+          anchorLedger,
+          onArtifact: (artifact) => store.addArtifact(runId, artifact),
+        }
+      : {}),
   });
 
   orchestratorLog(
@@ -471,6 +505,10 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
     store,
     runId,
     loreStore,
+    // Forward the AnchorLedger (or undefined) so the default narrator
+    // implementation decides whether to capture commitments; fakes in tests
+    // simply ignore the field.
+    ...(deps.anchorLedger ? { anchorLedger: deps.anchorLedger } : {}),
     tokenAddr: nextTokenAddr,
     tokenName: nextTokenName,
     tokenSymbol: nextTokenSymbol,

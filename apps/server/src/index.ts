@@ -16,6 +16,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerX402Routes } from './x402/index.js';
 import { registerAgentRoutes } from './agents/routes.js';
 import { LoreStore } from './state/lore-store.js';
+import { AnchorLedger } from './state/anchor-ledger.js';
 import { RunStore } from './runs/store.js';
 import { registerRunRoutes } from './runs/routes.js';
 
@@ -36,6 +37,9 @@ app.use(express.json({ limit: '2mb' }));
 // caller reads back. Same process, same Map.
 const loreStore = new LoreStore();
 const runStore = new RunStore();
+// AC3 layer 1 anchor ledger — one shared instance so the Narrator phase
+// records commitments and any subsequent read endpoint can surface them.
+const anchorLedger = new AnchorLedger();
 
 // Anthropic client. Uses the same key resolution the demos use so POST
 // /api/runs fails fast if neither key is configured.
@@ -48,7 +52,7 @@ const anthropic = new Anthropic({
 registerHealthRoutes(app);
 registerX402Routes(app, config, { loreStore });
 registerAgentRoutes(app);
-registerRunRoutes(app, { config, anthropic, runStore, loreStore });
+registerRunRoutes(app, { config, anthropic, runStore, loreStore, anchorLedger });
 
 app.listen(config.port, () => {
   console.info(`[server] listening on :${config.port}`);

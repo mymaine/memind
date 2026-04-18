@@ -18,6 +18,7 @@ import {
 } from '@hack-fourmeme/shared';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
+import type { AnchorLedger } from '../state/anchor-ledger.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
@@ -52,6 +53,13 @@ export interface RegisterRunRoutesDeps {
   anthropic: Anthropic;
   runStore: RunStore;
   loreStore: LoreStore;
+  /**
+   * Shared AnchorLedger instance. The a2a run narrator phase appends one row
+   * per chapter upsert; an optional Anchor Evidence panel endpoint may read
+   * from the same ledger to surface commitments between runs. Optional so
+   * legacy boot paths still work, but production entry points should pass it.
+   */
+  anchorLedger?: AnchorLedger;
   /**
    * Test hook — overrides the real `runA2ADemo` pure function. Production
    * callers leave this undefined.
@@ -185,6 +193,10 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
       runId: record.runId,
       args,
       loreStore,
+      // Thread the shared AnchorLedger into the orchestrator so the default
+      // narrator phase captures an anchor per chapter upsert. Absent: demo
+      // boot paths that don't care about anchor evidence still work.
+      ...(deps.anchorLedger ? { anchorLedger: deps.anchorLedger } : {}),
     })
       .then(() => {
         runStore.setStatus(record.runId, 'done');
