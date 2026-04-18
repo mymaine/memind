@@ -255,10 +255,83 @@ export interface ShillerAgentOutput {
   errorMessage?: string;
 }
 
-// Red-phase stub — makes the symbol importable so new tests fail on
-// assertion rather than on TypeError at import time. Replaced with the real
-// implementation in the green commit. The `_params` rename silences the
-// unused-var lint without loosening the public signature.
-export async function runShillerAgent(_params: RunShillerAgentParams): Promise<ShillerAgentOutput> {
-  throw new Error('runShillerAgent: not implemented');
+export async function runShillerAgent(params: RunShillerAgentParams): Promise<ShillerAgentOutput> {
+  const { postShillForTool, orderId, tokenAddr, tokenSymbol, loreSnippet, creatorBrief, onLog } =
+    params;
+
+  // Build the tool input — `tokenSymbol` must be omitted (not set to
+  // undefined) when the caller didn't supply it, so the downstream zod
+  // schema's `.optional()` branch triggers and the LLM prompt falls back to
+  // "infer the symbol from lore".
+  const input: PostShillForInput = {
+    orderId,
+    tokenAddr,
+    ...(tokenSymbol !== undefined && tokenSymbol !== '' ? { tokenSymbol } : {}),
+    loreSnippet,
+  };
+
+  onLog?.({
+    ts: new Date().toISOString(),
+    agent: 'market-maker',
+    tool: 'post_shill_for',
+    level: 'info',
+    message: `[shill mode] processing order ${orderId} for ${tokenAddr}`,
+    meta: { creatorBrief: creatorBrief ?? null },
+  });
+
+  try {
+    const result = await postShillForTool.execute(input);
+    onLog?.({
+      ts: new Date().toISOString(),
+      agent: 'market-maker',
+      tool: 'post_shill_for',
+      level: 'info',
+      message: `[shill mode] tweet posted: ${result.tweetUrl}`,
+    });
+    return {
+      orderId,
+      tokenAddr,
+      decision: 'shill',
+      tweetId: result.tweetId,
+      tweetUrl: result.tweetUrl,
+      tweetText: result.tweetText,
+      postedAt: result.postedAt,
+      toolCalls: [
+        {
+          name: 'post_shill_for',
+          input: input as unknown as Record<string, unknown>,
+          output: result as unknown as Record<string, unknown>,
+          isError: false,
+        },
+      ],
+    };
+  } catch (err) {
+    // Tool throws → decision=skip; caller (shill-market orchestrator) is
+    // expected to translate this into ShillOrderStore.markFailed(orderId,
+    // errorMessage). We never re-throw here because the agent's contract is
+    // "tried and reported", not "tried and crashed" — a thrown exception
+    // would bubble past the orchestrator's per-order error boundary.
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    onLog?.({
+      ts: new Date().toISOString(),
+      agent: 'market-maker',
+      tool: 'post_shill_for',
+      level: 'error',
+      message: `[shill mode] tool failed: ${errorMessage}`,
+    });
+    return {
+      orderId,
+      tokenAddr,
+      decision: 'skip',
+      toolCalls: [
+        {
+          name: 'post_shill_for',
+          input: input as unknown as Record<string, unknown>,
+          output: { error: errorMessage },
+          isError: true,
+        },
+      ],
+      errorMessage,
+    };
+  }
 }
