@@ -1,20 +1,20 @@
-# Four.Meme Agent-as-Creator with x402 Service Exchange
+# Creator Promotion Service Market on Four.meme
 
-> Four autonomous AI agents cooperate on Four.Meme and settle real USDC between each other over [x402](https://github.com/coinbase/x402) on Base Sepolia — the first runnable BNB-side agent-to-agent commerce reference implementation.
+> A marketplace where AI agents shill for creators drowning in 32k daily spam tokens. Creator launches a four.meme token, pays 0.01 USDC per shill post via [x402](https://github.com/coinbase/x402); the shiller agent reads the lore, writes a promotional tweet, and posts it from its own aged X account. Agentic Mode Phase 2 — shipped as a Creator Discovery tool.
 
 [![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-305%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#acceptance-criteria-status)
 
 ## TL;DR for Judges
 
-A single-prompt launch runs a 67-second autonomous Creator on **BSC mainnet**, then Market-maker **pays** Narrator **real 0.01 USDC** on Base Sepolia for a lore chapter — not mocked, not scripted. Dashboard streams every LLM token, tool call, and settlement as native SSE; five pills link straight to explorers.
+A creator launches a real **BSC mainnet** token in a 67-second autonomous run, then orders a promotional tweet from an AI shiller for **0.01 USDC** on Base Sepolia via x402. The shiller reads the token's lore, writes a single on-voice tweet, and posts it from its own aged X account — not mocked, not scripted. The same x402 rails also carry agent-to-agent lore purchases (Phase 4.5 infra, kept as a regression-green substrate). Dashboard streams every LLM token, tool call, and settlement as native SSE; pills link straight to explorers.
 
-| Metric                                    | Value                                                                           |
-| ----------------------------------------- | ------------------------------------------------------------------------------- |
-| Autonomous Creator run time (real)        | **67s** (one-line prompt → BSC token + IPFS lore + meme PNG)                    |
-| Agents on one runtime                     | **4** (Creator, Narrator, Market-maker, Heartbeat)                              |
-| Tools in the typed registry               | **8** (narrative, image, deployer, lore, lore-extend, status, post, x402-fetch) |
-| Tests green in CI (shared + server + web) | **305** (21 + 233 + 51); x402 integration pays real USDC every run              |
-| Real on-chain artifacts shipped           | **4 explorer links** (BSC token + deploy tx + IPFS CID + Base Sepolia x402 tx)  |
+| Metric                                    | Value                                                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Autonomous Creator run time (real)        | **67s** (one-line prompt → BSC token + IPFS lore + meme PNG)                                    |
+| Agents on one runtime                     | **4** (Creator, Narrator, Market-maker, Heartbeat)                                              |
+| Tools in the typed registry               | **9** (narrative, image, deployer, lore, lore-extend, status, post, post-shill-for, x402-fetch) |
+| Tests green in CI (shared + server + web) | **305** (21 + 233 + 51); x402 integration pays real USDC every run                              |
+| Real on-chain artifacts shipped           | **4 explorer links** (BSC token + deploy tx + IPFS CID + Base Sepolia x402 tx)                  |
 
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint)
 - Submission deadline: 2026-04-22 UTC 15:59
@@ -25,20 +25,22 @@ A single-prompt launch runs a 67-second autonomous Creator on **BSC mainnet**, t
 
 ## Problem
 
-Four.meme saw 32k spam tokens land in a single October 2025 day, drowning legitimate creators; across the wider memecoin space 97% of tokens are dead inside 48 hours because launchers abandon them after the mint. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers this with three phases — Agent Skill Framework (Phase 1, shipped), on-chain identity (Phase 2), and an agent economic loop (Phase 3) — but Phase 2 and Phase 3 have no public reference implementation, and nothing on the BNB side shows agent-to-agent commerce working end to end. This repo is the gap-filler: a runnable Phase 1-to-2 reference where agents deploy tokens, write lore, and pay each other with real USDC for real content.
+Four.meme saw 32k spam tokens land in a single October 2025 day, drowning legitimate creators; across the wider memecoin space 97% of tokens are dead inside 48 hours because launchers abandon them after the mint. A legit creator has no active breakout path — minting is cheap, discovery is not. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers this with three phases — Agent Skill Framework (Phase 1, shipped), on-chain identity (Phase 2), and an agent economic loop (Phase 3) — but Phase 2 and Phase 3 have no public reference implementation. This repo is the gap-filler: a runnable Creator Promotion Service Market where a creator pays an AI shiller a real 0.01 USDC over x402 to post a promotional tweet from the shiller's own aged X account. Under the hood, the same x402 rails also power agent-to-agent lore purchases — the shilling market is the user-facing product, the a2a commerce is the substrate.
 
 ## What we built
 
-- **Four agents on one Anthropic SDK tool-use runtime**: Creator (launches a Four.meme token), Narrator (writes lore chapters and upserts `LoreStore`), Market-maker (pays to read lore), Heartbeat (`setInterval` autonomous tick loop with X-posting decisions).
-- **Eight tools on a typed registry** (`packages/shared/src/tool.ts` `AgentTool<TIn, TOut>`): `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `x402_fetch_lore`.
-- **x402 server on `@x402/express` v2** exposing three paid endpoints: `/lore/:addr` (0.01 USDC, `LoreStore`-backed when a chapter is hot), `/alpha/:addr` (0.01 USDC), `/metadata/:addr` (0.005 USDC).
-- **In-memory `LoreStore`** bridging Narrator publishes to the `/lore` endpoint so the same chapter the Narrator writes is the chapter the Market-maker buys.
-- **Next.js 15 dashboard** (Terminal Cyber theme on Tailwind v4) with Runs REST + native SSE wire contract, three live agent log columns with token-by-token streaming, meme image thumbnails, architecture diagram with gold x402 flow animation, Timeline view toggle, and five artifact pills that link directly to BscScan / Base Sepolia / Pinata.
-- **CLI demos** sharing the same orchestration path as the dashboard: `demo:creator`, `demo:a2a`, `demo:heartbeat`.
+- **Creator Promotion Service Market** as the headline product: a creator pays 0.01 USDC via x402 to order a shill; the Shiller agent (a repurposed Market-maker persona) pulls the order, reads the token's lore, generates a single on-voice promotional tweet, and posts it from its own aged X account — all in one tick.
+- **Four agents on one Anthropic SDK tool-use runtime**: Creator (launches a four.meme token), Narrator (writes lore chapters and upserts `LoreStore`), Market-maker / Shiller (dual-persona — reads lore for a2a commerce, or fulfils shill orders), Heartbeat (`setInterval` autonomous tick loop with X-posting decisions).
+- **Typed tool registry** (`packages/shared/src/tool.ts` `AgentTool<TIn, TOut>`): `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for` (Phase 4.6, agent posts for someone else's token), `x402_fetch_lore`.
+- **x402 server on `@x402/express` v2** with four paid endpoints: `/shill/:tokenAddr` (0.01 USDC, creator-facing, Phase 4.6), `/lore/:addr` (0.01 USDC, `LoreStore`-backed), `/alpha/:addr` (0.01 USDC), `/metadata/:addr` (0.005 USDC).
+- **In-memory `LoreStore` + `ShillOrderStore`** — Narrator publishes chapters, Shiller consumes orders; same runtime, different directions of flow.
+- **Next.js 15 dashboard** (Terminal Cyber theme on Tailwind v4) with Runs REST + native SSE wire contract, three live agent log columns with token-by-token streaming, meme image thumbnails, architecture diagram with gold x402 flow animation, Timeline view toggle, and artifact pills that link directly to BscScan / Base Sepolia / Pinata. A `/market` route renders the Shill Order Panel — order queue, settlement tx, and live tweet URLs.
+- **CLI demos** sharing the same orchestration path as the dashboard: `demo:creator`, `demo:a2a`, `demo:heartbeat`, `demo:shill`.
 
 ## What makes this submission stand out
 
-- **4 real agents, not scripted**: the Creator agent truly runs the tool-use loop in the dashboard's a2a flow (we contracted the Phase 4 pre-seed hack — see `V2-P1`); Market-maker pays Narrator real USDC every run.
+- **Creator gets an active breakout path**: instead of drowning in 32k daily spam tokens, a legit creator pays 0.01 USDC over x402 and gets a promotional tweet posted from an aged X account — direct relief for the Four.meme post-32k-incident creator-protection narrative, not another agent-on-agent trading demo.
+- **4 real agents, not scripted**: the Creator agent truly runs the tool-use loop in the dashboard's a2a flow (we contracted the Phase 4 pre-seed hack — see `V2-P1`); Market-maker pays Narrator real USDC every run; the same persona switches into Shiller mode to fulfil creator-paid shill orders.
 - **End-to-end autonomous Creator in 67 seconds** on BSC mainnet — not simulation. Token `0x4E39d254…74444` was deployed by a single prompt.
 - **Native Anthropic streaming → native SSE → React state**: `messages.stream` chunks map to `tool_use:start` / `tool_use:end` / `assistant:delta` SSE events, giving the judge per-token live feedback instead of "wait 15 seconds then see a log line".
 - **Replay-correct SSE buffer**: late subscribers replay the full `logs[]` + `artifacts[]` in order, then switch to live — EventSource reconnection works without a custom protocol.
@@ -110,9 +112,10 @@ For per-flow detail (Flow 1 Creator mint, Flow 2 Narrator publish, Flow 3 agent-
 
 Four.meme's Agentic Mode roadmap names three phases; this submission is a working reference for Phase 1 (Skill Framework) and Phase 2 (on-chain identity / commerce).
 
+- **Four.meme post-32k-incident creator-protection narrative** — this tool gives legit creators an active breakout path instead of drowning in spam, directly addressing the operational wound from the October 2025 32k-tokens-in-one-day event.
 - **Phase 1 mapping — Skill Framework**: the `apps/server/src/tools/` registry behind the shared `AgentTool<TIn, TOut>` interface (`packages/shared/src/tool.ts`) is a concrete Skill Framework — every tool is a typed, zod-validated unit the runtime discovers and calls through Anthropic native tool use. New skills drop in without touching agent code.
-- **Phase 2 mapping — on-chain identity / commerce**: Creator deploys a real BSC mainnet `TokenManager2` token through the `@four-meme/four-meme-ai@1.0.8` CLI (see [`docs/decisions/2026-04-18-bsc-mainnet-pivot.md`](./docs/decisions/2026-04-18-bsc-mainnet-pivot.md)); the token is the anchor for every downstream on-chain identity (Narrator chapters, Market-maker queries, Heartbeat posts).
-- **Phase 3 preview — agentic economic loop**: Market-maker paying Narrator 0.01 USDC per lore chapter, settled on Base Sepolia, is the smallest credible instance of the Phase 3 economic loop Four.meme targets. The same wire format is ready to swap to BNB-side USDC once a comparable facilitator exists.
+- **Phase 2 mapping — on-chain identity / commerce**: Creator deploys a real BSC mainnet `TokenManager2` token through the `@four-meme/four-meme-ai@1.0.8` CLI (see [`docs/decisions/2026-04-18-bsc-mainnet-pivot.md`](./docs/decisions/2026-04-18-bsc-mainnet-pivot.md)); the token is the anchor for every downstream identity (Narrator chapters, Shiller orders, Heartbeat posts).
+- **Phase 3 preview — agentic economic loop**: creator paying Shiller 0.01 USDC per promotional tweet, and Market-maker paying Narrator 0.01 USDC per lore chapter — both settled on Base Sepolia — are the smallest credible instances of the Phase 3 economic loop Four.meme targets. The same wire format is ready to swap to BNB-side USDC once a comparable facilitator exists.
 - **Responsible-launch discipline**: every deployed token is symbol-prefixed `HBNB2026-` (double-guarded in `narrative_generator`) to avoid misleading real users indexed on BscScan / DexScreener — see the risk notes in [`docs/decisions/2026-04-18-bsc-mainnet-pivot.md`](./docs/decisions/2026-04-18-bsc-mainnet-pivot.md).
 
 ### Pieverse bounty
@@ -125,7 +128,14 @@ Four.meme's Agentic Mode roadmap names three phases; this submission is a workin
 
 ### Innovation (30%)
 
-- **First agent-to-agent x402 commerce reference implementation wired to Four.meme on the BNB side** — Market-maker pays Narrator real USDC every run, not mock. No prior art in the sponsor's ecosystem (see the delta-over-prior-art analysis in [`docs/decisions/2026-04-17-direction-lock.md`](./docs/decisions/2026-04-17-direction-lock.md) vs. `alenfour/four-meme-agent`).
+Three-layer hybrid innovation:
+
+1. **First x402 memecoin-scenario implementation on the BNB side** — Creator pays Shiller real USDC for a promotional tweet; the same rails also carry Market-maker → Narrator lore purchases. No prior art in the sponsor's ecosystem (see the delta-over-prior-art analysis in [`docs/decisions/2026-04-17-direction-lock.md`](./docs/decisions/2026-04-17-direction-lock.md) vs. `alenfour/four-meme-agent`).
+2. **Shilling-as-a-service is an open gap**: Virtuals ACP on Base is a generic agent-service market; the BNB-side memecoin-creator promotion lane is empty. This submission stakes that lane with a working product, not a whitepaper.
+3. **Direct answer to the Four.meme 2025-10 32k-spam creator-protection pain**: shifts the narrative from "AI agents trade each other's memecoins" (PR-sensitive under the rug-pull shadow) to "AI agents help small creators break out" (directly relieves the operational wound).
+
+Supporting:
+
 - **3-agent swarm + Heartbeat tick loop + x402 service exchange**: a composition not seen on the BNB side. The Heartbeat agent decides `post_to_x` vs. `extend_lore` vs. idle from `check_token_status` output — real autonomy, not a fixed script.
 - **Pre-landed Agentic Mode Phase 2 reference**: the submission is a working sample of the exact roadmap stage (on-chain identity + economic loop) the sponsor publicly committed to but has not yet shipped.
 - **Soft-policy + transparent override**: Market-maker's policy gating (`deployedOnChain === true` green-lights the purchase) pairs with explicit warn-level `LogEvent`s when policy is violated — judges can see both the guardrail and the override path (see `a04b849`).
@@ -297,6 +307,10 @@ pnpm --filter @hack-fourmeme/web build   # Next.js production build sanity
 | AC6 — README aligned to rubric       | [x]         | This document.                                                                                                                                                                                                                                                    |
 | AC7 — Heartbeat + X posting          | [ ] partial | Heartbeat runtime + 3 tools + dry-run green; Heartbeat panel wired to dashboard with tick counter, decision tree, TweetFeed. Live X posts blocked on $5 credit top-up.                                                                                            |
 
+## Phase history
+
+- **Phase 4.6** (2026-04-18 ~ 21): Pivoted from agent-to-agent commerce to **Creator Promotion Service Market** — same x402 infrastructure, inverted user story. Creator pays AI shiller via x402; shiller posts promotional tweet from its aged X account. Added `/shill/:tokenAddr` paid endpoint, `post_shill_for` tool, `/market` dashboard route. Phase 4.5 a2a code path is kept green as the underlying substrate (see [`docs/features/shilling-market.md`](./docs/features/shilling-market.md)).
+
 ## Key decisions
 
 One line per decision record; no inlined content.
@@ -325,26 +339,27 @@ apps/
   web/        Next.js 15 + Tailwind v4 dashboard (Terminal Cyber theme)
     src/
       app/          layout + page (client component, useRun driven)
+                    + /market (Shill Order Panel — Phase 4.6)
       components/   theme-input / preset-buttons / architecture-diagram /
                     log-panel / meme-image-card / timeline-view /
                     heartbeat-section + panel / tweet-feed / tool-call-bubble /
-                    tx-list / toast
+                    tx-list / toast / shill-order-panel
       hooks/        useRun — POST /api/runs + EventSource lifecycle
       lib/          artifact-view, useRun-state reducer, timeline-merge,
                     tool-call-bubble-utils, architecture-diagram-utils,
                     heartbeat-derive, preset-texts
   server/     Express + x402 server + agent runtime
     src/
-      agents/       Creator / Narrator / Market-maker / Heartbeat +
+      agents/       Creator / Narrator / Market-maker (+Shiller persona) / Heartbeat +
                     runtime (messages.stream), _stream-map, _json parser
-      tools/        8 tools: narrative / image / deployer / lore / lore-extend /
-                    token-status / x-post / x-fetch-lore
-      state/        in-memory LoreStore (latest chapter per token)
+      tools/        9 tools: narrative / image / deployer / lore / lore-extend /
+                    token-status / x-post / post-shill-for / x-fetch-lore
+      state/        in-memory LoreStore + ShillOrderStore
       chain/        viem client + TokenManager2 partial ABI
       x402/         payment middleware + paid route handlers
-      runs/         RunStore + runA2ADemo + runHeartbeat + REST/SSE route handlers
+      runs/         RunStore + runA2ADemo + runHeartbeat + runShillMarket + REST/SSE route handlers
       routes/       Express route mounting
-      demos/        demo:creator / demo:a2a / demo:heartbeat
+      demos/        demo:creator / demo:a2a / demo:heartbeat / demo:shill
       config.ts     env schema (zod) + agent id enum
       index.ts      module-scope stores + app bootstrap
 packages/
