@@ -14,14 +14,18 @@
  *      collapses it to a static glow (per reduced-motion matrix row
  *      "Vision SKU pulse").
  *
- *   2. Take-rate projection
- *      Left column: VISION_TAKERATE.formula / .derivation / .result stacked
- *      vertically, separated by hairlines. The result line is accent-coloured
- *      so the eye lands on "$1.6/d protocol revenue (conservative)". Right
- *      column: a hand-drawn SVG bar chart (no recharts — see spec "需求邊界
- *      外"). Three bars (tokens/d · paid · revenue) with hand-tuned heights
- *      chosen for visual weight rather than proportional scale; the chart is
- *      illustrative, the real numbers live in the text column next to it.
+ *   2. Take-rate projection (three-tier card grid)
+ *      Three cards side-by-side read from VISION_TAKERATE:
+ *        · Demo floor      — the literal $0.01 × 5% = $1.6/d proof number.
+ *                            Labelled "floor, not ceiling" so viewers do not
+ *                            mistake it for the business ceiling.
+ *        · Real-world      — marketplace-standard pricing ($1–5/shill, 10%
+ *                            take, 3,200 orders/d → $117k–$584k/y).
+ *        · Multi-SKU TAM   — Shill + Snipe + LP + Alpha summed to ~$2M/y GMV.
+ *      A prior revision shipped a hand-drawn SVG bar chart next to the
+ *      numbers; it was removed because it anchored the eye on the $1.6/d
+ *      demo-floor figure — exactly the framing this redesign is meant to
+ *      correct. The three cards carry the visual weight now.
  *
  *   3. Phase map
  *      Horizontal 3-step diagram reading Phase 1 → Phase 2 → Phase 3. Phase 2
@@ -40,8 +44,8 @@
  * Spec hard-lines honoured:
  *   - Take-rate numbers are static strings read from narrative-copy — no
  *     runtime derivation (spec "需求邊界外 · 不做商業化數字的動態計算").
- *   - No chart library — bar chart is plain inline SVG (spec "需求邊界外 ·
- *     不引入 UI 組件庫" + the Vision row "SVG 手繪，無 recharts 依賴").
+ *   - No chart library (spec "需求邊界外 · 不引入 UI 組件庫"). The previous
+ *     hand-drawn SVG bar was dropped per the three-tier redesign.
  */
 import { useRef } from 'react';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
@@ -60,84 +64,6 @@ export interface VisionSceneProps {
   /** Optional className merged into the outer section — lets page.tsx layer
    *  vertical rhythm utilities without forking the component. */
   readonly className?: string;
-}
-
-/**
- * Take-rate bar chart — hand-drawn SVG.
- *
- * Heights are picked for visual weight (tokens >> paid >> revenue) rather
- * than literal proportional scale; the true numbers are in the adjacent text
- * column. The viewBox matches the rendered size so no scaling surprises. Two
- * <text> nodes per bar: value label above, axis label below.
- */
-function TakerateBarChart(): React.ReactElement {
-  const bars = [
-    {
-      label: 'tokens/d',
-      value: '32k',
-      height: 120,
-      color: 'var(--color-accent-subtle)',
-    },
-    {
-      label: 'paid',
-      value: '3.2k',
-      height: 70,
-      color: 'var(--color-accent)',
-    },
-    {
-      label: 'revenue',
-      value: '$1.6/d',
-      height: 35,
-      color: 'var(--color-accent-text)',
-    },
-  ] as const;
-
-  const W = 240;
-  const H = 180;
-  const BAR_W = 50;
-  const GAP = 70;
-  const BASELINE_Y = 160;
-  const LEFT_PAD = 20;
-
-  return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      width={W}
-      height={H}
-      role="img"
-      aria-label="Take-rate projection chart: 32k tokens per day, 3.2k paid shills, $1.6 per day revenue"
-    >
-      {bars.map((b, i) => {
-        const x = LEFT_PAD + i * GAP;
-        const y = BASELINE_Y - b.height;
-        return (
-          <g key={b.label}>
-            <rect x={x} y={y} width={BAR_W} height={b.height} fill={b.color} rx={4} />
-            <text
-              x={x + BAR_W / 2}
-              y={y - 5}
-              textAnchor="middle"
-              fontSize="11"
-              fill="var(--color-fg-primary)"
-              fontFamily="var(--font-mono)"
-            >
-              {b.value}
-            </text>
-            <text
-              x={x + BAR_W / 2}
-              y={BASELINE_Y + 14}
-              textAnchor="middle"
-              fontSize="10"
-              fill="var(--color-fg-tertiary)"
-              fontFamily="var(--font-mono)"
-            >
-              {b.label}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
 }
 
 /** SKU status glyph — ✅ for shipped, 🔒 for next/roadmap. Kept inline (no
@@ -268,45 +194,77 @@ export function VisionScene({ freeze = false, className }: VisionSceneProps): Re
           </div>
         </div>
 
-        {/* ─── Sub-block 2 · Take-rate projection ──────────────────────── */}
+        {/* ─── Sub-block 2 · Take-rate projection (three-tier grid) ────── */}
+        {/*
+         * Three cards, equal visual weight, no bar chart. The left card is
+         * the demo-floor proof ($1.6/d) — kept on-screen so judges can tie
+         * the number back to the live run, but flanked by real-world pricing
+         * and multi-SKU TAM so nobody mistakes the floor for the ceiling.
+         */}
         <div className="flex flex-col gap-4">
           <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
             Take-rate model (conservative)
           </span>
-          <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-[1fr_auto]">
-            {/* Left · formula / derivation / result stack */}
-            <div className="flex flex-col gap-3">
-              <div
-                className="font-[family-name:var(--font-mono)] text-[14px] leading-[1.5] text-fg-primary"
-                data-testid="vision-takerate-formula"
-              >
-                {VISION_TAKERATE.formula}
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            {/* Card 1 · Demo floor — literal $1.6/d from the live run. */}
+            <article
+              className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-5"
+              data-testid="vision-takerate-demo-floor"
+            >
+              <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
+                {VISION_TAKERATE.demoFloor.label}
+              </span>
+              <div className="font-[family-name:var(--font-mono)] text-[14px] leading-[1.5] text-fg-primary">
+                {VISION_TAKERATE.demoFloor.formula}
               </div>
-              <span
-                aria-hidden="true"
-                className="block h-px w-full bg-[color:var(--color-border-default)]"
-              />
-              <div
-                className="font-[family-name:var(--font-mono)] text-[14px] leading-[1.5] text-fg-primary"
-                data-testid="vision-takerate-derivation"
-              >
-                {VISION_TAKERATE.derivation}
+              <p className="font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.4] text-fg-secondary">
+                {VISION_TAKERATE.demoFloor.caption}
+              </p>
+            </article>
+
+            {/* Card 2 · Real-world pricing — marketplace-standard numbers. */}
+            <article
+              className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-5"
+              data-testid="vision-takerate-real-world"
+            >
+              <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
+                {VISION_TAKERATE.realWorld.label}
+              </span>
+              <div className="font-[family-name:var(--font-mono)] text-[14px] leading-[1.5] text-fg-primary">
+                {VISION_TAKERATE.realWorld.formula}
               </div>
-              <span
-                aria-hidden="true"
-                className="block h-px w-full bg-[color:var(--color-border-default)]"
-              />
-              <div
-                className="font-[family-name:var(--font-sans-display)] text-[24px] font-semibold leading-[1.2] text-accent-text"
-                data-testid="vision-takerate-result"
-              >
-                {VISION_TAKERATE.result}
+              <div className="font-[family-name:var(--font-sans-display)] text-[22px] font-semibold leading-[1.2] text-accent-text">
+                {VISION_TAKERATE.realWorld.result}
               </div>
-            </div>
-            {/* Right · hand-drawn bar chart */}
-            <div className="flex items-end justify-center md:justify-start">
-              <TakerateBarChart />
-            </div>
+              <p className="font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.4] text-fg-secondary">
+                {VISION_TAKERATE.realWorld.caption}
+              </p>
+            </article>
+
+            {/* Card 3 · Multi-SKU TAM — four-row breakdown summing to ~$2M. */}
+            <article
+              className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-border-default bg-bg-surface p-5"
+              data-testid="vision-takerate-multi-sku"
+            >
+              <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
+                {VISION_TAKERATE.multiSkuTam.label}
+              </span>
+              <dl className="flex flex-col gap-1">
+                {VISION_TAKERATE.multiSkuTam.breakdown.map((row) => (
+                  <div key={row.sku} className="flex items-baseline justify-between gap-3">
+                    <dt className="font-[family-name:var(--font-mono)] text-[12px] text-fg-primary">
+                      {row.sku}
+                    </dt>
+                    <dd className="font-[family-name:var(--font-mono)] text-[12px] text-accent-text">
+                      {row.annual}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="font-[family-name:var(--font-sans-display)] text-[22px] font-semibold leading-[1.2] text-accent-text">
+                {VISION_TAKERATE.multiSkuTam.total}
+              </div>
+            </article>
           </div>
         </div>
 

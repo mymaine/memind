@@ -107,9 +107,39 @@ exports[`narrative-copy > matches the committed snapshot (any copy change requir
     },
   ],
   "VISION_TAKERATE": {
-    "derivation": "3,200 orders/d × 0.01 USDC × 5% platform fee",
-    "formula": "32k tokens/d × 1% paid shill × 10 shills/token",
-    "result": "$1.6/d protocol revenue (conservative)",
+    "demoFloor": {
+      "caption": "Sub-cent x402 settlement proves the primitive works at any price point — this is the floor, not the ceiling.",
+      "formula": "$0.01/shill × 5% take = $1.6/d · $584/y",
+      "label": "Demo floor",
+    },
+    "multiSkuTam": {
+      "breakdown": [
+        {
+          "annual": "$584k/y",
+          "sku": "Shill",
+        },
+        {
+          "annual": "$1M/y",
+          "sku": "Snipe",
+        },
+        {
+          "annual": "$500k/y",
+          "sku": "LP Provisioning",
+        },
+        {
+          "annual": "$200k/y",
+          "sku": "Alpha Feed",
+        },
+      ],
+      "label": "Multi-SKU TAM",
+      "total": "≈ $2M/y agent-commerce primitive GMV",
+    },
+    "realWorld": {
+      "caption": "Marketplace-standard take-rate (10–30%) + AI-service pricing (100–500× demo). Shiller keeps 90%.",
+      "formula": "$1–5/shill × 10% take × 3,200 orders/d",
+      "label": "Real-world pricing",
+      "result": "$320 – $1,600/d  ($117k – $584k/y)",
+    },
   },
 }
 `;

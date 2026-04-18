@@ -64,11 +64,70 @@ export const SOLUTION_STEPS = [
 
 // ─── Vision ─────────────────────────────────────────────────────────────────
 
-export const VISION_TAKERATE = {
-  formula: '32k tokens/d × 1% paid shill × 10 shills/token',
-  derivation: '3,200 orders/d × 0.01 USDC × 5% platform fee',
-  result: '$1.6/d protocol revenue (conservative)',
-} as const;
+/**
+ * VISION_TAKERATE — three-tier framing so the 0.01 USDC demo floor is never
+ * read as the business ceiling. The on-screen card read is "we deliberately
+ * ran the demo at sub-cent settlement to prove x402 micro-payments work;
+ * shipped pricing is 100–500x that number, and Shill is just one of four
+ * SKUs the same primitive fans out to".
+ *
+ * Three layers (rendered as three cards in <VisionScene />):
+ *   1. demoFloor    — the literal $0.01 × 5% number that the live demo emits.
+ *                     Labelled "floor, not ceiling".
+ *   2. realWorld    — marketplace-standard pricing (AI-service $1–5/shill,
+ *                     10% take-rate). Conservative assumptions only.
+ *   3. multiSkuTam  — four SKUs (Shill + Snipe + LP + Alpha) summed into a
+ *                     ~$2M/y agent-commerce primitive GMV.
+ */
+export interface VisionTakerateSkuRow {
+  readonly sku: string;
+  readonly annual: string;
+}
+
+export interface VisionTakerate {
+  readonly demoFloor: {
+    readonly label: string;
+    readonly formula: string;
+    readonly caption: string;
+  };
+  readonly realWorld: {
+    readonly label: string;
+    readonly formula: string;
+    readonly result: string;
+    readonly caption: string;
+  };
+  readonly multiSkuTam: {
+    readonly label: string;
+    readonly breakdown: readonly VisionTakerateSkuRow[];
+    readonly total: string;
+  };
+}
+
+export const VISION_TAKERATE: VisionTakerate = {
+  demoFloor: {
+    label: 'Demo floor',
+    formula: '$0.01/shill × 5% take = $1.6/d · $584/y',
+    caption:
+      'Sub-cent x402 settlement proves the primitive works at any price point — this is the floor, not the ceiling.',
+  },
+  realWorld: {
+    label: 'Real-world pricing',
+    formula: '$1–5/shill × 10% take × 3,200 orders/d',
+    result: '$320 – $1,600/d  ($117k – $584k/y)',
+    caption:
+      'Marketplace-standard take-rate (10–30%) + AI-service pricing (100–500× demo). Shiller keeps 90%.',
+  },
+  multiSkuTam: {
+    label: 'Multi-SKU TAM',
+    breakdown: [
+      { sku: 'Shill', annual: '$584k/y' },
+      { sku: 'Snipe', annual: '$1M/y' },
+      { sku: 'LP Provisioning', annual: '$500k/y' },
+      { sku: 'Alpha Feed', annual: '$200k/y' },
+    ],
+    total: '≈ $2M/y agent-commerce primitive GMV',
+  },
+};
 
 export interface VisionSku {
   readonly name: 'Shill' | 'Snipe' | 'LP Provisioning' | 'Alpha Feed';

@@ -7,8 +7,10 @@
  *   1. SKU expansion matrix    — 4 cards (Shill / Snipe / LP Provisioning /
  *      Alpha Feed). Only Shill (status='shipped') carries the accent breathing
  *      border; the other three render in a muted variant.
- *   2. Take-rate projection    — formula / derivation / result text stack
- *      alongside a hand-drawn SVG bar chart (no recharts).
+ *   2. Take-rate projection    — three equal-weight cards (demo floor /
+ *      real-world pricing / multi-SKU TAM). No bar chart — the prior SVG
+ *      anchored the eye on the $1.6/d demo-floor figure, exactly the framing
+ *      this redesign exists to correct.
  *   3. Agent Commerce Primitive phase map — 3 horizontal nodes (Phase 1 / 2 /
  *      3). Phase 2 (this project) is highlighted with the `signal-pulse`
  *      animation; Phase 1 / 3 render in the default, non-highlighted variant.
@@ -87,23 +89,39 @@ describe('<VisionScene /> structural contract', () => {
     }
   });
 
-  it('renders the VISION_TAKERATE.formula string verbatim (32k tokens/d × 1% paid shill)', () => {
+  it('renders the demo-floor tier with the literal $1.6/d number (proof, not projection)', () => {
     const out = render();
-    expect(out).toContain(VISION_TAKERATE.formula);
+    // The demo-floor card must still surface $1.6/d so judges can tie the
+    // number to the live x402 transactions. It is flanked by real-world and
+    // multi-SKU cards so nobody mistakes the floor for the ceiling.
+    expect(out).toContain(VISION_TAKERATE.demoFloor.formula);
+    expect(out).toContain('$1.6/d');
   });
 
-  it('renders the VISION_TAKERATE.result string verbatim ($1.6/d protocol revenue)', () => {
+  it('renders the real-world tier with the $320–$1,600/d band and $117k lower-bound annual', () => {
     const out = render();
-    expect(out).toContain(VISION_TAKERATE.result);
+    expect(out).toContain(VISION_TAKERATE.realWorld.formula);
+    expect(out).toContain(VISION_TAKERATE.realWorld.result);
+    expect(out).toContain('$117k');
   });
 
-  it('exposes the take-rate bar chart as an accessible SVG (role="img")', () => {
+  it('renders every multi-SKU TAM row plus the ~$2M/y headline', () => {
     const out = render();
-    // Hand-drawn SVG (no recharts); role="img" + aria-label is how screen
-    // readers pick it up. The exact label wording is allowed to evolve, but
-    // "chart" must stay so it reads as the visualisation, not the static
-    // headline.
-    expect(out).toMatch(/role="img"[^>]+aria-label="[^"]*chart/i);
+    for (const row of VISION_TAKERATE.multiSkuTam.breakdown) {
+      expect(out).toContain(row.sku);
+      expect(out).toContain(row.annual);
+    }
+    expect(out).toContain(VISION_TAKERATE.multiSkuTam.total);
+    expect(out).toContain('$2M');
+  });
+
+  it('does not render any <svg> chart (bar chart removed in the three-tier redesign)', () => {
+    const out = render();
+    // The prior revision shipped a hand-drawn SVG bar chart. It was removed
+    // because it visually anchored the eye on the $1.6/d demo-floor figure —
+    // the exact framing this redesign exists to correct.
+    expect(out).not.toMatch(/<svg\b/);
+    expect(out).not.toMatch(/role="img"/);
   });
 
   it('renders every PHASE_MAP name (Agent Skill Framework / Agent Commerce Primitive / Agent Economic Loop)', () => {

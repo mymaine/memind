@@ -126,4 +126,35 @@ describe('narrative-copy', () => {
       }
     });
   });
+
+  // ─── VISION_TAKERATE ───────────────────────────────────────────────────────
+
+  describe('VISION_TAKERATE', () => {
+    it('exposes three tiers: demoFloor, realWorld, multiSkuTam', () => {
+      // Three-tier framing prevents the demo-floor $1.6/d from being read as
+      // the business ceiling. Every tier must stay present on the contract.
+      expect(VISION_TAKERATE).toHaveProperty('demoFloor');
+      expect(VISION_TAKERATE).toHaveProperty('realWorld');
+      expect(VISION_TAKERATE).toHaveProperty('multiSkuTam');
+    });
+
+    it('encodes the literal demo-floor number ($1.6/d) so judges see the proof, not just the projection', () => {
+      expect(VISION_TAKERATE.demoFloor.formula).toContain('$1.6/d');
+      expect(VISION_TAKERATE.demoFloor.caption.toLowerCase()).toContain('floor');
+    });
+
+    it('frames real-world pricing with $1–5/shill and $117k lower band', () => {
+      // Accept either the en-dash or the ASCII hyphen form of the price range
+      // so future copy tweaks do not silently drop the bracket.
+      expect(VISION_TAKERATE.realWorld.formula).toMatch(/\$1[–-]5/);
+      expect(VISION_TAKERATE.realWorld.result).toContain('$117k');
+    });
+
+    it('lists four SKUs in multi-SKU TAM summing to a ~$2M/y headline', () => {
+      expect(VISION_TAKERATE.multiSkuTam.breakdown).toHaveLength(4);
+      const skus = VISION_TAKERATE.multiSkuTam.breakdown.map((row) => row.sku);
+      expect(skus).toEqual(['Shill', 'Snipe', 'LP Provisioning', 'Alpha Feed']);
+      expect(VISION_TAKERATE.multiSkuTam.total).toContain('$2M');
+    });
+  });
 });
