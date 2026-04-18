@@ -1,8 +1,17 @@
-import 'dotenv/config';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config as loadDotenv } from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from './config.js';
+
+// Load .env.local from the repo root — `import 'dotenv/config'` alone only
+// reads `${cwd}/.env`, which is empty when the server is launched from
+// `apps/server/` via `pnpm --filter ... dev`. This file lives at
+// `apps/server/src/index.ts`, so 4 hops of `..` land on the repo root.
+const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../..');
+loadDotenv({ path: resolve(repoRoot, '.env.local') });
 import { registerHealthRoutes } from './routes/health.js';
 import { registerX402Routes } from './x402/index.js';
 import { registerAgentRoutes } from './agents/routes.js';
