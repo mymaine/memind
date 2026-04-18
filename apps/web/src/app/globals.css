@@ -59,6 +59,15 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+html {
+  /* Smooth-scroll powers the Hero PRIMARY CTA (`<a href="#launch-panel">`)
+     so the jump to the LaunchPanel glides instead of snapping. `prefers-
+     reduced-motion` already zeroes transition-duration via the media query
+     further down, but browsers also drop smooth-scroll for that preference
+     automatically — no extra guard needed. */
+  scroll-behavior: smooth;
+}
+
 html,
 body {
   background-color: var(--color-bg-primary);
