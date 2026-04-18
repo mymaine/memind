@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   artifactSchema,
+  assistantDeltaEventPayloadSchema,
   createRequestSchema,
   createRunRequestSchema,
   runSnapshotSchema,
   statusEventPayloadSchema,
+  toolUseEndEventPayloadSchema,
+  toolUseStartEventPayloadSchema,
   txRefSchema,
 } from './schema.js';
 
@@ -263,6 +266,112 @@ describe('statusEventPayloadSchema', () => {
       errorMessage: 'OpenRouter key missing',
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// ─── Fine-grained SSE events (V2-P2) ─────────────────────────────────────────
+// Three new `event:` names surface the agent's internal Anthropic stream to
+// the dashboard: a spinner at tool_use:start, the result at tool_use:end, and
+// per-token assistant text via assistant:delta. All three carry `agent` +
+// `ts`; the start/end pair is correlated through `toolUseId` so the UI can
+// close the right bubble when a parallel run interleaves tools.
+
+describe('toolUseStartEventPayloadSchema', () => {
+  it('accepts a well-formed tool_use:start payload', () => {
+    const result = toolUseStartEventPayloadSchema.safeParse({
+      agent: 'creator',
+      toolName: 'create_image',
+      toolUseId: 'tu_1',
+      input: { prompt: 'neon shiba' },
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects tool_use:start missing toolUseId', () => {
+    const result = toolUseStartEventPayloadSchema.safeParse({
+      agent: 'creator',
+      toolName: 'create_image',
+      input: {},
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects tool_use:start with unknown agent id', () => {
+    const result = toolUseStartEventPayloadSchema.safeParse({
+      agent: 'orchestrator',
+      toolName: 'create_image',
+      toolUseId: 'tu_1',
+      input: {},
+      ts: '2026-04-20T10:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('toolUseEndEventPayloadSchema', () => {
+  it('accepts a successful tool_use:end payload', () => {
+    const result = toolUseEndEventPayloadSchema.safeParse({
+      agent: 'creator',
+      toolName: 'create_image',
+      toolUseId: 'tu_1',
+      output: { cid: 'bafy', gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafy' },
+      isError: false,
+      ts: '2026-04-20T10:00:01.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a failed tool_use:end payload with error output', () => {
+    const result = toolUseEndEventPayloadSchema.safeParse({
+      agent: 'narrator',
+      toolName: 'extend_lore',
+      toolUseId: 'tu_2',
+      output: { error: 'pinata timed out' },
+      isError: true,
+      ts: '2026-04-20T10:00:02.000Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects tool_use:end missing isError flag', () => {
+    const result = toolUseEndEventPayloadSchema.safeParse({
+      agent: 'narrator',
+      toolName: 'extend_lore',
+      toolUseId: 'tu_2',
+      output: {},
+      ts: '2026-04-20T10:00:02.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('assistantDeltaEventPayloadSchema', () => {
+  it('accepts a non-empty delta', () => {
+    const result = assistantDeltaEventPayloadSchema.safeParse({
+      agent: 'creator',
+      delta: 'Thinking about the theme ...',
+      ts: '2026-04-20T10:00:00.500Z',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an empty delta (stream mapper drops empty deltas before emit)', () => {
+    const result = assistantDeltaEventPayloadSchema.safeParse({
+      agent: 'creator',
+      delta: '',
+      ts: '2026-04-20T10:00:00.500Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects delta payload missing ts', () => {
+    const result = assistantDeltaEventPayloadSchema.safeParse({
+      agent: 'creator',
+      delta: 'hi',
+    });
+    expect(result.success).toBe(false);
   });
 });
 
