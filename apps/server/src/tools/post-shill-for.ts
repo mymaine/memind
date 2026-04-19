@@ -126,7 +126,8 @@ const BASE_RULES = `You are a promotional agent. A creator has paid you to shill
 
 Rules (all MANDATORY):
 - Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
-- Length <= 250 characters (hard cap, count before emoji expansion).
+- Length <= 280 characters including the URL (we enforce raw char count — URLs do NOT t.co-fold for our guard).
+- The four.meme URL alone is ~66 chars — budget at most ~200 chars for the body + emoji + hashtags.
 - Lead with the $SYMBOL.
 - INCLUDE the four.meme token URL at the end of the tweet so readers can click through to the token page. Format: https://four.meme/token/<TOKEN_ADDRESS> — use the exact address supplied in the user prompt (full 0x...40-hex, lowercase).
 - Do NOT include any other URL — no bscscan, no base-sepolia explorers, no personal links. The single four.meme/token URL is the only allowed link.
