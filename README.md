@@ -4,7 +4,7 @@
 >
 > _Memind = meme + mind. On Four.meme._
 
-> **Every memecoin gets its own Memind — a runtime with persistent memory, pluggable personas, and on-chain-paid autonomy.** One Memind (each Memind is internally a **Brain runtime**), four personas, paid over [x402](https://github.com/coinbase/x402). The **Creator persona** deploys a real BSC mainnet token and writes chapter 1 of its **lore** (the token's AI-generated origin codex). The **Narrator persona** reads chapter 1 and continues to chapter 2 — every chapter served from an x402-paid endpoint so other personas (and other Meminds) pay 0.01 USDC to read it as alpha. The **Market-maker persona** pays for lore to drive its decisions; the **Pitch persona** uses the same lore to draft on-voice tweets creators commission at 0.01 USDC each, posted from a real aged X account. The **Heartbeat persona** ticks every 60s, deciding on its own when to extend lore, post, or idle. **Memind Pitch is the first shipped SKU; Launch Boost, Community Ops, Alpha Feed (all sell-side) plug into the same Memind next — no new runtime, just new personas.**
+> **Every memecoin gets its own Memind: a runtime with persistent memory, pluggable personas, and on-chain-paid autonomy.** One Memind (each Memind is internally a **Brain runtime**), four personas, paid over [x402](https://github.com/coinbase/x402). The **Creator persona** deploys a real BSC mainnet token and writes chapter 1 of its **lore** (the token's AI-generated origin codex). The **Narrator persona** reads chapter 1 and continues to chapter 2. Every chapter is served from an x402-paid endpoint so other personas (and other Meminds) pay 0.01 USDC to read it as alpha. The **Market-maker persona** pays for lore to drive its decisions; the **Pitch persona** uses the same lore to draft on-voice tweets creators commission at 0.01 USDC each, posted from a real aged X account. The **Heartbeat persona** ticks every 60s, deciding on its own when to extend lore, post, or idle. **Memind Pitch is the first shipped SKU; Launch Boost, Community Ops, Alpha Feed (all sell-side) plug into the same Memind next. No new runtime, just new personas.**
 
 [![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-716%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#evidence-on-chain--in-repo)
 
@@ -12,22 +12,22 @@
 
 - **The thesis**: memecoins have a discovery problem, not a minting problem. And launchers abandon them at hour 0 because post-launch ops is more work than the mint. We give every token its own **Memind** that takes over: writes the lore, posts the tweets, reads the chain, decides what to do next. The creator only mints.
 - **The loop**: the Memind's Creator persona deploys a real BSC mainnet token in **67s** and writes lore chapter 1 → Narrator persona continues chapter 2 → Market-maker persona pays 0.01 USDC on Base Sepolia via x402 to read lore as alpha → Pitch persona reads the same lore to post an on-voice tweet from a real aged X account when the creator commissions one → Heartbeat persona ticks on its own and decides what the Memind does next.
-- **Why this is a primitive, not a feature**: Memind Pitch is SKU 1, shipped. Every future SKU (Launch Boost, Community Ops, Alpha Feed — all sell-side) is a **new persona plugged into the same Memind**, not a new product. `Persona<TInput, TOutput>` is an explicit interface; new SKUs ship as ~50 lines of systemPrompt + tool subset.
-- **1 Memind (Brain runtime), 4 personas, 9 typed tools, 716 green tests** — x402 integration settles real USDC every `pnpm test`. Memind Pitch tweets support a toggleable four.meme click-through URL (default off during X's 7-day post-OAuth cooldown; toggle on post-cooldown for sponsor attribution).
-- **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; a **Memind Status Bar** across the top exposes active persona + memory state + last-tick timestamp (click for the Memind detail modal). Engineering detail (logs / timeline / tx pills / architecture) lives in a `D`-to-open Developer Drawer — judge-first up-front, engineer-deep on demand.
+- **Why this is a primitive, not a feature**: Memind Pitch is SKU 1, shipped. Every future SKU (Launch Boost, Community Ops, Alpha Feed, all sell-side) is a **new persona plugged into the same Memind**, not a new product. `Persona<TInput, TOutput>` is an explicit interface; new SKUs ship as ~50 lines of systemPrompt + tool subset.
+- **1 Memind (Brain runtime), 4 personas, 9 typed tools, 716 green tests.** x402 integration settles real USDC every `pnpm test`. Memind Pitch tweets support a toggleable four.meme click-through URL (default off during X's 7-day post-OAuth cooldown; toggle on post-cooldown for sponsor attribution).
+- **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; a **Memind Status Bar** across the top exposes active persona + memory state + last-tick timestamp (click for the Memind detail modal). Engineering detail (logs / timeline / tx pills / architecture) lives in a `D`-to-open Developer Drawer. Judge-first up-front, engineer-deep on demand.
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint) · Deadline: 2026-04-22 UTC 15:59
 - Demo video: <!-- TODO: paste URL after recording -->
 - Architecture: [`docs/architecture.md`](./docs/architecture.md)
 
 ## Problem
 
-Four.meme saw 32k spam tokens land in a single October 2025 day, and across memecoins 97% of tokens die inside 48 hours because launchers abandon them after the mint. Minting is cheap; **discovery is not**. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers with three phases — Phase 1 (Agent Skill Framework) is live; Phase 2 (agent-to-agent commerce) and Phase 3 (autonomous economic loop) have no public reference implementation. This repo fills that gap.
+Four.meme saw 32k spam tokens land in a single October 2025 day, and across memecoins 97% of tokens die inside 48 hours because launchers abandon them after the mint. Minting is cheap; **discovery is not**. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers with three phases: Phase 1 (Agent Skill Framework) is live; Phase 2 (agent-to-agent commerce) and Phase 3 (autonomous economic loop) have no public reference implementation. This repo fills that gap.
 
-## How it works — the agent commerce loop
+## How it works: the agent commerce loop
 
-Every memecoin should have a **soul**, not just a contract address. We give each token a **Memind** — and inside that Memind, four personas trade services around the lore.
+Every memecoin should have a **soul**, not just a contract address. We give each token a **Memind**; inside that Memind, four personas trade services around the lore.
 
-**Lore** = the AI-generated origin codex of a token. Think of it as Pokémon card back-story, NFT collection world-building, or MMO world-codex — but for a memecoin, split into numbered chapters, pinned to IPFS, and served from a paid x402 endpoint.
+**Lore** = the AI-generated origin codex of a token. Think of it as Pokémon card back-story, NFT collection world-building, or MMO world-codex, but for a memecoin: split into numbered chapters, pinned to IPFS, and served from a paid x402 endpoint.
 
 ```
 ┌──────────────┐  writes  ┌──────────────┐  extends  ┌──────────────┐
@@ -51,19 +51,19 @@ Every memecoin should have a **soul**, not just a contract address. We give each
 
 Three observations that make this a **primitive** rather than a one-off app:
 
-1. **Same lore, multiple buyers.** Market-maker and the Pitch persona both pay to read the identical chapter. Add more sell-side SKUs (Launch Boost, Community Ops, Alpha Feed) and they all share the lore substrate — zero new infrastructure.
+1. **Same lore, multiple buyers.** Market-maker and the Pitch persona both pay to read the identical chapter. Add more sell-side SKUs (Launch Boost, Community Ops, Alpha Feed) and they all share the lore substrate. Zero new infrastructure.
 2. **Same rail, multiple payers.** x402 settles from agents (Market-maker paying Narrator) or from humans (Creator paying the Pitch persona) through the exact same EIP-3009 / Base Sepolia USDC flow.
-3. **Same tweet, real click-through.** Pitch-persona tweets lead with `$SYMBOL` and end with `https://four.meme/token/0x...` — every demo tweet is a live backlink to the sponsor surface.
+3. **Same tweet, real click-through.** Pitch-persona tweets lead with `$SYMBOL` and end with `https://four.meme/token/0x...`. Every demo tweet is a live backlink to the sponsor surface.
 
 ## What we built
 
-- **Agent commerce primitive** — the four-persona loop above, fully wired inside one Memind. `Creator` + `Narrator` sit on the supply side (write + extend lore); `Market-maker` + `Pitch persona` sit on the demand side (pay to consume lore, each for their own downstream purpose).
-- **Memind Pitch (SKU 1, shipped)** — creator UI at `/market` takes tokenAddr + optional brief, pays 0.01 USDC via x402, and the Pitch persona posts a real tweet from an aged X account within ~6 seconds. Click-through back to `four.meme/token/<addr>`.
-- **4 personas on one Anthropic SDK tool-use runtime (one Memind = one Brain runtime per memecoin)**: Creator / Narrator / Market-maker (dual persona — Market-maker or Pitch persona depending on mode) / Heartbeat (`setInterval` autonomous tick).
+- **Agent commerce primitive**: the four-persona loop above, fully wired inside one Memind. `Creator` + `Narrator` sit on the supply side (write + extend lore); `Market-maker` + `Pitch persona` sit on the demand side (pay to consume lore, each for their own downstream purpose).
+- **Memind Pitch (SKU 1, shipped).** Creator UI at `/market` takes tokenAddr + optional brief, pays 0.01 USDC via x402, and the Pitch persona posts a real tweet from an aged X account within ~6 seconds. Click-through back to `four.meme/token/<addr>`.
+- **4 personas on one Anthropic SDK tool-use runtime (one Memind = one Brain runtime per memecoin)**: Creator / Narrator / Market-maker (dual persona: Market-maker or Pitch persona depending on mode) / Heartbeat (`setInterval` autonomous tick).
 - **Typed tool registry** (`AgentTool<TIn, TOut>`): `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for`, `x402_fetch_lore`. (Code identifiers such as `post_shill_for` keep their original `shill` names; only the user-facing brand has been renamed.)
-- **x402 server on `@x402/express` v2**, four paid endpoints: `/shill/:tokenAddr` (0.01 USDC, creator-facing — endpoint path unchanged for backward compatibility), `/lore/:addr` (0.01, `LoreStore`-backed), `/alpha/:addr` (0.01), `/metadata/:addr` (0.005).
-- **In-memory `LoreStore` + `ShillOrderStore`**: Narrator publishes lore, Pitch persona consumes lore + orders — same runtime, opposite directions, zero coupling between producers and consumers.
-- **Next.js 15 product dashboard** (Terminal Cyber on Tailwind v4): two routes share a 6-scene skeleton — Hero (6s Creator→USDC→Pitch→Tweet loop with a typewriter tweet) · Problem (32k-ticker marquee) · Solution (3-step cards + embedded x402 micro-animation) · Product (LaunchPanel on `/` · OrderPanel on `/market`, both driven by pure `derive-*-state` reducers over `useRun()` SSE) · Vision (SKU matrix + 3-tier take-rate + Phase map) · Evidence (5 fixed on-chain pills). All legacy engineering panels (3-column logs, timeline, architecture diagram, tx list, anchor ledger, heartbeat, pitch orders) live inside a collapsible `DevLogsDrawer` (`D` to open, `1–6` to tab, `Esc` to close, `prefers-reduced-motion` fully respected).
+- **x402 server on `@x402/express` v2**, four paid endpoints: `/shill/:tokenAddr` (0.01 USDC, creator-facing; endpoint path unchanged for backward compatibility), `/lore/:addr` (0.01, `LoreStore`-backed), `/alpha/:addr` (0.01), `/metadata/:addr` (0.005).
+- **In-memory `LoreStore` + `ShillOrderStore`**: Narrator publishes lore, Pitch persona consumes lore + orders. Same runtime, opposite directions, zero coupling between producers and consumers.
+- **Next.js 15 product dashboard** (Terminal Cyber on Tailwind v4): two routes share a 6-scene skeleton: Hero (6s Creator→USDC→Pitch→Tweet loop with a typewriter tweet) · Problem (32k-ticker marquee) · Solution (3-step cards + embedded x402 micro-animation) · Product (LaunchPanel on `/` · OrderPanel on `/market`, both driven by pure `derive-*-state` reducers over `useRun()` SSE) · Vision (SKU matrix + 3-tier take-rate + Phase map) · Evidence (5 fixed on-chain pills). All legacy engineering panels (3-column logs, timeline, architecture diagram, tx list, anchor ledger, heartbeat, pitch orders) live inside a collapsible `DevLogsDrawer` (`D` to open, `1–6` to tab, `Esc` to close, `prefers-reduced-motion` fully respected).
 - **CLI demos** sharing the orchestration path: `demo:creator`, `demo:a2a`, `demo:heartbeat`, `demo:shill` (script name kept for stability).
 
 ## Architecture
@@ -137,9 +137,9 @@ Every row links to a real explorer page. Run #3 hash reproduces a Base Sepolia s
 | x402 settlement (Run #3, 0.01 USDC)        | Base Sepolia | [`0x62e4…c3df`](https://sepolia.basescan.org/tx/0x62e442cc9ccc7f57c843ebcfc52f777f3cd9188b9172583ee4cefa60e5a1c3df) |
 | Phase 1 x402 probe settlement              | Base Sepolia | [`0x4331…000a`](https://sepolia.basescan.org/tx/0x4331ff588b541d3a53dcdcdf89f0954e1b974d985a7e79476a04552e9bff000a) |
 
-**Run #3 note**: `from` and `to` both resolve to `0xaE2E51D0…D6d78` because a single agent EOA carries both x402 roles in the demo — Market-maker as payer, Narrator's `/lore/:addr` as `payTo`. EIP-3009 `transferWithAuthorization`, facilitator relay, and 0.01 USDC movement are all real on-chain; wallet multiplexing is demo-only and would split into `AGENT_WALLET_*` and a future `NARRATOR_WALLET_*` in production.
+**Run #3 note**: `from` and `to` both resolve to `0xaE2E51D0…D6d78` because a single agent EOA carries both x402 roles in the demo: Market-maker as payer, Narrator's `/lore/:addr` as `payTo`. EIP-3009 `transferWithAuthorization`, facilitator relay, and 0.01 USDC movement are all real on-chain; wallet multiplexing is demo-only and would split into `AGENT_WALLET_*` and a future `NARRATOR_WALLET_*` in production.
 
-In-repo evidence: **716 green tests** (`packages/shared` 67 / `apps/server` 320 / `apps/web` 329) including real Base Sepolia x402 settle integration on every `pnpm test`; `tsc --noEmit` clean across the workspace; Phase gates traceable via `git log 7c06cf0` (Phase 1), `1a088dd..e0c4233` (Phase 2 67s Creator), `ec936b9..8d2591e` (Phase 3 a2a + Heartbeat), `2429f70..a04b849` (Phase 4 Dashboard Run #3), `28a13fd..HEAD` (Phase 4.7 Memind Pitch Product UI — 6-scene narrative + DevLogsDrawer).
+In-repo evidence: **716 green tests** (`packages/shared` 67 / `apps/server` 320 / `apps/web` 329) including real Base Sepolia x402 settle integration on every `pnpm test`; `tsc --noEmit` clean across the workspace; Phase gates traceable via `git log 7c06cf0` (Phase 1), `1a088dd..e0c4233` (Phase 2 67s Creator), `ec936b9..8d2591e` (Phase 3 a2a + Heartbeat), `2429f70..a04b849` (Phase 4 Dashboard Run #3), `28a13fd..HEAD` (Phase 4.7 Memind Pitch Product UI, 6-scene narrative + DevLogsDrawer).
 
 ## Tech stack
 
@@ -156,7 +156,7 @@ In-repo evidence: **716 green tests** (`packages/shared` 67 / `apps/server` 320 
 - Node **22+** (Node 25 on macOS can break native libs; pin via `nvm` or `brew install node@22`)
 - `pnpm` 10+
 - Base Sepolia agent wallet with ≥ 0.1 USDC + dust ETH for gas
-- (Optional, full Creator flow) BSC mainnet wallet with ≥ 0.01 BNB — `deployCost=0` + ~$0.05 gas
+- (Optional, full Creator flow) BSC mainnet wallet with ≥ 0.01 BNB (`deployCost=0` + ~$0.05 gas)
 - OpenRouter key (~$5 covers the session), Google Gemini key (~$0.04/image), Pinata JWT
 - (Optional, live X posting) X developer app creds + ~$5 credit
 
@@ -218,11 +218,37 @@ pnpm --filter @hack-fourmeme/web build   # Next.js production build sanity
 
 Hackathon credibility comes from honesty about deferred items.
 
-- **AC3 — on-chain anchor not implemented.** Moving chapter CIDs through `LoreStore` + SSE was cheaper than subscribing to a BSC event log; the log-queue screenshot fallback is a Day 5 task.
-- **AC5 — demo video not yet recorded.** Full runbook (pre-flight + shot script + degrade plans) lives at [`docs/runbooks/demo-recording.md`](./docs/runbooks/demo-recording.md).
-- **AC7 — live X posts blocked on $5 credit top-up.** Heartbeat runtime, `post_to_x`, `check_token_status`, `extend_lore` are implemented and tested; `--dry-run` proves the wiring end-to-end.
+- **AC3 · on-chain anchor not implemented.** Moving chapter CIDs through `LoreStore` + SSE was cheaper than subscribing to a BSC event log; the log-queue screenshot fallback is a Day 5 task.
+- **AC5 · demo video not yet recorded.** Full runbook (pre-flight + shot script + degrade plans) lives at [`docs/runbooks/demo-recording.md`](./docs/runbooks/demo-recording.md).
+- **AC7 · live X posts blocked on $5 credit top-up.** Heartbeat runtime, `post_to_x`, `check_token_status`, `extend_lore` are implemented and tested; `--dry-run` proves the wiring end-to-end.
 - **`/alpha/:addr` and `/metadata/:addr` remain mocks.** They exercise the paid path but return canned payloads; `/lore/:addr` is real via `LoreStore`.
-- **Single-EOA x402 settlement in the demo.** Market-maker payer and Narrator `payTo` both resolve to `AGENT_WALLET_*` — the EIP-3009 handshake and USDC movement are real; splitting wallets is a documented production upgrade.
+- **Single-EOA x402 settlement in the demo.** Market-maker payer and Narrator `payTo` both resolve to `AGENT_WALLET_*`. The EIP-3009 handshake and USDC movement are real; splitting wallets is a documented production upgrade.
+
+## FAQ
+
+**Q: Why is settlement on Base Sepolia but the token on BSC mainnet?**
+A: Four.meme only runs on BSC mainnet. That's a sponsor constraint, not a choice. The production-grade x402 facilitator ships on Base Sepolia USDC (Coinbase CDP reference implementation); the BSC-native path (x402b testnet + Pieverse facilitator) was probed dead on Day 1: five months unmaintained, no public endpoint. The split is transitional. When a BNB-native x402 facilitator matures, the application layer doesn't change, only the chain constant. Every settlement is on-chain verifiable on its own explorer (BscScan + Base Sepolia BaseScan).
+
+**Q: Is the Memind an AGI or autonomous AI?**
+A: **No.** "Memind" names a runtime that (a) persists memory across ticks, (b) hosts multiple tool-use personas, (c) makes autonomous decisions on a heartbeat. All three are concrete, shipped, and bounded. We deliberately avoid AGI / sentient / self-improving language. The Memind is a product primitive, not a consciousness claim.
+
+**Q: Does a Memind trade memecoins on its own?**
+A: **No, by product design.** Memind personas trade **services** (lore authorship, promotional tweets, curation) paid in USDC, not the underlying token. The four persona tools (`invoke_creator` / `invoke_narrator` / `invoke_shiller` / `invoke_heartbeat_tick`) include no token-swap capability; no persona holds discretionary custody over user funds. Every inter-agent payment carries a service identifier on the x402 request, so service trades are distinguishable from self-dealing. This framing aligns with Four.meme's post-2025-10 creator-protection posture and sidesteps the wash-trading reclassification risk that haunts roughly half of x402 volume today (Artemis public data).
+
+**Q: Does the Pitch persona's X posting violate platform policy?**
+A: The persona's X account is human-owned, OAuth 1.0a authorised, and pays per-usage through X's `Content: Create` endpoint (~$0.01/post). Posting cadence passes a human-plausibility test: tick interval ≥ 60s in production, no cross-account coordination, no identical copy across tweets, no `@mention` to strangers. Nothing about the integration is automation-evasive.
+
+**Q: Why do x402 payments show the same EOA as both payer and payee in the demo?**
+A: Demo-only wallet multiplexing. A single `AGENT_WALLET_*` plays both Market-maker (payer) and Narrator endpoint owner (payTo) to simplify the submission. The EIP-3009 `transferWithAuthorization`, facilitator relay, and USDC movement are all real on-chain. Production splits into distinct `AGENT_WALLET_*` and `NARRATOR_WALLET_*`. That's a one-env-var upgrade documented in `## Known gaps`.
+
+**Q: What does running a Memind cost?**
+A: Per published vendor rates: a Creator run ≈ $0.02 OpenRouter + $0.04 Gemini image + ~$0.05 BSC gas + (optional) $0.01 X post ≈ **$0.12 per token launch**. An order-a-pitch run ≈ $0.02 (OpenRouter + X post). A Base Sepolia x402 settlement on testnet USDC is effectively free. All three APIs publish rates publicly, so unit economics are auditable.
+
+**Q: Why wouldn't Four.meme build this themselves?**
+A: They may, eventually. Short term: we're an early Phase 1–2 reference implementation of their own Agentic Mode roadmap. Mid term (1–3 months): the sponsor may fork this or invite collaboration. Long term: if we tried to turn it into a product, we'd be outpaced by the official team. For a hackathon, the first objective is **submission quality and narrative alignment**, not productisation.
+
+**Q: Why the brand name "Memind" if the runtime is called a Brain?**
+A: "Memind" is the product surface: _every memecoin gets a brain. And a wallet._ "Brain runtime" is the architectural primitive inside. Separating brand vocabulary from code identifiers lets us ship the new brand without renaming 40+ files mid-hackathon (`brain-status-bar.tsx`, `BrainIndicator`, `brainPersona`, etc. all keep their in-code names for continuity).
 
 ## Links
 
@@ -234,4 +260,4 @@ Hackathon credibility comes from honesty about deferred items.
 
 ## License
 
-AGPL-3.0 — see [`LICENSE`](./LICENSE). Any derivative work or networked service built on this code must release its modified source under the same license. For proprietary or closed-source use, contact the author for a commercial license. Built by [@mymaine](https://github.com/mymaine) for the 2026-04 Four.Meme AI Sprint.
+AGPL-3.0. See [`LICENSE`](./LICENSE). Any derivative work or networked service built on this code must release its modified source under the same license. For proprietary or closed-source use, contact the author for a commercial license. Built by [@mymaine](https://github.com/mymaine) for the 2026-04 Four.Meme AI Sprint.
