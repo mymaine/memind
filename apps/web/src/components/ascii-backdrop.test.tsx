@@ -24,6 +24,8 @@ import {
   AsciiBackdrop,
   AsciiBackdropView,
   createAsciiBackdropController,
+  generateAsciiGrid,
+  resolveMotif,
 } from './ascii-backdrop.js';
 
 interface Fakes {
@@ -155,6 +157,43 @@ describe('<AsciiBackdropView />', () => {
     expect(out).toContain('aria-hidden="true"');
     expect(out).toMatch(/data-section="brain-architecture"/);
     expect(out).toMatch(/data-brain="online"/);
+  });
+
+  it('emits a <pre class="ascii-backdrop-grid"> child carrying the generated grid', () => {
+    const out = renderToStaticMarkup(
+      <AsciiBackdropView activeSection="hero" brainStatus="idle" cols={20} rows={3} />,
+    );
+    expect(out).toMatch(/<pre[^>]*class="ascii-backdrop-grid"/);
+    // Grid must be non-empty so the backdrop actually paints something.
+    expect(out).toMatch(/<pre[^>]*>[^<]+<\/pre>/);
+  });
+});
+
+describe('generateAsciiGrid', () => {
+  it('tiles the motif to the requested cols × rows with alternating row offset', () => {
+    const grid = generateAsciiGrid('ab', 6, 4);
+    const lines = grid.split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toBe('ababab');
+    // Odd rows shift by one motif char so the pattern does not read as stripes.
+    expect(lines[1]).toBe('bababa');
+    expect(lines[2]).toBe('ababab');
+    expect(lines[3]).toBe('bababa');
+  });
+
+  it('returns an empty string when any dimension is zero', () => {
+    expect(generateAsciiGrid('ab', 0, 10)).toBe('');
+    expect(generateAsciiGrid('ab', 10, 0)).toBe('');
+    expect(generateAsciiGrid('', 10, 10)).toBe('');
+  });
+
+  it('resolveMotif maps each section id to its palette and falls back to hero', () => {
+    expect(resolveMotif('hero')).toBe('* . ');
+    expect(resolveMotif('problem')).toBe('·   ');
+    expect(resolveMotif('brain-architecture')).toBe('◉ ');
+    expect(resolveMotif('evidence')).toBe('✓ ');
+    expect(resolveMotif(null)).toBe('* . ');
+    expect(resolveMotif('unknown-section')).toBe('* . ');
   });
 
   it('switching active section between renders does not re-install the scroll controller', () => {
