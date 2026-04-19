@@ -570,6 +570,30 @@ code,
 .grave-cell {
   text-align: center;
 }
+/* UAT issue #5 — the "alive" survivor cell needs to punch through the
+ * graveyard so viewers immediately register "most will die, this one
+ * lived". Breathing pulse + accent glow + slight upsize gives the contrast
+ * the design handoff was missing. */
+.grave-cell--alive {
+  font-size: 22px;
+  text-shadow:
+    0 0 12px var(--accent),
+    0 0 4px var(--accent);
+  animation: grave-alive-pulse 1.4s ease-in-out infinite;
+}
+@keyframes grave-alive-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow:
+      0 0 14px var(--accent),
+      0 0 6px var(--accent);
+  }
+  50% {
+    opacity: 0.62;
+    text-shadow: 0 0 2px var(--accent);
+  }
+}
 .ch-problem-aside {
   padding-top: 20px;
 }

@@ -36,9 +36,12 @@ const ALIVE_INDEX = 47;
 
 export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
   const n = Math.floor(lerp(0, 32140, clamp(p / 0.6)));
-  // Shared fade coefficient for dim cells — keeps them alive at the start and
-  // pushes them towards graveyard after `p` passes 0.3.
-  const fadeMul = 1 - clamp((p - 0.3) / 0.4) * 0.6;
+  // UAT issue #5 — accelerate the dim-majority decay so once the scroll
+  // passes the 0.3 → 0.7 window, the graveyard majority fades almost to
+  // black, leaving the alive cell as the dominant visual. Old curve only
+  // dropped 60%; new curve drops ~92% so the contrast punches through.
+  const fadeStage = clamp((p - 0.3) / 0.4);
+  const fadeMul = 1 - fadeStage * 0.92;
 
   return (
     <div className="ch ch-problem">
@@ -53,10 +56,14 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
             const alive = i === ALIVE_INDEX;
             const fade = (i * 13) % 100;
             const opacity = alive ? 1 : lerp(0.08, 0.28, fade / 100) * fadeMul;
+            // Alive cell picks up a dedicated modifier class whose CSS
+            // animation (globals.css `grave-alive-pulse`) drives the
+            // breathing + accent glow that the UAT asked for.
+            const className = alive ? 'grave-cell grave-cell--alive' : 'grave-cell';
             return (
               <span
                 key={i}
-                className="grave-cell"
+                className={className}
                 style={{
                   opacity,
                   color: alive ? 'var(--accent)' : 'var(--fg-tertiary)',
