@@ -14,9 +14,9 @@
  *   #problem            → reuses <ProblemScene />        (narrative)
  *   #solution           → reuses <SolutionScene />       (narrative)
  *   #brain-architecture → placeholder (T4 mounts scene)  (narrative)
- *   #launch-demo        → placeholder (T5 mounts scene)  (operation)
- *   #order-shill        → placeholder (T5 mounts scene)  (operation)
- *   #heartbeat-demo     → placeholder (T5 mounts scene)  (operation)
+ *   #launch-demo        → mounts <LiveLaunchScene />      (operation)
+ *   #order-shill        → mounts <LiveOrderScene />       (operation)
+ *   #heartbeat-demo     → mounts <LiveHeartbeatScene />   (operation)
  *   #take-rate          → currently hosts <VisionScene />(business)
  *   #sku-matrix         → placeholder (T4 splits scene)  (business)
  *   #phase-map          → placeholder (T4 splits scene)  (business)
@@ -30,18 +30,22 @@
  * reveal CSS does not leave the wrapper permanently invisible — the inner
  * scene continues to run its own `useScrollReveal` latch independently.
  *
- * <ProductScene kind="launch" /> is deliberately not mounted in this
- * revision. T5 will replace it with `<LiveLaunchScene />` inside
- * `#launch-demo`. The page still owns a single `useRun()` instance so the
- * shared DevLogsDrawer and the Header's <BrainIndicator /> (via
- * RunStateContext) continue to reflect the live run state once T5 wires
- * the operation panels back in.
+ * The T5 live-demo scenes are intentionally skeleton-only (intro copy +
+ * brain-chat-slot placeholder). BRAIN-P5 swaps each `brain-chat-slot-*`
+ * for `<BrainChat scope="launch|order|heartbeat" />`. The page still owns
+ * a single `useRun()` instance so the shared DevLogsDrawer and the
+ * Header's <BrainIndicator /> (via RunStateContext) keep reflecting the
+ * live run state — BRAIN-P5 decides whether the chat embeds need the
+ * controller threaded in as a prop.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { HeroScene } from '@/components/scenes/hero-scene';
 import { ProblemScene } from '@/components/scenes/problem-scene';
 import { SolutionScene } from '@/components/scenes/solution-scene';
 import { BrainArchitectureScene } from '@/components/scenes/brain-architecture-scene';
+import { LiveLaunchScene } from '@/components/scenes/live-launch-scene';
+import { LiveOrderScene } from '@/components/scenes/live-order-scene';
+import { LiveHeartbeatScene } from '@/components/scenes/live-heartbeat-scene';
 import { VisionScene } from '@/components/scenes/vision-scene';
 import { EvidenceScene } from '@/components/scenes/evidence-scene';
 import { DevLogsDrawer } from '@/components/dev-logs-drawer';
@@ -109,13 +113,19 @@ export default function HomePage(): React.ReactElement {
             useScrollReveal latch. (immersive-single-page P1 Task 4, done) */}
           <BrainArchitectureScene />
 
-          {/* ─── Operation: Launch / Order Shill / Heartbeat live demos ─────── */}
-          {/* TODO(immersive-T5): mount <LiveLaunchScene runController={hookResult} />. */}
-          <section id="launch-demo" className={placeholderClass} aria-hidden="true" />
-          {/* TODO(immersive-T5): mount <LiveOrderScene runController={hookResult} />. */}
-          <section id="order-shill" className={placeholderClass} aria-hidden="true" />
-          {/* TODO(immersive-T5): mount <LiveHeartbeatScene />. */}
-          <section id="heartbeat-demo" className={placeholderClass} aria-hidden="true" />
+          {/* ─── Operation: Launch / Order Shill / Heartbeat live demos ───────
+            Each live-demo scene owns its own `<section id>` so they mount
+            directly — wrapping them would duplicate the id. Skeletons carry
+            a `brain-chat-slot-*` placeholder that BRAIN-P5 will swap for
+            `<BrainChat scope="launch|order|heartbeat" />`. `hookResult` is
+            intentionally NOT threaded in this revision: the shared
+            `useRun()` instance is retained in this file so the DevLogsDrawer
+            + BrainIndicator keep reflecting the live run; BRAIN-P5 decides
+            whether the BrainChat embeds need the controller prop once they
+            land. (immersive-single-page P1 Task 5) */}
+          <LiveLaunchScene />
+          <LiveOrderScene />
+          <LiveHeartbeatScene />
 
           {/* ─── Business: take-rate → SKU matrix → phase map ────────────────
             T4 will split <VisionScene /> into three stand-alone scenes
