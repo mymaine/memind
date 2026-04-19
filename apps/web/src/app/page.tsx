@@ -79,8 +79,12 @@ export default function HomePage(): React.ReactElement {
 
   // Wrapper shell class — `scene--revealed` is applied up-front so the
   // page-level `.scene` reveal CSS does not hide the wrapper before the
-  // inner scene's own reveal latch fires.
-  const wrapperClass = 'scene scene--revealed';
+  // inner scene's own reveal latch fires. `min-h-[85vh]` makes each section
+  // occupy roughly one viewport so scrolling becomes section-by-section
+  // rather than a continuous content stack — the "鏡頭固定、內容浮現"
+  // experience the immersive spec §User Story calls for, plus the per-
+  // section ASCII palette swap registers as the viewer crosses boundaries.
+  const wrapperClass = 'scene scene--revealed flex min-h-[85vh] flex-col justify-center';
   // Placeholder class — `.scene` only; no reveal latch. Placeholders are
   // empty until T4/T5 mount their scenes, so their opacity:0 default is
   // invisible-either-way.

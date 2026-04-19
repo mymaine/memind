@@ -79,9 +79,15 @@ section[id] {
   scroll-margin-top: 56px;
 }
 
-html,
-body {
+/* Base background lives on <html> so the AsciiBackdrop (position: fixed,
+   z-index: -1) is not occluded by an opaque <body> paint. <body> stays
+   transparent; the atmospheric layer renders between <html>'s paint and
+   <body>'s children. */
+html {
   background-color: var(--color-bg-primary);
+}
+body {
+  background-color: transparent;
   color: var(--color-fg-primary);
   font-family: var(--font-sans-body);
   font-feature-settings:
@@ -178,12 +184,17 @@ body {
  */
 .scene {
   opacity: 0;
-  transform: scale(0.98);
-  filter: blur(4px);
+  /* Scale + blur amplitude pushed from scale(0.98) / blur(4px) to
+     scale(0.94) / blur(12px) so the "emerge in place" motion is actually
+     perceptible at 60fps. transition also slowed to 600ms to let the eye
+     track the focus snap. The formula stays purely opacity + scale +
+     filter — no translateY (AC-ISP-7). */
+  transform: scale(0.94);
+  filter: blur(12px);
   transition:
-    opacity 400ms var(--ease-out),
-    transform 400ms var(--ease-out),
-    filter 400ms var(--ease-out);
+    opacity 600ms var(--ease-out),
+    transform 600ms var(--ease-out),
+    filter 600ms var(--ease-out);
 }
 
 .scene--revealed {
@@ -447,7 +458,9 @@ body {
   pointer-events: none;
   overflow: hidden;
   color: var(--color-fg-tertiary);
-  opacity: 0.08;
+  /* Bumped from 0.08 → 0.22 so the atmospheric characters actually register
+     as "this page is alive" rather than invisible specks. */
+  opacity: 0.22;
 }
 
 /*

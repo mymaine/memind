@@ -26,7 +26,7 @@ export function LiveHeartbeatScene({
   const revealed = scrollRevealed || freeze;
 
   const sceneClass = [
-    'scene relative flex flex-col items-center overflow-hidden px-6 py-16',
+    'scene relative flex min-h-[85vh] flex-col items-center justify-center overflow-hidden px-6 py-16',
     revealed ? 'scene--revealed' : '',
     className ?? '',
   ]
