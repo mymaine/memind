@@ -4,7 +4,6 @@ import {
   artifactSchema,
   assistantDeltaEventPayloadSchema,
   chatMessageSchema,
-  createRequestSchema,
   createRunRequestSchema,
   runKindSchema,
   runSnapshotSchema,
@@ -13,18 +12,6 @@ import {
   toolUseStartEventPayloadSchema,
   txRefSchema,
 } from './schema.js';
-
-describe('createRequestSchema', () => {
-  it('accepts a valid theme string', () => {
-    const result = createRequestSchema.safeParse({ theme: 'a meme for BNB Chain 2026' });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects a theme shorter than 3 characters', () => {
-    const result = createRequestSchema.safeParse({ theme: 'hi' });
-    expect(result.success).toBe(false);
-  });
-});
 
 describe('txRefSchema', () => {
   it('accepts valid BSC mainnet tx ref', () => {

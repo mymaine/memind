@@ -14,7 +14,6 @@ const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 import { registerHealthRoutes } from './routes/health.js';
 import { registerX402Routes } from './x402/index.js';
-import { registerAgentRoutes } from './agents/routes.js';
 import { LoreStore } from './state/lore-store.js';
 import { AnchorLedger } from './state/anchor-ledger.js';
 import { ShillOrderStore } from './state/shill-order-store.js';
@@ -58,7 +57,6 @@ const anthropic = new Anthropic({
 
 registerHealthRoutes(app);
 registerX402Routes(app, config, { loreStore, shillOrderStore });
-registerAgentRoutes(app);
 // Dashboard shill-market runs get a real `@x402/fetch` payment phase so the
 // settlement artifact carries a genuine Base Sepolia USDC tx hash. Falls back
 // gracefully to the stub if `AGENT_WALLET_PRIVATE_KEY` is not set — the

@@ -40,11 +40,6 @@ export const logEventSchema = z.object({
 });
 export type LogEvent = z.infer<typeof logEventSchema>;
 
-export const createRequestSchema = z.object({
-  theme: z.string().min(3).max(280),
-});
-export type CreateRequest = z.infer<typeof createRequestSchema>;
-
 export const tokenMetadataSchema = z.object({
   name: z.string(),
   symbol: z.string(),
