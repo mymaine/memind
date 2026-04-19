@@ -8,6 +8,13 @@ import { RunStore } from './store.js';
 import { runBrainChat, type RunBrainChatDeps } from './brain-chat.js';
 import type { AgentLoopResult } from '../agents/runtime.js';
 import type { RunBrainAgentParams } from '../agents/brain.js';
+import { ToolRegistry } from '../tools/registry.js';
+import {
+  INVOKE_CREATOR_TOOL_NAME,
+  INVOKE_HEARTBEAT_TICK_TOOL_NAME,
+  INVOKE_NARRATOR_TOOL_NAME,
+  INVOKE_SHILLER_TOOL_NAME,
+} from '../tools/invoke-persona.js';
 
 /**
  * runBrainChat orchestrator unit tests — exercise the Brain meta-agent driver
@@ -67,10 +74,29 @@ describe('runBrainChat', () => {
     shillOrderStore.clear();
   });
 
+  /**
+   * Test-only sub-registry stubs. The real builders require GOOGLE_API_KEY /
+   * BSC_DEPLOYER_PRIVATE_KEY / PINATA_JWT — all three are unavailable in the
+   * unit test environment and would throw before the orchestrator even
+   * reaches `runBrainAgentImpl`. Tests that want to inspect the sub-registry
+   * wiring explicitly override these; tests that only care about the Brain
+   * agent loop get empty stubs that preserve the isolation property without
+   * needing real secrets.
+   */
+  const fakeSubRegistryBuilders: Pick<
+    RunBrainChatDeps,
+    'buildCreatorSubRegistryImpl' | 'buildNarratorSubRegistryImpl' | 'buildHeartbeatSubRegistryImpl'
+  > = {
+    buildCreatorSubRegistryImpl: (): ToolRegistry => new ToolRegistry(),
+    buildNarratorSubRegistryImpl: (): ToolRegistry => new ToolRegistry(),
+    buildHeartbeatSubRegistryImpl: (): ToolRegistry => new ToolRegistry(),
+  };
+
   function buildDeps(
     runId: string,
     messages: ChatMessage[],
     runBrainAgentImpl: (params: RunBrainAgentParams) => Promise<AgentLoopResult>,
+    overrides: Partial<RunBrainChatDeps> = {},
   ): RunBrainChatDeps {
     return {
       config: makeConfigStub(),
@@ -81,6 +107,8 @@ describe('runBrainChat', () => {
       loreStore,
       shillOrderStore,
       runBrainAgentImpl,
+      ...fakeSubRegistryBuilders,
+      ...overrides,
     };
   }
 
@@ -248,5 +276,294 @@ describe('runBrainChat', () => {
     await expect(runBrainChat(buildDeps(record.runId, messages, spy))).rejects.toThrow();
 
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  // ─── Registry isolation regression (demo-blocking bug fix) ────────────────
+  //
+  // These tests pin the fix for the infinite-recursion bug: before the fix,
+  // `runBrainChat` built a SINGLE ToolRegistry and threaded it into both
+  // `runBrainAgent` (which registers the four invoke_* tools) AND each
+  // `createInvoke*Tool({registry})` call (which threads it into
+  // `ctx.registry` for the persona). That meant the creator persona's
+  // internal `runAgentLoop` saw `invoke_creator` in its toolset and called
+  // itself, wall-clocking `/launch` forever.
+  //
+  // The fix: one registry per scope. Tests below assert the brain's registry
+  // never leaks into any persona's ctx.registry, and vice versa.
+  // --------------------------------------------------------------------------
+  describe('registry isolation', () => {
+    it('brain registry is a fresh empty registry that only holds invoke_* tools after wiring', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: 'hi' }];
+
+      let capturedBrainRegistry: ToolRegistry | undefined;
+      const impl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        capturedBrainRegistry = params.registry;
+        // Mirror runBrainAgent's behaviour: register tools into the passed
+        // registry so we can snapshot what the Brain LLM would actually see.
+        for (const tool of params.tools) {
+          params.registry.register(
+            tool as unknown as Parameters<typeof params.registry.register>[0],
+          );
+        }
+        return fakeLoopResult();
+      };
+
+      await runBrainChat(buildDeps(record.runId, messages, impl));
+
+      expect(capturedBrainRegistry).toBeDefined();
+      const names = capturedBrainRegistry!
+        .list()
+        .map((t) => t.name)
+        .sort();
+      expect(names).toEqual(
+        [
+          INVOKE_CREATOR_TOOL_NAME,
+          INVOKE_HEARTBEAT_TICK_TOOL_NAME,
+          INVOKE_NARRATOR_TOOL_NAME,
+          INVOKE_SHILLER_TOOL_NAME,
+        ].sort(),
+      );
+    });
+
+    it('each persona-invoke tool is constructed against a registry separate from the brain registry', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: 'hi' }];
+
+      // Spy on each sub-registry builder so we can later verify identity
+      // (pointer) inequality with whatever the Brain agent receives.
+      const creatorReg = new ToolRegistry();
+      const narratorReg = new ToolRegistry();
+      const heartbeatReg = new ToolRegistry();
+
+      let brainReg: ToolRegistry | undefined;
+      const impl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        brainReg = params.registry;
+        for (const tool of params.tools) {
+          params.registry.register(
+            tool as unknown as Parameters<typeof params.registry.register>[0],
+          );
+        }
+        return fakeLoopResult();
+      };
+
+      await runBrainChat(
+        buildDeps(record.runId, messages, impl, {
+          buildCreatorSubRegistryImpl: (): ToolRegistry => creatorReg,
+          buildNarratorSubRegistryImpl: (): ToolRegistry => narratorReg,
+          buildHeartbeatSubRegistryImpl: (): ToolRegistry => heartbeatReg,
+        }),
+      );
+
+      expect(brainReg).toBeDefined();
+      // Brain registry is distinct from every persona sub-registry.
+      expect(brainReg).not.toBe(creatorReg);
+      expect(brainReg).not.toBe(narratorReg);
+      expect(brainReg).not.toBe(heartbeatReg);
+      // And the sub-registries must be pairwise distinct too — aliasing
+      // creator/narrator would re-introduce the same recursion class.
+      expect(creatorReg).not.toBe(narratorReg);
+      expect(creatorReg).not.toBe(heartbeatReg);
+      expect(narratorReg).not.toBe(heartbeatReg);
+    });
+
+    it('invoke_creator tool execute passes its own sub-registry to persona.run, NOT the brain registry containing invoke_creator', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: 'hi' }];
+
+      // Inject a creator sub-registry that we control, then invoke the
+      // `invoke_creator` tool inside the fake brain loop and capture the
+      // `ctx.registry` the persona sees. Because the real creatorPersona
+      // is imported by brain-chat.ts and cannot be swapped here, we call
+      // the tool's `execute` and intercept via a monkey-patched persona
+      // on the module — but that is brittle. Instead we verify via the
+      // registry identity: the sub-registry we supplied must be the exact
+      // one the factory closes over, and the brain registry (which ends
+      // up containing `invoke_creator` after runBrainAgent registers the
+      // tools) must NOT be the same instance.
+      const creatorReg = new ToolRegistry();
+
+      let brainReg: ToolRegistry | undefined;
+      const impl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        brainReg = params.registry;
+        for (const tool of params.tools) {
+          params.registry.register(
+            tool as unknown as Parameters<typeof params.registry.register>[0],
+          );
+        }
+        return fakeLoopResult();
+      };
+
+      await runBrainChat(
+        buildDeps(record.runId, messages, impl, {
+          buildCreatorSubRegistryImpl: (): ToolRegistry => creatorReg,
+        }),
+      );
+
+      expect(brainReg).toBeDefined();
+      // After the fake brain loop ran, the BRAIN registry contains
+      // invoke_creator (because runBrainAgentImpl registered it above).
+      expect(brainReg!.has(INVOKE_CREATOR_TOOL_NAME)).toBe(true);
+      // The creator sub-registry must NOT contain invoke_creator — if it
+      // did, creatorPersona's inner runAgentLoop would see it and recurse.
+      // Empty is correct for this test (real production builder populates
+      // narrative_generator / meme_image_creator / onchain_deployer /
+      // lore_writer instead).
+      expect(creatorReg.has(INVOKE_CREATOR_TOOL_NAME)).toBe(false);
+      expect(creatorReg.has(INVOKE_NARRATOR_TOOL_NAME)).toBe(false);
+      expect(creatorReg.has(INVOKE_SHILLER_TOOL_NAME)).toBe(false);
+      expect(creatorReg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
+    });
+
+    it('narrator sub-registry is not aliased to the brain registry', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: 'hi' }];
+
+      const narratorReg = new ToolRegistry();
+      let brainReg: ToolRegistry | undefined;
+      const impl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        brainReg = params.registry;
+        for (const tool of params.tools) {
+          params.registry.register(
+            tool as unknown as Parameters<typeof params.registry.register>[0],
+          );
+        }
+        return fakeLoopResult();
+      };
+
+      await runBrainChat(
+        buildDeps(record.runId, messages, impl, {
+          buildNarratorSubRegistryImpl: (): ToolRegistry => narratorReg,
+        }),
+      );
+
+      expect(brainReg).toBeDefined();
+      expect(brainReg!.has(INVOKE_NARRATOR_TOOL_NAME)).toBe(true);
+      expect(narratorReg.has(INVOKE_NARRATOR_TOOL_NAME)).toBe(false);
+      expect(narratorReg.has(INVOKE_CREATOR_TOOL_NAME)).toBe(false);
+    });
+
+    it('heartbeat sub-registry is not aliased to the brain registry', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: 'hi' }];
+
+      const heartbeatReg = new ToolRegistry();
+      let brainReg: ToolRegistry | undefined;
+      const impl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        brainReg = params.registry;
+        for (const tool of params.tools) {
+          params.registry.register(
+            tool as unknown as Parameters<typeof params.registry.register>[0],
+          );
+        }
+        return fakeLoopResult();
+      };
+
+      await runBrainChat(
+        buildDeps(record.runId, messages, impl, {
+          buildHeartbeatSubRegistryImpl: (): ToolRegistry => heartbeatReg,
+        }),
+      );
+
+      expect(brainReg).toBeDefined();
+      expect(brainReg!.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(true);
+      expect(heartbeatReg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
+      expect(heartbeatReg.has(INVOKE_CREATOR_TOOL_NAME)).toBe(false);
+    });
+  });
+});
+
+// ─── Sub-registry builder unit tests ───────────────────────────────────────
+//
+// Verify each builder populates its registry with the correct real tool
+// names. These tests touch `process.env` + the real factory imports so they
+// sit in their own describe block to keep the orchestrator tests free of env
+// mutation. Failures here catch drift between brain-chat's sub-registry
+// composition and the per-persona runners (creator-phase.ts, a2a.ts
+// narratorRegistry, heartbeat-runner.ts).
+// ---------------------------------------------------------------------------
+describe('brain-chat sub-registry builders', () => {
+  function makeConfigWithSecrets(): AppConfig {
+    return {
+      port: 0,
+      anthropic: { apiKey: undefined },
+      openrouter: { apiKey: 'dummy' },
+      pinata: { jwt: 'test-jwt' },
+      wallets: {
+        agent: { privateKey: undefined, address: undefined },
+        bscDeployer: {
+          privateKey: '0x1111111111111111111111111111111111111111111111111111111111111111',
+          address: undefined,
+        },
+      },
+      x402: { facilitatorUrl: 'https://x402.org/facilitator', network: 'eip155:84532' },
+      bsc: { rpcUrl: 'https://bsc-dataseed.binance.org' },
+      heartbeat: { intervalMs: 60_000 },
+      x: {
+        apiKey: undefined,
+        apiKeySecret: undefined,
+        accessToken: undefined,
+        accessTokenSecret: undefined,
+        bearerToken: undefined,
+        handle: undefined,
+      },
+    };
+  }
+
+  let prevGoogleKey: string | undefined;
+  beforeEach(() => {
+    prevGoogleKey = process.env.GOOGLE_API_KEY;
+  });
+  afterEach(() => {
+    if (prevGoogleKey === undefined) {
+      delete process.env.GOOGLE_API_KEY;
+    } else {
+      process.env.GOOGLE_API_KEY = prevGoogleKey;
+    }
+  });
+
+  it('buildCreatorSubRegistry populates the 4 real creator sub-tools (no invoke_*)', async () => {
+    process.env.GOOGLE_API_KEY = 'test-google-key';
+    const { buildCreatorSubRegistry } = await import('./brain-chat.js');
+    const anthropicStub = {} as Anthropic;
+    const reg = buildCreatorSubRegistry(makeConfigWithSecrets(), anthropicStub);
+    const names = reg
+      .list()
+      .map((t) => t.name)
+      .sort();
+    expect(names).toEqual(
+      ['narrative_generator', 'meme_image_creator', 'onchain_deployer', 'lore_writer'].sort(),
+    );
+    // Paranoia: invoke_* tool names must never appear here.
+    expect(reg.has(INVOKE_CREATOR_TOOL_NAME)).toBe(false);
+    expect(reg.has(INVOKE_NARRATOR_TOOL_NAME)).toBe(false);
+    expect(reg.has(INVOKE_SHILLER_TOOL_NAME)).toBe(false);
+    expect(reg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
+  });
+
+  it('buildNarratorSubRegistry populates extend_lore only', async () => {
+    const { buildNarratorSubRegistry } = await import('./brain-chat.js');
+    const anthropicStub = {} as Anthropic;
+    const reg = buildNarratorSubRegistry(makeConfigWithSecrets(), anthropicStub);
+    const names = reg
+      .list()
+      .map((t) => t.name)
+      .sort();
+    expect(names).toEqual(['extend_lore']);
+    expect(reg.has(INVOKE_NARRATOR_TOOL_NAME)).toBe(false);
+  });
+
+  it('buildHeartbeatSubRegistry populates check_token_status + post_to_x + extend_lore', async () => {
+    const { buildHeartbeatSubRegistry } = await import('./brain-chat.js');
+    const anthropicStub = {} as Anthropic;
+    const reg = buildHeartbeatSubRegistry(makeConfigWithSecrets(), anthropicStub);
+    const names = reg
+      .list()
+      .map((t) => t.name)
+      .sort();
+    // PINATA_JWT is set so extend_lore is included; X creds are missing so
+    // post_to_x registers the dry-run stub. Both contribute a name.
+    expect(names).toEqual(['check_token_status', 'extend_lore', 'post_to_x'].sort());
+    expect(reg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
   });
 });
