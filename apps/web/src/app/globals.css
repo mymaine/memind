@@ -350,6 +350,16 @@ code,
     display: none;
   }
 }
+/*
+ * LogsDrawer lives on the same left edge as the TOC. When the drawer
+ * expands (`.logs-drawer.open`), push TOC past the drawer so the
+ * chapter list stays readable next to the body. Falls back gracefully
+ * in browsers without `:has()` (TOC keeps its default `left: 24px`;
+ * the drawer body still paints above it via `z-index: 280`).
+ */
+body:has(.logs-drawer.open) .toc {
+  left: calc(32px + 360px + 16px);
+}
 
 /* ---------- STICKY STAGE ---------- */
 .scroll-slot {
