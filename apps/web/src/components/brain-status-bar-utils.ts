@@ -1,5 +1,6 @@
 /**
- * Pure helpers behind <BrainStatusBar />. Kept free of React so they are
+ * Pure helpers behind the Brain surface (<BrainIndicator /> today; was
+ * <BrainStatusBar /> pre-immersive pivot). Kept free of React so they are
  * node-testable without a DOM and can be reused by any future surface that
  * wants to derive "who is the Brain currently acting as".
  *

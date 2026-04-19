@@ -1,16 +1,15 @@
 'use client';
 
 /**
- * RunState context + provider + publishing hook — the `TODO(brain-runstate-
- * thread)` follow-up from `brain-status-bar.tsx`.
+ * RunState context + provider + publishing hook.
  *
- * Shape of the problem: <BrainStatusBar /> is mounted in `app/layout.tsx`
- * (a root-level server component shell) so it appears on every route. But
- * the live `RunState` lives inside each page's `useRun()` instance
- * (`/page.tsx` and `/market/page.tsx`). React context only flows downward,
- * so we hoist a provider above both the bar and the pages, let the pages
- * call `usePublishRunState(state)` once per render, and have the bar read
- * the latest published value via `useRunState()`.
+ * Shape of the problem: <Header /> (and the <BrainIndicator /> it mounts)
+ * is mounted in `app/layout.tsx` so it appears on every route. But the
+ * live `RunState` lives inside each page's `useRun()` instance. React
+ * context only flows downward, so we hoist a provider above both the
+ * Header and the pages, let the pages call `usePublishRunState(state)`
+ * once per render, and have the indicator read the latest published value
+ * via `useRunState()`.
  *
  * Why we are not refactoring `useRun`: the V4.7-P4 brief explicitly
  * forbids it. This file sits beside `useRun`, not inside it — pages keep
@@ -23,8 +22,10 @@
  * nothing rather than throwing mid-render.
  *
  * Design lock: docs/decisions/2026-04-19-brain-agent-positioning.md §Scope
- * — the `BrainStatusBar + modal` is the entire "Brain is here" surface,
- * and it MUST reflect real live run state for the demo climax to land.
+ * — the `<BrainIndicator /> + <BrainDetailModal />` pair is the entire
+ * "Brain is here" surface (post immersive-single-page P1 Task 3 /
+ * AC-ISP-6), and it MUST reflect real live run state for the demo climax
+ * to land.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -57,10 +58,11 @@ export function useRunState(): RunState {
 
 /**
  * Publish the current run state into the context. Pages that own a
- * `useRun()` instance call this once; the `BrainStatusBar` mounted in
- * `app/layout.tsx` then reflects it automatically. Outside a provider
+ * `useRun()` instance call this once; the `<BrainIndicator />` mounted
+ * inside the Header in `app/layout.tsx` then reflects it automatically.
+ * Outside a provider
  * this is a no-op — a page that forgot to wrap in <RunStateProvider />
- * silently fails to light up the bar rather than crashing mid-render.
+ * silently fails to light up the indicator rather than crashing mid-render.
  */
 export function usePublishRunState(state: RunState): void {
   const ctx = useContext(RunStateContext);

@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { Header } from '@/components/header';
-import { BrainStatusBar } from '@/components/brain-status-bar';
 import { RunStateProvider } from '@/hooks/useRunStateContext';
 import './globals.css';
 
@@ -32,15 +31,18 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         {/*
          * <RunStateProvider /> hoists the run-state context above both the
-         * <BrainStatusBar /> (sibling) and the routed <main> (children). Each
-         * page (/page.tsx, /market/page.tsx) publishes its `useRun()` state
-         * via `usePublishRunState(state)`; the bar subscribes via
+         * <Header /> (which now hosts the <BrainIndicator />) and the routed
+         * <main> (children). Each page publishes its `useRun()` state via
+         * `usePublishRunState(state)`; the indicator subscribes via
          * `useRunState()`. Routes without a useRun instance (e.g. /demo/glyph)
-         * leave the context at IDLE_STATE, and the bar stays `idle`.
+         * leave the context at IDLE_STATE, and the indicator stays `idle`.
+         *
+         * The old independent <BrainStatusBar /> strip was retired in
+         * immersive-single-page P1 Task 3 / AC-ISP-6 — the Brain surface
+         * now lives inside the Header alongside the nav.
          */}
         <RunStateProvider>
           <Header />
-          <BrainStatusBar />
           {children}
         </RunStateProvider>
       </body>

@@ -1,7 +1,10 @@
 'use client';
 
 /**
- * BrainDetailModal — click-to-open dialog launched from <BrainStatusBar />.
+ * BrainDetailModal — click-to-open dialog launched from <BrainIndicator />
+ * (in the slim Header, post immersive-single-page P1 Task 3 / AC-ISP-6).
+ * Pre-pivot, the trigger was the independent <BrainStatusBar /> strip that
+ * was retired as part of the Header collapse.
  *
  * Renders (top → bottom):
  *   1. Brain identity block — title + brainSubtitle + one-line factual
@@ -205,7 +208,7 @@ export interface BrainDetailModalProps {
 /**
  * Client shell — wires Esc-to-close (document-level keydown scoped to the
  * open state) and focus-management (send focus to the close button on open,
- * restore it to the previously focused element — typically the BrainStatusBar
+ * restore it to the previously focused element — typically the <BrainIndicator />
  * button — on close).
  *
  * Outside-click / backdrop-click is handled inside the view via an invisible
@@ -221,7 +224,7 @@ export function BrainDetailModal(props: BrainDetailModalProps): ReactElement | n
     if (!open) return;
 
     // Remember the element that opened the modal so we can restore focus
-    // on close — typically the BrainStatusBar button, but any external
+    // on close — typically the <BrainIndicator /> button, but any external
     // invoker is supported automatically.
     previouslyFocused.current = (document.activeElement as HTMLElement | null) ?? null;
 

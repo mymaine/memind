@@ -33,9 +33,9 @@
  * <ProductScene kind="launch" /> is deliberately not mounted in this
  * revision. T5 will replace it with `<LiveLaunchScene />` inside
  * `#launch-demo`. The page still owns a single `useRun()` instance so the
- * shared DevLogsDrawer and BrainStatusBar (via RunStateContext) continue
- * to reflect the live run state once T5 wires the operation panels back
- * in.
+ * shared DevLogsDrawer and the Header's <BrainIndicator /> (via
+ * RunStateContext) continue to reflect the live run state once T5 wires
+ * the operation panels back in.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { HeroScene } from '@/components/scenes/hero-scene';
@@ -53,8 +53,8 @@ import { FOOTER_TAGLINE } from '@/lib/narrative-copy';
 export default function HomePage(): React.ReactElement {
   const hookResult = useRun();
   const { state } = hookResult;
-  // Publish into the layout-level RunStateContext so the <BrainStatusBar />
-  // mounted in app/layout.tsx reflects the live run (active persona +
+  // Publish into the layout-level RunStateContext so the Header's
+  // <BrainIndicator /> reflects the live run (active persona +
   // online/idle status). No-op outside a provider.
   usePublishRunState(state);
 
