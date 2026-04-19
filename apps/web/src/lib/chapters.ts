@@ -38,7 +38,7 @@ export const CHAPTER_META: readonly ChapterMeta[] = [
  * `/#order-shill`, in-page `<a href="#evidence">`) computes the same
  * mid-hold scroll target.
  */
-export const SLOT_VH = 2.2;
+export const SLOT_VH = 3.0;
 
 /**
  * Pure hash → chapter index resolver. Strips the leading `#` from a URL

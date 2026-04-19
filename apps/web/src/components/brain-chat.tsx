@@ -61,8 +61,12 @@ export interface BrainChatProps {
   readonly initialDraft?: string;
 }
 
+// UAT 2026-04-20: stretch to the full height of the BrainPanel chat slot so
+// the composer pins to the bottom and the transcript gets all the remaining
+// vertical real estate above it. `min-h-0` lets the transcript child shrink
+// inside the flex column without blowing past the panel height.
 const SECTION_CLASS =
-  'flex flex-col gap-3 rounded-[var(--radius-card)] border border-border-default bg-bg-primary p-4';
+  'flex h-full min-h-0 flex-col gap-3 rounded-[var(--radius-card)] border border-border-default bg-bg-primary p-4';
 
 const PRIMARY_BUTTON_CLASS =
   'inline-flex shrink-0 items-center justify-center rounded-[var(--radius-default)] border border-accent bg-accent px-4 py-2 font-[family-name:var(--font-sans-body)] text-[13px] font-medium text-bg-primary transition-opacity disabled:cursor-not-allowed disabled:opacity-60';
@@ -240,7 +244,7 @@ export function BrainChat({
         ref={transcriptRef}
         data-testid="brain-chat-transcript"
         aria-live="polite"
-        className="flex max-h-[480px] min-h-[180px] flex-col gap-3 overflow-y-auto"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain"
       >
         {isEmpty ? (
           <div className="flex flex-col gap-3 py-2">

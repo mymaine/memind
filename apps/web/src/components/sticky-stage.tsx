@@ -20,23 +20,25 @@
  */
 import type { CSSProperties, ReactElement } from 'react';
 
-export const SLOT_VH = 2.2;
-// Fade window shrunk from the original 0.18 / 0.18 (hold=64%) to
-// 0.12 / 0.12 (hold=76%) after UAT Issue #3: chapter interior animations
-// were landing right as the chapter started fading out, so users saw the
-// final state for only a beat. Wider hold = more dwell time on resolved
-// content. Combined with the `INTERIOR_SPEEDUP` below, interior
-// animations now finish at ~two-thirds of hold instead of the boundary.
-export const FADE_IN_FRAC = 0.12;
-export const FADE_OUT_FRAC = 0.12;
+// UAT 2026-04-20 (round 2): users reported the chapter animations finish
+// and the next scroll-tick already hands off to the next chapter, making
+// the resolved frame feel fleeting. Bump slot distance from 2.2 → 3.0
+// (each chapter owns 300vh of scroll) and double the interior speed-up so
+// animations land in the first ~half of hold and stay resolved for the
+// remaining ~half before fade-out begins. Fade window also shrunk from
+// 0.12 → 0.10 each side so the 80% hold window feels even wider.
+export const SLOT_VH = 3.0;
+export const FADE_IN_FRAC = 0.1;
+export const FADE_OUT_FRAC = 0.1;
 /**
- * Interior progress multiplier (UAT Issue #3). The raw `interior` scalar
- * goes 0 → 1 across the hold window; multiplying by 1.5 then clamping
- * lets chapter animations (count-up, type-on, EKG draw) reach their
- * final state at ~2/3 of hold so users dwell on the resolved content for
- * longer before the cross-fade hands off.
+ * Interior progress multiplier (UAT Issue #3 / round 2). The raw
+ * `interior` scalar goes 0 → 1 across the hold window; multiplying by
+ * 2.0 then clamping means chapter animations (count-up, type-on, EKG
+ * draw, equation assemble) saturate in the first 50% of hold and the
+ * second 50% is a fully-resolved still frame — users can actually read
+ * the chapter before it cross-fades out.
  */
-export const INTERIOR_SPEEDUP = 1.5;
+export const INTERIOR_SPEEDUP = 2.0;
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));

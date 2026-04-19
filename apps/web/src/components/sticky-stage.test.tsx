@@ -36,7 +36,7 @@ const CHAPTERS: readonly StickyStageChapter[] = [
 ];
 
 const VH = 1000;
-const SLOT_PX = 2.2 * VH;
+const SLOT_PX = 3.0 * VH;
 
 describe('mapStageStyle', () => {
   it('at localP = 0 returns opacity=0, scale=0.94, blur=16', () => {
@@ -174,7 +174,10 @@ describe('<StickyStage />', () => {
     // UAT Issue #2: the first chapter A is pinned opaque via the isFirst
     // edge flag, so to test partial-fade pointerEvents we pick a middle
     // chapter (B at idx 1) just inside its fade-in window.
-    const y = SLOT_PX * 1 + SLOT_PX * 0.1;
+    // FADE_IN_FRAC=0.10 after the UAT round 2 pacing update — land at
+    // localP=0.05 (halfway into fade-in) so opacity sits at ~0.5 and
+    // pointer-events is blocked.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.05;
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
     expect(html).toMatch(/data-chapter="b"[^>]*style="[^"]*pointer-events:none/);
   });
@@ -193,7 +196,7 @@ describe('<StickyStage />', () => {
     // UAT Issue #2: at the tail of the scroll region chapter C (i=N-1)
     // must stay fully visible — the old behaviour faded it back to black
     // as localP climbed past 1 - FADE_OUT_FRAC.
-    const SLOT_PX_LOCAL = 2.2 * VH;
+    const SLOT_PX_LOCAL = 3.0 * VH;
     const y = SLOT_PX_LOCAL * 2 + SLOT_PX_LOCAL * 0.95; // well past hold for chapter C (idx 2)
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
     expect(html).toMatch(/data-chapter="c"/);
@@ -205,7 +208,7 @@ describe('<StickyStage />', () => {
     // Chapter B (idx 1, middle of a 3-chapter stage) must still fade out
     // as localP passes 1 - FADE_OUT_FRAC — otherwise the cross-fade
     // engine would never hand off to the next chapter.
-    const SLOT_PX_LOCAL = 2.2 * VH;
+    const SLOT_PX_LOCAL = 3.0 * VH;
     const y = SLOT_PX_LOCAL * 1 + SLOT_PX_LOCAL * 0.95;
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
     // Chapter B may or may not still be rendered (opacity near 0 is
@@ -218,27 +221,23 @@ describe('<StickyStage />', () => {
   });
 
   it('forwards interior progress p to the chapter Comp (with UAT Issue #3 speedup)', () => {
-    // UAT Issue #3: the interior scalar is now `clamp01(raw * 1.5)` so
-    // chapter animations land at ~2/3 of hold and users spend the rest
-    // of hold on the resolved state.
-    // Target a middle chapter (B, idx 1) so isFirst/isLast do not change
-    // interior math. localP=0.5 of B → raw = (0.5 - 0.12)/(0.88 - 0.12)
-    // = 0.38/0.76 = 0.5 → interior = clamp01(0.5 * 1.5) = 0.75. We check
-    // the raw number that lands on the chapter Comp's `data-p` prop.
-    const y = SLOT_PX * 1 + SLOT_PX * 0.5;
+    // UAT Issue #3 (round 2 2026-04-20): FADE_*=0.10, INTERIOR_SPEEDUP=2.0.
+    // Hold window spans [0.10, 0.90] (width 0.80). Quarter-way through
+    // hold, localP=0.30 → raw = (0.30 - 0.10)/0.80 = 0.25 → interior =
+    // clamp(0.25 * 2.0) = 0.50.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.3;
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
     const m = html.match(/data-testid="ch-b" data-p="([0-9.]+)"/);
     expect(m).not.toBeNull();
     const value = Number.parseFloat(m![1]!);
-    expect(value).toBeCloseTo(0.75, 2);
+    expect(value).toBeCloseTo(0.5, 2);
   });
 
-  it('interior progress clamps to 1 once localP passes ~2/3 of hold', () => {
-    // UAT Issue #3 Task C: the SPEEDUP saturates interior at 1 once
-    // raw >= 1/1.5 ≈ 0.667. Target a middle chapter, set localP deep
-    // into hold (0.75 → raw = 0.63/0.76 ≈ 0.83 → interior = clamp(1.25)
-    // = 1). Chapter animations should be fully resolved by this point.
-    const y = SLOT_PX * 1 + SLOT_PX * 0.75;
+  it('interior progress clamps to 1 once localP passes ~mid of hold', () => {
+    // UAT Issue #3 Task C (round 2): SPEEDUP=2.0 now saturates interior
+    // at 1 once raw >= 0.5 — chapter animations fully resolve at hold
+    // midpoint and users dwell on the resolved frame for the second half.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.6;
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
     const m = html.match(/data-testid="ch-b" data-p="([0-9.]+)"/);
     expect(m).not.toBeNull();

@@ -17,7 +17,7 @@
  * lines 334-339.
  */
 
-export const SLOT_VH = 2.2;
+export const SLOT_VH = 3.0;
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));

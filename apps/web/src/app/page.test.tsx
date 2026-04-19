@@ -26,7 +26,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import HomePage from './page.js';
 
-const SLOT_VH = 2.2;
+const SLOT_VH = 3.0;
 // page.tsx seeds `vh` to 800 when `window` is undefined (the SSR default
 // used by `renderToStaticMarkup`). Keep this in sync with the module.
 const SSR_DEFAULT_VH = 800;
