@@ -14,6 +14,7 @@ import {
   SOLUTION_STEPS,
   VISION_TAKERATE,
   VISION_SKUS,
+  BRAIN_ARCHITECTURE,
   PHASE_MAP,
   EVIDENCE_ARTIFACTS,
   STATS_BADGES,
@@ -43,6 +44,7 @@ describe('narrative-copy', () => {
       SOLUTION_STEPS,
       VISION_TAKERATE,
       VISION_SKUS,
+      BRAIN_ARCHITECTURE,
       PHASE_MAP,
       EVIDENCE_ARTIFACTS,
       STATS_BADGES,
@@ -99,9 +101,12 @@ describe('narrative-copy', () => {
       }
     });
 
-    it('names Phase 1 "Agent Skill Framework" and Phase 3 "Agent Economic Loop"', () => {
+    it('names Phase 1 "Agent Skill Framework" and Phase 3 "Brain Society"', () => {
+      // Phase 1 keeps the official Four.meme Agentic Mode roadmap wording.
+      // Phase 3 upgrades to "Brain Society" — the far-future vision owned by
+      // this project, per docs/decisions/2026-04-19-brain-agent-positioning.md.
       expect(PHASE_MAP.find((p) => p.phase === 1)?.name).toContain('Agent Skill Framework');
-      expect(PHASE_MAP.find((p) => p.phase === 3)?.name).toContain('Agent Economic Loop');
+      expect(PHASE_MAP.find((p) => p.phase === 3)?.name).toContain('Brain Society');
     });
   });
 
@@ -124,6 +129,33 @@ describe('narrative-copy', () => {
       for (const step of SOLUTION_STEPS) {
         expect(step.body.length).toBeLessThanOrEqual(120);
       }
+    });
+  });
+
+  // ─── BRAIN_ARCHITECTURE ────────────────────────────────────────────────────
+
+  describe('BRAIN_ARCHITECTURE', () => {
+    it('names the Brain and fronts exactly 4 shipped personas + 3 future slots', () => {
+      expect(BRAIN_ARCHITECTURE.brainLabel).toBe('Token Brain');
+      expect(BRAIN_ARCHITECTURE.shippedPersonas).toHaveLength(4);
+      expect(BRAIN_ARCHITECTURE.futureSlots).toHaveLength(3);
+    });
+
+    it('marks every shipped persona as status=shipped and every future slot as next or roadmap', () => {
+      for (const p of BRAIN_ARCHITECTURE.shippedPersonas) {
+        expect(p.status).toBe('shipped');
+      }
+      for (const s of BRAIN_ARCHITECTURE.futureSlots) {
+        expect(['next', 'roadmap']).toContain(s.status);
+      }
+    });
+
+    it('future slot names match VISION_SKUS non-shipped rows (single source of truth)', () => {
+      const futureVisionSkuNames = VISION_SKUS.filter((s) => s.status !== 'shipped').map(
+        (s) => s.name,
+      );
+      const brainFutureNames = BRAIN_ARCHITECTURE.futureSlots.map((s) => s.name);
+      expect(brainFutureNames).toEqual(futureVisionSkuNames);
     });
   });
 

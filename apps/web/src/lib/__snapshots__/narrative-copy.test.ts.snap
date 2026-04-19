@@ -2,6 +2,49 @@
 
 exports[`narrative-copy > matches the committed snapshot (any copy change requires explicit review) 1`] = `
 {
+  "BRAIN_ARCHITECTURE": {
+    "brainLabel": "Token Brain",
+    "brainSubtitle": "One runtime · one memory · pluggable personas",
+    "futureSlots": [
+      {
+        "name": "Launch Boost",
+        "role": "scheduled launch-window campaign",
+        "status": "next",
+      },
+      {
+        "name": "Community Ops",
+        "role": "weekly holder digest + Q&A",
+        "status": "roadmap",
+      },
+      {
+        "name": "Alpha Feed",
+        "role": "curated signal stream for readers",
+        "status": "roadmap",
+      },
+    ],
+    "shippedPersonas": [
+      {
+        "name": "Creator",
+        "role": "writes lore chapter 1 + deploys the token",
+        "status": "shipped",
+      },
+      {
+        "name": "Narrator",
+        "role": "continues the lore chapter by chapter",
+        "status": "shipped",
+      },
+      {
+        "name": "Market-maker / Shiller",
+        "role": "pays for alpha lore · posts on-voice tweets for creators",
+        "status": "shipped",
+      },
+      {
+        "name": "Heartbeat",
+        "role": "ticks on its own, decides the next move",
+        "status": "shipped",
+      },
+    ],
+  },
   "BRAND_NAME": "Shilling Market",
   "BRAND_TAGLINE": "a creator-to-agent promotion service market on four.meme (pay USDC, get tweets).",
   "EVIDENCE_ARTIFACTS": [
@@ -58,7 +101,7 @@ exports[`narrative-copy > matches the committed snapshot (any copy change requir
     },
     {
       "highlighted": false,
-      "name": "Agent Economic Loop",
+      "name": "Brain Society",
       "owner": "future",
       "phase": 3,
     },
@@ -87,22 +130,22 @@ exports[`narrative-copy > matches the committed snapshot (any copy change requir
   "VISION_SKUS": [
     {
       "name": "Shill",
-      "note": "Agent Commerce Primitive (this project)",
+      "note": "First persona plugged into the Token Brain · live today",
       "status": "shipped",
     },
     {
       "name": "Launch Boost",
-      "note": "Scheduled launch-window campaign + sentiment-triggered posts · Q3 2026",
+      "note": "Scheduled launch-window campaign + sentiment-triggered posts · Q2 2026",
       "status": "next",
     },
     {
       "name": "Community Ops",
-      "note": "Weekly holder digest + on-demand Q&A from lore · Q3 2026",
+      "note": "Weekly holder digest + on-demand Q&A from lore · Q2 2026",
       "status": "roadmap",
     },
     {
       "name": "Alpha Feed",
-      "note": "Curated signal stream for paying readers · Q4 2026",
+      "note": "Curated signal stream for paying readers · Q3 2026",
       "status": "roadmap",
     },
   ],

@@ -146,24 +146,75 @@ export const VISION_SKUS = [
   {
     name: 'Shill',
     status: 'shipped',
-    note: 'Agent Commerce Primitive (this project)',
+    note: 'First persona plugged into the Token Brain · live today',
   },
   {
     name: 'Launch Boost',
     status: 'next',
-    note: 'Scheduled launch-window campaign + sentiment-triggered posts · Q3 2026',
+    note: 'Scheduled launch-window campaign + sentiment-triggered posts · Q2 2026',
   },
   {
     name: 'Community Ops',
     status: 'roadmap',
-    note: 'Weekly holder digest + on-demand Q&A from lore · Q3 2026',
+    note: 'Weekly holder digest + on-demand Q&A from lore · Q2 2026',
   },
   {
     name: 'Alpha Feed',
     status: 'roadmap',
-    note: 'Curated signal stream for paying readers · Q4 2026',
+    note: 'Curated signal stream for paying readers · Q3 2026',
   },
 ] as const satisfies readonly VisionSku[];
+
+// ─── Brain architecture (Vision scene sub-section) ──────────────────────────
+
+/**
+ * BRAIN_ARCHITECTURE — data source for the "1 Brain + pluggable personas"
+ * sub-section inside <VisionScene />. Renders as a central Brain node
+ * radiating to 4 shipped persona ports and 3 greyed-out future persona slots.
+ *
+ * This is the pitch-layer datum for the Brain positioning locked in
+ * docs/decisions/2026-04-19-brain-agent-positioning.md. The code directory
+ * still names these "agents"; the product surface names them personas.
+ *
+ * Claim boundaries (do not overclaim):
+ *   - Brain = one Node runtime + one ToolRegistry + one shared memory layer.
+ *   - Personas = thin runAgentLoop wrappers (systemPrompt + tool subset).
+ *   - Pluggable = Persona<TIn, TOut> interface in packages/shared/src/persona.ts.
+ *   - Not AGI, not autonomous-AI-investor, not ERC-8004-onchain-identity (those
+ *     are M4+ in docs/decisions/2026-04-18-long-term-brain-agent-society.md).
+ */
+export interface BrainPersonaPort {
+  readonly name: string;
+  readonly role: string;
+  readonly status: 'shipped' | 'next' | 'roadmap';
+}
+
+export interface BrainArchitecture {
+  readonly brainLabel: string;
+  readonly brainSubtitle: string;
+  readonly shippedPersonas: readonly BrainPersonaPort[];
+  readonly futureSlots: readonly BrainPersonaPort[];
+}
+
+export const BRAIN_ARCHITECTURE: BrainArchitecture = {
+  brainLabel: 'Token Brain',
+  brainSubtitle: 'One runtime · one memory · pluggable personas',
+  shippedPersonas: [
+    { name: 'Creator', role: 'writes lore chapter 1 + deploys the token', status: 'shipped' },
+    { name: 'Narrator', role: 'continues the lore chapter by chapter', status: 'shipped' },
+    {
+      name: 'Market-maker / Shiller',
+      role: 'pays for alpha lore · posts on-voice tweets for creators',
+      status: 'shipped',
+    },
+    { name: 'Heartbeat', role: 'ticks on its own, decides the next move', status: 'shipped' },
+  ],
+  futureSlots: [
+    { name: 'Launch Boost', role: 'scheduled launch-window campaign', status: 'next' },
+    { name: 'Community Ops', role: 'weekly holder digest + Q&A', status: 'roadmap' },
+    { name: 'Alpha Feed', role: 'curated signal stream for readers', status: 'roadmap' },
+  ],
+};
 
 // ─── Phase map ──────────────────────────────────────────────────────────────
 
@@ -191,7 +242,7 @@ export const PHASE_MAP = [
   },
   {
     phase: 3,
-    name: 'Agent Economic Loop',
+    name: 'Brain Society',
     owner: 'future',
     highlighted: false,
   },

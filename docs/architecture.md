@@ -1,13 +1,32 @@
 ---
-summary: 'Four-agent swarm architecture, x402 data flow, and module boundaries'
+summary: '1 Brain with 4 pluggable personas. Implementation substrate = agent runtime + x402 + shared memory. Pitch surface = Brain. Code directory still calls them agents for historical continuity.'
 read_when:
-  - Before making cross-agent changes
+  - Before making cross-persona changes
   - Before adjusting x402 endpoints or the payment flow
-  - Before adding a tool to the agent tool registry
+  - Before adding a new persona (new SKU) or a tool to the registry
+  - When a reviewer asks "is the Brain framing a rename or a real architecture"
 status: active
 ---
 
 # Architecture
+
+## Brain-Persona Model
+
+The product is framed as **one Token Brain per memecoin**, hosting **four pluggable personas**. This is a naming layer over a real, already-shipped runtime — not a rename. Every claim below is anchored in code:
+
+| Brain claim                   | Implementation fact                                                                                                                | File                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| One Brain per Node process    | Single `Anthropic` client, single `ToolRegistry`, single event-emitter fan-out                                                     | `apps/server/src/agents/runtime.ts`                                   |
+| Shared memory across personas | `LoreStore` + `AnchorLedger` + `ShillOrderStore` all live in one `apps/server/src/state/` namespace, read/written by every persona | `apps/server/src/state/*.ts`                                          |
+| Each persona is pluggable     | Every existing agent file is a thin `runAgentLoop` wrapper (`systemPrompt` + selected tool subset) — no persona-specific runtime   | `apps/server/src/agents/{creator,narrator,market-maker,heartbeat}.ts` |
+| Explicit pluggable contract   | `Persona<TInput, TOutput>` interface in shared package mirrors the existing `AgentTool<TInput, TOutput>` shape                     | `packages/shared/src/persona.ts`                                      |
+| Autonomous tick               | Heartbeat persona drives a `setInterval` loop that picks the next action (post / extend_lore / idle) every tick                    | `apps/server/src/agents/heartbeat.ts`                                 |
+
+**Why the code directory still says `agents/`**: renaming buys zero runtime behaviour and churns imports across 40+ files mid-hackathon. Pitch surface (README / narrative-copy / Vision scene / demo script / BrainStatusBar) uses persona vocabulary; code keeps `agent` for continuity. The `Persona` interface explicitly documents the mapping.
+
+**Adding a new SKU = adding a new persona**: Launch Boost, Community Ops, Alpha Feed each ship as ~50 lines — a new `systemPrompt`, a subset of existing tools (with at most one new `AgentTool`), and an adapter that satisfies `Persona<TInput, TOutput>`. No new x402 infrastructure, no new runtime, no new memory layer. The pluggability is the product.
+
+Decision record: `docs/decisions/2026-04-19-brain-agent-positioning.md` (team-internal).
 
 ## Top-Level Shape
 

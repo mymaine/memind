@@ -274,7 +274,7 @@ export function VisionScene({ freeze = false, className }: VisionSceneProps): Re
         {/* ─── Sub-block 3 · Phase map ─────────────────────────────────── */}
         <div className="flex flex-col gap-4">
           <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
-            Agent commerce primitive · Phase 2
+            Token Brain · Agentic Mode Phase 2
           </span>
           <div className="flex flex-col items-stretch gap-6 md:flex-row md:items-start md:justify-between">
             {PHASE_MAP.map((node, idx) => {
