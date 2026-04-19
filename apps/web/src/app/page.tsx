@@ -49,9 +49,12 @@ import { useActiveChapter } from '@/hooks/useActiveChapter';
 import { useRun } from '@/hooks/useRun';
 import { usePublishRunState } from '@/hooks/useRunStateContext';
 import { useScrollY } from '@/hooks/useScrollY';
-import { CHAPTER_META } from '@/lib/chapters';
-
-const SLOT_VH = 2.2;
+import {
+  CHAPTER_META,
+  SLOT_VH,
+  chapterScrollTarget,
+  resolveChapterIndexFromHash,
+} from '@/lib/chapters';
 
 /**
  * Shell placeholder for a chapter. Renders a centred mono label so the
@@ -158,8 +161,42 @@ export default function HomePage(): ReactElement {
   // port from app.jsx:onJump). Browser smooth-scroll handles easing.
   const onJump = useCallback((i: number) => {
     if (typeof window === 'undefined') return;
-    const px = SLOT_VH * window.innerHeight;
-    window.scrollTo({ top: i * px + px * 0.3, behavior: 'smooth' });
+    window.scrollTo({
+      top: chapterScrollTarget(i, window.innerHeight),
+      behavior: 'smooth',
+    });
+  }, []);
+
+  // Anchor-jump effect (AC-MSR-10). The single sticky stage replaces the
+  // old per-section `<section id>` anchors, so `/market → /#order-shill`
+  // and in-page `<a href="#evidence">` jumps need a JS hop that translates
+  // the hash into a scroll target at mid-hold. Listening to `hashchange`
+  // lets deep links keep working after the first paint too.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const jumpToHash = (): void => {
+      const idx = resolveChapterIndexFromHash(window.location.hash);
+      if (idx === null) return;
+      // `auto` (not smooth) on first paint so a deep-linked load lands
+      // instantly instead of scrolling in. Subsequent `hashchange` events
+      // (user clicks in-page anchor) get smooth.
+      window.scrollTo({ top: chapterScrollTarget(idx, window.innerHeight), behavior: 'auto' });
+    };
+    // Delay one frame so StickyStage has measured vh and painted.
+    const raf = requestAnimationFrame(jumpToHash);
+    const onHashChange = (): void => {
+      const idx = resolveChapterIndexFromHash(window.location.hash);
+      if (idx === null) return;
+      window.scrollTo({
+        top: chapterScrollTarget(idx, window.innerHeight),
+        behavior: 'smooth',
+      });
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('hashchange', onHashChange);
+    };
   }, []);
 
   const currentTitle = CHAPTERS[activeIdx]?.title ?? '';
