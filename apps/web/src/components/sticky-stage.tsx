@@ -36,19 +36,48 @@ export interface StageStyle {
   readonly blur: number;
 }
 
+/** Optional edge flags for `mapStageStyle`. */
+export interface MapStageStyleEdge {
+  /**
+   * When true, suppress the fade-in portion of the curve (localP < holdStart
+   * still returns opacity=1, scale=1, blur=0). Used for the first chapter so
+   * the very first paint at scrollY=0 is not a black screen — users land on
+   * Ch1 already fully visible.
+   */
+  readonly isFirst?: boolean;
+  /**
+   * When true, suppress the fade-out portion of the curve (localP > holdEnd
+   * still returns opacity=1, scale=1, blur=0). Used for the last chapter so
+   * the final paint after the user scrolls past hold does not fade back to
+   * black — Ch11 stays fully visible when the document bottoms out.
+   */
+  readonly isLast?: boolean;
+}
+
 /**
  * Map a per-slot progress scalar (0 → 1) to the stage-slot's
  * opacity/scale/blur triple. Exposed as a named export so tests can verify
  * the curve boundaries without re-rendering the component.
+ *
+ * `edge.isFirst` / `edge.isLast` short-circuit the fade-in / fade-out halves
+ * respectively so the first chapter opens fully visible (no initial black
+ * flash before localP crosses FADE_IN_FRAC) and the last chapter stays
+ * visible past hold (no closing black flash as scroll reaches the tail).
  */
-export function mapStageStyle(localP: number): StageStyle {
+export function mapStageStyle(localP: number, edge: MapStageStyleEdge = {}): StageStyle {
   const holdStart = FADE_IN_FRAC;
   const holdEnd = 1 - FADE_OUT_FRAC;
   if (localP < holdStart) {
+    if (edge.isFirst) {
+      return { opacity: 1, scale: 1, blur: 0 };
+    }
     const t = localP / holdStart;
     return { opacity: t, scale: lerp(0.94, 1, t), blur: lerp(16, 0, t) };
   }
   if (localP > holdEnd) {
+    if (edge.isLast) {
+      return { opacity: 1, scale: 1, blur: 0 };
+    }
     const t = (localP - holdEnd) / (1 - holdEnd);
     return { opacity: 1 - t, scale: lerp(1, 1.04, t), blur: lerp(0, 16, t) };
   }
@@ -148,7 +177,14 @@ export function StickyStage({
         const holdEnd = 1 - FADE_OUT_FRAC;
         const interior = clamp01((localP - holdStart) / (holdEnd - holdStart));
 
-        const { opacity, scale, blur } = mapStageStyle(localP);
+        // Edge flags (Issue #2 / UAT): the first and last chapter skip
+        // their fade-in / fade-out halves respectively so scrollY=0 paints
+        // Ch1 fully visible (no black flash) and the tail scroll past
+        // Ch(N-1) hold keeps the last chapter on screen instead of
+        // fading back to black.
+        const isFirst = i === 0;
+        const isLast = i === chapters.length - 1;
+        const { opacity, scale, blur } = mapStageStyle(localP, { isFirst, isLast });
         if (opacity <= 0.01) return null;
 
         const style: CSSProperties = {

@@ -95,13 +95,17 @@ describe('HomePage StickyStage shell', () => {
     expect(inner).toContain('100vh');
   });
 
-  it('at scrollY=0 culls every chapter tile (fade-in not yet started)', () => {
-    // scrollY starts at 0 under SSR — the first chapter is at localP=0
-    // (opacity 0) and gets culled by StickyStage. Other chapters are
-    // further out and also culled. The sticky viewport should render
-    // empty aside from its own container.
+  it('at scrollY=0 renders only the first chapter fully visible (UAT Issue #2)', () => {
+    // scrollY=0 → Ch1 (hero) localP=0. With the isFirst edge flag the
+    // fade-in curve is suppressed so the landing paint is fully visible
+    // rather than a black flash. Every other chapter is further out
+    // (negative localP clamped to 0 → still culled).
     const html = renderHome();
-    expect(html).not.toMatch(/data-chapter=/);
+    // Only chapter 0 (hero) should appear.
+    const chapterMatches = html.match(/data-chapter="[^"]+"/g) ?? [];
+    expect(chapterMatches).toEqual(['data-chapter="hero"']);
+    // And it must be fully opaque.
+    expect(html).toMatch(/data-chapter="hero"[^>]*style="[^"]*opacity:1/);
   });
 
   it('mounts <Ch1Hero /> for the hero slot once scrollY lands in its hold window', () => {

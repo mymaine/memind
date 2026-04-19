@@ -73,26 +73,73 @@ describe('mapStageStyle', () => {
     expect(s.scale).toBeCloseTo(1.04, 5);
     expect(s.blur).toBeCloseTo(16, 5);
   });
+
+  it('edge.isFirst suppresses fade-in so localP < FADE_IN_FRAC is fully visible', () => {
+    // UAT Issue #2: first chapter (Ch1 Hero) must not fade in. scrollY=0
+    // puts Ch1 at localP=0; with edge.isFirst=true it lands at the final
+    // resolved state (opacity=1, scale=1, blur=0).
+    for (const p of [0, 0.05, 0.1, FADE_IN_FRAC - 0.001]) {
+      const s = mapStageStyle(p, { isFirst: true });
+      expect(s.opacity).toBe(1);
+      expect(s.scale).toBe(1);
+      expect(s.blur).toBe(0);
+    }
+  });
+
+  it('edge.isLast suppresses fade-out so localP > 1 - FADE_OUT_FRAC stays visible', () => {
+    // UAT Issue #2: last chapter (Ch11 Evidence) must not fade out as
+    // scroll reaches the document tail. With edge.isLast=true every
+    // post-hold localP returns the final resolved state.
+    for (const p of [1 - FADE_OUT_FRAC + 0.001, 0.95, 1.0]) {
+      const s = mapStageStyle(p, { isLast: true });
+      expect(s.opacity).toBe(1);
+      expect(s.scale).toBe(1);
+      expect(s.blur).toBe(0);
+    }
+  });
+
+  it('edge flags do not affect the hold window (opacity stays 1 either way)', () => {
+    // Sanity check: hold window is already opacity=1; flags are idempotent.
+    for (const edge of [{}, { isFirst: true }, { isLast: true }, { isFirst: true, isLast: true }]) {
+      const s = mapStageStyle(0.5, edge);
+      expect(s.opacity).toBe(1);
+    }
+  });
 });
 
 describe('<StickyStage />', () => {
-  it('culls chapters whose slot is far outside the fade window', () => {
-    // scrollY=0 → A is at localP=0 (opacity=0, culled). B/C are further out
-    // (negative localP → clamp 0 → culled). Stage renders as an empty
-    // sticky-viewport until the user scrolls into A's fade-in window.
-    const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={0} vh={VH} />);
-    expect(html).not.toMatch(/data-chapter="a"/);
+  it('culls middle chapters whose slot is far outside the fade window', () => {
+    // UAT Issue #2: the first chapter A is pinned fully visible at
+    // scrollY=0 (isFirst edge) so we cannot test culling via chapter A
+    // any more. Build a stage with an extra leading chapter so the
+    // assertion still targets a middle slot — scrollY puts chapter B
+    // (here idx 1) in its own fade window but C/D are culled.
+    const FOUR = [
+      ...CHAPTERS,
+      { id: 'd', title: 'DELTA', Comp: ChC },
+    ] satisfies readonly StickyStageChapter[];
+    // localP of chapter B = (SLOT_PX - SLOT_PX) / SLOT_PX = 0. With no
+    // isFirst/isLast flag on idx 1, mapStageStyle returns opacity=0 and
+    // StickyStage culls the tile.
+    const y = SLOT_PX * 1;
+    const html = renderToStaticMarkup(<StickyStage chapters={FOUR} scrollY={y} vh={VH} />);
+    // Chapter A is still visible (it is the first chapter at localP=1;
+    // with isLast=false it is at opacity=0 — OK, so check its absence).
+    // Chapter B at localP=0 with no edge flag → opacity=0 → culled.
     expect(html).not.toMatch(/data-chapter="b"/);
     expect(html).not.toMatch(/data-chapter="c"/);
+    expect(html).not.toMatch(/data-chapter="d"/);
   });
 
-  it("at scrollY just inside A's fade-in window, chapter A is emitted and B/C are culled", () => {
-    // Pick localP ~ 0.1 of A so opacity ~ 0.56 > 0.01 → A renders.
-    const y = SLOT_PX * 0.1;
+  it("at scrollY just inside B's fade-in window, only chapter B is emitted", () => {
+    // Pick a middle chapter (B at idx 1) so edge flags do not interfere.
+    // localP ~ 0.1 of B → opacity ~ 0.56 > 0.01 → B renders.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.1;
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
-    expect(html).toMatch(/data-chapter="a"/);
-    expect(html).not.toMatch(/data-chapter="b"/);
+    expect(html).toMatch(/data-chapter="b"/);
     expect(html).not.toMatch(/data-chapter="c"/);
+    // Chapter A at localP=1 with isLast=false → opacity=0 → culled.
+    expect(html).not.toMatch(/data-chapter="a"/);
   });
 
   it('mid-hold of chapter B renders it with opacity=1 and pointerEvents=auto', () => {
@@ -124,10 +171,50 @@ describe('<StickyStage />', () => {
   });
 
   it('pointerEvents is none for partially-faded chapters (opacity <= 0.9)', () => {
-    // Pick a scrollY inside A's fade-in window (localP ~ 0.1 → opacity ~ 0.56)
-    const y = SLOT_PX * 0.1;
+    // UAT Issue #2: the first chapter A is pinned opaque via the isFirst
+    // edge flag, so to test partial-fade pointerEvents we pick a middle
+    // chapter (B at idx 1) just inside its fade-in window.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.1;
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
-    expect(html).toMatch(/data-chapter="a"[^>]*style="[^"]*pointer-events:none/);
+    expect(html).toMatch(/data-chapter="b"[^>]*style="[^"]*pointer-events:none/);
+  });
+
+  it('first chapter renders at opacity=1 at scrollY=0 (no fade-in black flash)', () => {
+    // UAT Issue #2: at the top of the document chapter A (i=0) must paint
+    // fully visible — the old behaviour returned opacity=0 which left the
+    // landing paint pure black until the user started scrolling.
+    const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={0} vh={VH} />);
+    expect(html).toMatch(/data-chapter="a"/);
+    expect(html).toMatch(/data-chapter="a"[^>]*style="[^"]*opacity:1/);
+    expect(html).toMatch(/data-chapter="a"[^>]*style="[^"]*pointer-events:auto/);
+  });
+
+  it('last chapter stays at opacity=1 once scroll is past its hold window', () => {
+    // UAT Issue #2: at the tail of the scroll region chapter C (i=N-1)
+    // must stay fully visible — the old behaviour faded it back to black
+    // as localP climbed past 1 - FADE_OUT_FRAC.
+    const SLOT_PX_LOCAL = 2.2 * VH;
+    const y = SLOT_PX_LOCAL * 2 + SLOT_PX_LOCAL * 0.95; // well past hold for chapter C (idx 2)
+    const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
+    expect(html).toMatch(/data-chapter="c"/);
+    expect(html).toMatch(/data-chapter="c"[^>]*style="[^"]*opacity:1/);
+  });
+
+  it('middle chapters still fade out normally when scroll overshoots their hold', () => {
+    // Regression guard: the isLast flag applies only to the last chapter.
+    // Chapter B (idx 1, middle of a 3-chapter stage) must still fade out
+    // as localP passes 1 - FADE_OUT_FRAC — otherwise the cross-fade
+    // engine would never hand off to the next chapter.
+    const SLOT_PX_LOCAL = 2.2 * VH;
+    const y = SLOT_PX_LOCAL * 1 + SLOT_PX_LOCAL * 0.95;
+    const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
+    // Chapter B may or may not still be rendered (opacity near 0 is
+    // culled), but if it is rendered it must be partially faded — so the
+    // inline style must NOT contain `opacity:1` for B here.
+    const bMatch = html.match(/data-chapter="b"[^>]*style="([^"]+)"/);
+    if (bMatch !== null) {
+      expect(bMatch[1]).not.toMatch(/opacity:1(?!\d)/);
+    }
   });
 
   it('forwards interior progress p to the chapter Comp', () => {
