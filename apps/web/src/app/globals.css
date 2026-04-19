@@ -450,34 +450,92 @@ body {
   opacity: 0.08;
 }
 
+/*
+ * AC-ISP-9 · Per-section character palette + Brain-online offset.
+ *
+ * Shared base properties live on `.ascii-backdrop::before`; each section
+ * gets its own `content` via `[data-section="<id>"]::before`. The default
+ * `content` below is the Hero "starfield" palette so `activeSection = null`
+ * (pre-scroll / server render) still paints something. `[data-brain="online"]`
+ * layers on a 12px rightward translate that combines with the scroll parallax
+ * via `--brain-offset-x` — the Header Brain indicator lives on the top-right,
+ * so the nudge reads as the layer gravitating toward it.
+ */
 .ascii-backdrop::before {
-  content: '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
-    '  : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
-    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
-    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
-    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +\A'
-    '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦\A'
-    ': + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
-    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
-    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
-    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +\A'
-    '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦\A'
-    ': + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
-    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
-    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
-    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +\A'
-    '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦\A'
-    ': + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
-    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
-    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
-    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +';
   white-space: pre;
   display: block;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  transform: translate3d(0, calc(var(--scroll-y, 0) * -0.05px), 0);
+  content: '* . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * .\A'
+    ' . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * .\A'
+    '* . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . *\A'
+    '. * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . *\A'
+    '* . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * .\A'
+    ' . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . * . *';
+  transform: translate3d(var(--brain-offset-x, 0px), calc(var(--scroll-y, 0) * -0.05px), 0);
   will-change: transform;
+}
+
+.ascii-backdrop[data-brain='online'] {
+  --brain-offset-x: 12px;
+}
+
+.ascii-backdrop[data-section='problem']::before {
+  content: '·  ·    ·  ·  ·      ·    ·  ·      ·  ·    ·    ·  ·\A'
+    '   ·    ·  ·    ·  ·    ·      ·  ·    ·  ·    ·  ·  ·\A'
+    '·    ·  ·  ·    ·    ·  ·  ·    ·      ·  ·    ·    ·\A'
+    '  ·  ·    ·  ·    ·  ·    ·  ·    ·    ·  ·      ·  ·\A'
+    '·  ·    ·    ·  ·    ·      ·  ·    ·  ·    ·  ·  ·\A'
+    '   ·  ·    ·  ·    ·  ·      ·    ·  ·  ·    ·    ·';
+}
+
+.ascii-backdrop[data-section='solution']::before {
+  content: '→ → ← ← → → ← → → ← ← → → ← → → ← ← → → ← → → ← ← → → ← →\A'
+    '← → → ← ← → → ← → ← → → ← → → ← ← → → ← → ← → → ← → → ← →\A'
+    '→ ← → → ← → → ← ← → → ← → ← → → ← → → ← ← → → ← → → ← ← →\A'
+    '← ← → → ← → ← → → ← → → ← ← → → ← → ← → → ← → → ← ← → →\A'
+    '→ → ← → → ← ← → → ← → → ← → ← → → ← ← → → ← → → ← ← →\A'
+    '← → ← → → ← → → ← ← → → ← → → ← ← → → ← → → ← → → ← ←';
+}
+
+.ascii-backdrop[data-section='brain-architecture']::before {
+  content: '◉  ◉   ◉    ◉  ◉     ◉   ◉  ◉    ◉   ◉     ◉  ◉   ◉\A'
+    '  ◉    ◉  ◉    ◉   ◉    ◉  ◉  ◉    ◉   ◉  ◉    ◉\A'
+    '◉   ◉  ◉    ◉    ◉  ◉    ◉    ◉  ◉    ◉   ◉  ◉   ◉\A'
+    '   ◉  ◉    ◉  ◉     ◉  ◉    ◉   ◉    ◉  ◉    ◉\A'
+    '◉  ◉    ◉   ◉    ◉  ◉   ◉    ◉   ◉   ◉    ◉   ◉ ◉\A'
+    '  ◉    ◉  ◉    ◉   ◉   ◉    ◉  ◉  ◉    ◉   ◉  ◉  ◉';
+}
+
+.ascii-backdrop[data-section='launch-demo']::before,
+.ascii-backdrop[data-section='order-shill']::before,
+.ascii-backdrop[data-section='heartbeat-demo']::before {
+  content: '+ + + + + + + + + + + + + + + + + + + + + + + + + + + + +\A'
+    ' + + + + + + + + + + + + + + + + + + + + + + + + + + + +\A'
+    '+ + + + + + + + + + + + + + + + + + + + + + + + + + + +\A'
+    ' + + + + + + + + + + + + + + + + + + + + + + + + + + +\A'
+    '+ + + + + + + + + + + + + + + + + + + + + + + + + + + +\A'
+    ' + + + + + + + + + + + + + + + + + + + + + + + + + + +';
+}
+
+.ascii-backdrop[data-section='take-rate']::before,
+.ascii-backdrop[data-section='sku-matrix']::before,
+.ascii-backdrop[data-section='phase-map']::before {
+  content: '$ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $\A'
+    ' $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $\A'
+    '$ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $\A'
+    ' $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $\A'
+    '$ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $\A'
+    ' $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $';
+}
+
+.ascii-backdrop[data-section='evidence']::before {
+  content: '✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓\A'
+    ' ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓\A'
+    '✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓\A'
+    ' ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓\A'
+    '✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓\A' ' ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓';
 }
 
 /* ---------- Dev Logs Drawer (AC-P4.7-5a) ---------- */
