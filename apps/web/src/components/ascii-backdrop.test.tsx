@@ -1,25 +1,30 @@
 /**
- * Red tests for <AsciiBackdrop /> + its pure rAF-throttled scroll controller
- * (immersive-single-page P2 Task 1 / AC-ISP-8).
+ * Tests for <AsciiBackdrop /> + its pure rAF-throttled scroll controller.
+ *
+ * Two specs covered in one file:
+ *   - P2 Task 1 / AC-ISP-8 (mini): fixed layer + scroll parallax + reduced-
+ *     motion guard. Covered by the first 4 tests.
+ *   - P2 Task 2 / AC-ISP-9 (advanced): character density switches per
+ *     section; Brain online shifts the layer toward the Brain indicator.
+ *     Covered by the extra 4 tests at the bottom of this file.
  *
  * Vitest runs in node env — there is no real window, matchMedia, or rAF.
- * Following the `useScrollProgress` / `useReducedMotion` split convention the
- * component source exposes a `createAsciiBackdropController` that takes
- * injected dependencies; tests drive every branch via fakes without touching
- * jsdom. The runtime `<AsciiBackdrop />` is the thin React shell.
- *
- * Four behaviours per the V4.7-P5 / P2 Task 1 brief:
- *   1. Render produces an <div aria-hidden="true" class="ascii-backdrop">.
- *   2. Controller.install() attaches a scroll listener when reduced-motion is
- *      OFF.
- *   3. Controller.install() is a no-op when reduced-motion is ON — no scroll
- *      listener registered, no CSS var write.
- *   4. The disposer returned by install() removes the scroll listener and
- *      cancels any pending rAF frame so unmount cleans up cleanly.
+ * The component source exposes:
+ *   - `createAsciiBackdropController` (pure scroll controller) for the scroll-
+ *     listener branch coverage;
+ *   - `AsciiBackdropView({ activeSection, brainStatus })` (pure SSR view) so
+ *     we can assert `data-section` / `data-brain` without jsdom / React state.
+ * The runtime `<AsciiBackdrop />` is the thin client shell that plumbs the
+ * `useSectionObserver` + `useRunState` hooks into the view and installs the
+ * scroll controller on mount.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AsciiBackdrop, createAsciiBackdropController } from './ascii-backdrop.js';
+import {
+  AsciiBackdrop,
+  AsciiBackdropView,
+  createAsciiBackdropController,
+} from './ascii-backdrop.js';
 
 interface Fakes {
   readonly addEventListener: ReturnType<typeof vi.fn>;
@@ -101,5 +106,72 @@ describe('createAsciiBackdropController', () => {
     const removeCall = fakes.removeEventListener.mock.calls[0] ?? [];
     expect(removeCall[0]).toBe(handler);
     expect(fakes.caf).toHaveBeenCalledWith(42);
+  });
+});
+
+/**
+ * Advanced view — P2 Task 2 / AC-ISP-9.
+ *
+ * The runtime shell reads `useSectionObserver()` + `deriveBrainStatus()` and
+ * passes both into this view. The view writes `data-section` + `data-brain`
+ * attributes on the backdrop div; CSS in globals.css swaps the `::before`
+ * character palette on `[data-section=...]` and translates the layer toward
+ * the Header Brain indicator on `[data-brain="online"]`.
+ */
+describe('<AsciiBackdropView />', () => {
+  it('writes the active section id into data-section so CSS can swap the palette', () => {
+    const hero = renderToStaticMarkup(
+      <AsciiBackdropView activeSection="hero" brainStatus="idle" />,
+    );
+    expect(hero).toMatch(/data-section="hero"/);
+    const problem = renderToStaticMarkup(
+      <AsciiBackdropView activeSection="problem" brainStatus="idle" />,
+    );
+    expect(problem).toMatch(/data-section="problem"/);
+    // Sections without an active id fall back to `hero` so CSS always has a
+    // concrete palette key to match.
+    const nullActive = renderToStaticMarkup(
+      <AsciiBackdropView activeSection={null} brainStatus="idle" />,
+    );
+    expect(nullActive).toMatch(/data-section="hero"/);
+  });
+
+  it('writes the derived Brain status into data-brain so CSS can apply the offset', () => {
+    const online = renderToStaticMarkup(
+      <AsciiBackdropView activeSection="hero" brainStatus="online" />,
+    );
+    expect(online).toMatch(/data-brain="online"/);
+    const idle = renderToStaticMarkup(
+      <AsciiBackdropView activeSection="hero" brainStatus="idle" />,
+    );
+    expect(idle).toMatch(/data-brain="idle"/);
+  });
+
+  it('still renders the aria-hidden class="ascii-backdrop" root with both data attrs', () => {
+    const out = renderToStaticMarkup(
+      <AsciiBackdropView activeSection="brain-architecture" brainStatus="online" />,
+    );
+    expect(out).toMatch(/<div[^>]*class="[^"]*ascii-backdrop[^"]*"/);
+    expect(out).toContain('aria-hidden="true"');
+    expect(out).toMatch(/data-section="brain-architecture"/);
+    expect(out).toMatch(/data-brain="online"/);
+  });
+
+  it('switching active section between renders does not re-install the scroll controller', () => {
+    // The controller is a pure function; installing it multiple times with
+    // identical deps returns independent disposers and attaches listeners
+    // every time. The React shell guards against that by only installing in
+    // the mount effect. Here we assert the contract: a fresh install() on a
+    // controller with reduced-motion=false attaches exactly ONE listener —
+    // re-rendering the view with a different `activeSection` must never be
+    // able to schedule a duplicate install, because the view is pure.
+    const fakes = makeFakes();
+    const ctrl = makeController(false, fakes);
+    ctrl.install();
+    // Render the view twice with different section / brain props — pure so
+    // no side effects can leak into the controller.
+    renderToStaticMarkup(<AsciiBackdropView activeSection="hero" brainStatus="idle" />);
+    renderToStaticMarkup(<AsciiBackdropView activeSection="problem" brainStatus="online" />);
+    expect(fakes.addEventListener).toHaveBeenCalledTimes(1);
   });
 });
