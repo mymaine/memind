@@ -30,10 +30,11 @@ import {
   type NavItem,
 } from '@/components/header-utils';
 
-// TODO(lead): swap in the canonical repo URL once the hackathon submission
-// picks a public GitHub mirror. Placeholder `#` keeps the icon harmless in
-// the meantime — the link target is non-navigating rather than broken.
-const GITHUB_URL_PLACEHOLDER = '#';
+// Author profile — clicking the Header GitHub icon lands on the author's
+// public profile where evaluators can find this repo + every downstream
+// hackathon artifact. Swap to the canonical repo URL if/when a public
+// mirror exists.
+const GITHUB_URL_PLACEHOLDER = 'https://github.com/mymaine';
 
 export interface HeaderViewProps {
   readonly pathname: string | null;

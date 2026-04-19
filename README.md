@@ -230,4 +230,4 @@ Hackathon credibility comes from honesty about deferred items.
 
 ## License
 
-AGPL-3.0 — see [`LICENSE`](./LICENSE). Any derivative work or networked service built on this code must release its modified source under the same license. For proprietary or closed-source use, contact the author for a commercial license. Built by [@maine](https://github.com/maine) for the 2026-04 Four.Meme AI Sprint.
+AGPL-3.0 — see [`LICENSE`](./LICENSE). Any derivative work or networked service built on this code must release its modified source under the same license. For proprietary or closed-source use, contact the author for a commercial license. Built by [@mymaine](https://github.com/mymaine) for the 2026-04 Four.Meme AI Sprint.
