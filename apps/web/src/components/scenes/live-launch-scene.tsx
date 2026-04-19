@@ -1,23 +1,27 @@
 'use client';
 
 /**
- * LiveLaunchScene — "Live Launch Demo" section skeleton
- * (immersive-single-page P1 Task 5 / AC-ISP-5).
+ * LiveLaunchScene — "Live Launch Demo" section
+ * (BRAIN-P5 Task 1 / AC-BRAIN-6).
  *
  * Hosts the first of three live-operation sections on the single-page home
- * surface (Launch → Order Shill → Heartbeat). This revision ships only the
- * skeleton — intro copy + a reserved `brain-chat-slot-launch` placeholder
- * that BRAIN-P5 will replace with `<BrainChat scope="launch" />`. No
- * RunController is threaded in yet; the parallel BRAIN-P5 agent decides
- * whether the embed needs one once it lands.
+ * surface (Launch → Order Shill → Heartbeat). The section intro sets up the
+ * Launch pitch beat and the embedded `<BrainChat scope="launch" />` runs
+ * the chat-driven flow (theme → Creator persona → on-chain deploy).
  *
  * Layout mirrors <BrainArchitectureScene />: the scene owns its own
  * `<section id="launch-demo">` so page.tsx mounts it directly without an
  * outer wrapper (a wrapper would duplicate the id and break the TOC
  * anchor). Scroll reveal runs through the shared `useScrollReveal` latch;
  * `freeze` is preserved for deterministic tests.
+ *
+ * The `brain-chat-slot-launch` data-testid + class name are preserved on
+ * the wrapper so existing selectors / external agents keep targeting the
+ * chat region — BrainChat itself is a full `<section>` landmark with
+ * `aria-label="Brain chat"` + `data-scope="launch"`.
  */
 import { useRef } from 'react';
+import { BrainChat } from '@/components/brain-chat';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
 
 export interface LiveLaunchSceneProps {
@@ -71,16 +75,12 @@ export function LiveLaunchScene({
           </p>
         </header>
 
-        {/* BrainChat slot — BRAIN-P5 will mount <BrainChat scope="launch" />
-            here. The stable class + data-testid let the downstream agent
-            drop the chat surface in without touching this file. */}
-        <div
-          className="brain-chat-slot rounded-[var(--radius-card)] border border-dashed border-border-default bg-bg-surface p-6"
-          data-testid="brain-chat-slot-launch"
-        >
-          <p className="font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] text-fg-tertiary">
-            Chat surface coming in BRAIN-P5
-          </p>
+        {/* BrainChat embed — BRAIN-P5 Task 1. The wrapper keeps the stable
+            `brain-chat-slot-launch` testid so external selectors can still
+            target the chat region. BrainChat renders its own outer
+            `<section aria-label="Brain chat" data-scope="launch">`. */}
+        <div className="brain-chat-slot" data-testid="brain-chat-slot-launch">
+          <BrainChat scope="launch" />
         </div>
       </div>
     </section>

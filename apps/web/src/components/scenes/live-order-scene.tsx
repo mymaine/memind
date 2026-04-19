@@ -1,15 +1,16 @@
 'use client';
 
 /**
- * LiveOrderScene — "Order a Shill" section skeleton
- * (immersive-single-page P1 Task 5 / AC-ISP-5).
+ * LiveOrderScene — "Order a Shill" section (BRAIN-P5 Task 2 / AC-BRAIN-6).
  *
- * Second of three live-operation sections. Skeleton only — BRAIN-P5 will
- * replace `brain-chat-slot-order` with `<BrainChat scope="order" />`. See
- * live-launch-scene.tsx for the shared rationale (own section id, shared
- * useScrollReveal latch, `freeze` escape hatch for tests).
+ * Second of three live-operation sections. The embedded
+ * `<BrainChat scope="order" />` drives the chat-based Pitch persona
+ * commissioning flow. See live-launch-scene.tsx for the shared rationale
+ * (own section id, shared useScrollReveal latch, `freeze` escape hatch for
+ * tests).
  */
 import { useRef } from 'react';
+import { BrainChat } from '@/components/brain-chat';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
 
 export interface LiveOrderSceneProps {
@@ -58,13 +59,10 @@ export function LiveOrderScene({
           </p>
         </header>
 
-        <div
-          className="brain-chat-slot rounded-[var(--radius-card)] border border-dashed border-border-default bg-bg-surface p-6"
-          data-testid="brain-chat-slot-order"
-        >
-          <p className="font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] text-fg-tertiary">
-            Chat surface coming in BRAIN-P5
-          </p>
+        {/* BrainChat embed — BRAIN-P5 Task 2. Wrapper preserves the stable
+            data-testid; BrainChat owns its own landmark with scope="order". */}
+        <div className="brain-chat-slot" data-testid="brain-chat-slot-order">
+          <BrainChat scope="order" />
         </div>
       </div>
     </section>

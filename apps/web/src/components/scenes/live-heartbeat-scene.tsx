@@ -1,14 +1,15 @@
 'use client';
 
 /**
- * LiveHeartbeatScene — "Autonomous Heartbeat" section skeleton
- * (immersive-single-page P1 Task 5 / AC-ISP-5).
+ * LiveHeartbeatScene — "Autonomous Heartbeat" section
+ * (BRAIN-P5 Task 3 / AC-BRAIN-6).
  *
- * Third of three live-operation sections. Skeleton only — BRAIN-P5 will
- * replace `brain-chat-slot-heartbeat` with `<BrainChat scope="heartbeat" />`.
- * See live-launch-scene.tsx for the shared rationale.
+ * Third of three live-operation sections. The embedded
+ * `<BrainChat scope="heartbeat" />` drives the chat-based Heartbeat persona
+ * tick flow. See live-launch-scene.tsx for the shared rationale.
  */
 import { useRef } from 'react';
+import { BrainChat } from '@/components/brain-chat';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
 
 export interface LiveHeartbeatSceneProps {
@@ -57,13 +58,10 @@ export function LiveHeartbeatScene({
           </p>
         </header>
 
-        <div
-          className="brain-chat-slot rounded-[var(--radius-card)] border border-dashed border-border-default bg-bg-surface p-6"
-          data-testid="brain-chat-slot-heartbeat"
-        >
-          <p className="font-[family-name:var(--font-mono)] text-[12px] uppercase tracking-[0.5px] text-fg-tertiary">
-            Chat surface coming in BRAIN-P5
-          </p>
+        {/* BrainChat embed — BRAIN-P5 Task 3. Wrapper preserves the stable
+            data-testid; BrainChat owns its own landmark with scope="heartbeat". */}
+        <div className="brain-chat-slot" data-testid="brain-chat-slot-heartbeat">
+          <BrainChat scope="heartbeat" />
         </div>
       </div>
     </section>
