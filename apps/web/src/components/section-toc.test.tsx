@@ -1,87 +1,77 @@
 /**
- * Red tests for <SectionTocView /> — the pure presentational piece behind
- * the sticky left-side TOC (immersive-single-page P1 Task 2 / AC-ISP-3).
+ * Tests for the rewritten <SectionToc /> - the fixed left-side chapter
+ * list for the Memind scrollytelling surface
+ * (memind-scrollytelling-rebuild AC-MSR-4).
  *
- * The runtime <SectionToc /> is a client shell that wires
- * `useSectionObserver` to live browser state; tests exercise the view layer
- * via renderToStaticMarkup with explicit props. This mirrors the
- * <HeaderView /> / <BrainStatusBarView /> split convention.
+ * The old Tailwind md:flex card with <a href="#id"> anchor links has been
+ * replaced by a frameless list of <button> entries that call `onJump(idx)`
+ * when clicked. Styling (`.toc`, `.toc-item`, `.toc-num`, `.toc-title`)
+ * comes from globals.css ported from the design handoff; the viewport
+ * gating `<1100px` is handled entirely by CSS media query.
  *
- * We assert five behaviours per the V4.7-P5 brief:
- *   1. All 11 spec sections render as <a href="#..."> anchor links.
- *   2. The item matching the active section carries aria-current="true".
- *   3. The active item includes a visible 2px accent border marker.
- *   4. The TOC root is `hidden md:flex` so sub-md viewports do not see it.
- *   5. Each link is a native anchor (keyboard focusable via Tab without
- *      needing extra wiring) with an explicit href.
+ * Each item is a `<button type="button">` so keyboard focus + Enter/Space
+ * activation work natively - there is no anchor fallback because the
+ * scrollytelling surface owns the scroll math (not the browser hash jump).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SECTION_TOC_ITEMS, SectionTocView } from './section-toc.js';
+import { SectionToc } from './section-toc.js';
+import { CHAPTER_META } from '@/lib/chapters';
 
-function render(activeId: string | null): string {
-  return renderToStaticMarkup(<SectionTocView activeId={activeId} items={SECTION_TOC_ITEMS} />);
+function render(activeIdx = 0, onJump: (i: number) => void = () => {}): string {
+  return renderToStaticMarkup(<SectionToc activeIdx={activeIdx} onJump={onJump} />);
 }
 
-describe('SECTION_TOC_ITEMS', () => {
-  it('lists exactly the 11 spec-mandated sections in order', () => {
-    const ids = SECTION_TOC_ITEMS.map((i) => i.id);
-    expect(ids).toEqual([
-      'hero',
-      'problem',
-      'solution',
-      'brain-architecture',
-      'launch-demo',
-      'order-shill',
-      'heartbeat-demo',
-      'take-rate',
-      'sku-matrix',
-      'phase-map',
-      'evidence',
-    ]);
-  });
-});
-
-describe('<SectionTocView />', () => {
-  it('renders every item as an <a href="#<id>"> anchor link', () => {
-    const out = render(null);
-    for (const item of SECTION_TOC_ITEMS) {
-      expect(out).toContain(`href="#${item.id}"`);
-    }
+describe('<SectionToc />', () => {
+  it('renders one .toc-item button per CHAPTER_META entry in order', () => {
+    const out = render();
+    const matches = out.match(/class="toc-item[^"]*"/g) ?? [];
+    expect(matches.length).toBe(CHAPTER_META.length);
+    // Titles come from CHAPTER_META; the first two should appear in render
+    // order so we can spot a reversed mapping.
+    expect(out.indexOf(CHAPTER_META[0]!.title)).toBeGreaterThanOrEqual(0);
+    expect(out.indexOf(CHAPTER_META[1]!.title)).toBeGreaterThan(
+      out.indexOf(CHAPTER_META[0]!.title),
+    );
   });
 
-  it('marks the active item with aria-current="true"', () => {
-    const out = render('problem');
-    // The `problem` anchor should carry aria-current="true"; other anchors
-    // must not (we assert that only one total aria-current is emitted).
-    expect(out).toMatch(/aria-current="true"[^>]*>[^<]*Problem/);
-    const matches = out.match(/aria-current="true"/g);
-    expect(matches?.length).toBe(1);
+  it('marks the active item with the `.active` class and leaves the others idle', () => {
+    const out = render(2);
+    // Exactly one `.toc-item active` class string.
+    const actives = out.match(/class="toc-item active"/g) ?? [];
+    expect(actives.length).toBe(1);
+    // The active row sits in position 3 (idx 2) - its title follows the
+    // `.toc-item active` class.
+    expect(out).toMatch(new RegExp(`class="toc-item active"[^]*?${CHAPTER_META[2]!.title}`));
   });
 
-  it('applies an accent left-border marker class to the active item', () => {
-    const activeOut = render('solution');
-    // The active item should include an accent left-border marker. We assert
-    // the border classes the view uses so a future style refactor has to
-    // change both the component and this test in lockstep.
-    expect(activeOut).toMatch(/border-l-2[\s\S]*border-accent[\s\S]*font-semibold/);
+  it('renders zero-padded two-digit .toc-num labels', () => {
+    const out = render();
+    expect(out).toContain('>01<');
+    expect(out).toContain('>11<');
   });
 
-  it('is hidden on sub-md viewports (`hidden md:flex`)', () => {
-    const out = render(null);
-    // The root <nav> must gate visibility behind the md breakpoint so mobile
-    // viewers fall back to the Header navigation per AC-ISP-3.
-    expect(out).toMatch(/<nav[^>]*class="[^"]*hidden[^"]*md:flex[^"]*"/);
+  it('renders each item as a native <button type="button"> for Enter/Space activation', () => {
+    const out = render();
+    // Every .toc-item tag should be a <button> (no anchors).
+    expect(out).not.toMatch(/<a[^>]*class="toc-item/);
+    const buttons = out.match(/<button[^>]*class="toc-item/g) ?? [];
+    expect(buttons.length).toBe(CHAPTER_META.length);
+    expect(out).toMatch(/<button[^>]*type="button"[^>]*class="toc-item/);
   });
 
-  it('wraps items in a <nav aria-label> landmark for assistive tech', () => {
-    const out = render(null);
-    expect(out).toMatch(/<nav[^>]+aria-label="Page sections"/);
+  it('wraps the list in the frameless `.toc` nav landmark (no md:flex box)', () => {
+    const out = render();
+    expect(out).toMatch(/<nav[^>]*class="toc"/);
+    // The old card style used `rounded-[var(--radius-default)]` / `bg-bg-surface`
+    // Tailwind utilities; the new frameless version must not emit them.
+    expect(out).not.toMatch(/md:flex/);
+    expect(out).not.toMatch(/bg-bg-surface/);
   });
 
-  it('renders non-active entries without aria-current so screen readers only announce one active item', () => {
-    const out = render('hero');
-    const currentMatches = out.match(/aria-current="/g) ?? [];
-    expect(currentMatches.length).toBe(1);
+  it('does not invoke onJump during static render', () => {
+    const onJump = vi.fn();
+    render(0, onJump);
+    expect(onJump).not.toHaveBeenCalled();
   });
 });
