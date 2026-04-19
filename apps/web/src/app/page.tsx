@@ -178,8 +178,13 @@ export default function HomePage(): ReactElement {
   // picks up the swatch change live.
   const accentStyle: CSSProperties = { ['--accent' as never]: tweaks.accent };
 
-  const slotPx = SLOT_VH * vh;
-  const totalScrollH = CHAPTERS.length * slotPx + vh;
+  // Scroll-slot height uses a pure CSS `calc(... * 100vh)` string so SSR
+  // and client emit identical markup — avoids the Next.js hydration
+  // mismatch we saw when the JS-computed `totalScrollH` pixel value
+  // differed between the SSR default (vh=800) and the real client vh
+  // (e.g. 1366 on a 15" laptop). The browser resolves the calc against
+  // the live viewport on every layout pass, so resize needs no JS.
+  const scrollSlotHeight = `calc((${CHAPTERS.length} * ${SLOT_VH} + 1) * 100vh)`;
 
   // TOC click handler - scrolls to the mid-hold window of the selected
   // chapter so the target is fully visible on arrival (see spec §Anchor Jump
@@ -244,7 +249,7 @@ export default function HomePage(): ReactElement {
        * motion-sensitivity.
        */}
       <ScanlinesOverlay enabled={tweaks.scanlines && !reducedMotion} />
-      <div className="scroll-slot" style={{ height: totalScrollH }}>
+      <div className="scroll-slot" style={{ height: scrollSlotHeight }}>
         <StickyStage
           chapters={CHAPTERS}
           scrollY={scrollY}

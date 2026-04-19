@@ -69,16 +69,30 @@ describe('HomePage StickyStage shell', () => {
     expect(html).toContain('PAY USDC. GET TWEETS.');
   });
 
-  it('reserves CHAPTERS.length * SLOT_VH * vh + vh scroll pixels via inline height', () => {
+  it('reserves scroll height via a CSS calc(... * 100vh) string so SSR and client agree', () => {
+    // Hydration-safe height: `(N * SLOT_VH + 1) * 100vh`. Using a CSS
+    // calc string means the server markup and the hydrated client markup
+    // are byte-identical — no more React hydration mismatch when the
+    // SSR default vh (800) diverges from the real client vh. React
+    // escapes `*` into HTML entities when serialising inline styles
+    // (`*` becomes `&#x2a;` or similar in some runtimes); unescape the
+    // emitted attribute before parsing so the assertion stays robust.
     const html = renderHome();
-    const expectedHeight = EXPECTED_CHAPTER_COUNT * SLOT_VH * SSR_DEFAULT_VH + SSR_DEFAULT_VH;
-    // React serialises the style as `height:NNNN(.ε)px` — floating-point
-    // noise can pollute the lower digits. Parse the number back and
-    // compare with tolerance instead of regex-matching a fixed literal.
-    const match = html.match(/height:([0-9.]+)px/);
+    // NB: the calc expression contains nested parens — capture the whole
+    // `height:` declaration instead of a balanced-paren match.
+    const match = html.match(/style="[^"]*height:\s*(calc\([^"]+?\))[;"]/);
     expect(match).not.toBeNull();
-    const actualHeight = Number.parseFloat(match![1]!);
-    expect(actualHeight).toBeCloseTo(expectedHeight, 2);
+    // Expected expression: "(11 * 2.2 + 1) * 100vh". Strip HTML entities
+    // React may have interpolated (e.g. `&#x2a;` for `*`) before we
+    // evaluate the numeric coefficients — what matters is that the
+    // chapter count and slot-vh are both baked into the calc.
+    const inner = match![1]!
+      .replace(/&#x2a;/g, '*')
+      .replace(/&amp;#x2a;/g, '*')
+      .replace(/\s+/g, '');
+    expect(inner).toContain(`${EXPECTED_CHAPTER_COUNT}`);
+    expect(inner).toContain(`${SLOT_VH}`);
+    expect(inner).toContain('100vh');
   });
 
   it('at scrollY=0 culls every chapter tile (fade-in not yet started)', () => {
@@ -146,22 +160,41 @@ describe('HomePage StickyStage shell', () => {
 
   it('still declares the 11 spec-mandated chapter ids in order via StickyStage props', () => {
     // The chapter ids drive anchor-jump + TOC highlighting (P0 Task 16 /
-    // `/market` redirect). They are not visible in the rendered HTML at
-    // scrollY=0 (every chapter culled), so we import the module and
-    // reach into the exported chapter list via a dynamic check on the
-    // source text to avoid coupling the test to a named export.
-    //
-    // The simplest invariant we can assert off the SSR markup alone is
-    // that `.scroll-slot` exists and its height divides cleanly by
-    // (SLOT_VH * vh) so consumers can reconstruct the chapter count
-    // from page height alone.
+    // `/market` redirect). At scrollY=0 every chapter is culled so the
+    // ids are not visible in the SSR markup; the strongest SSR-only
+    // invariant is that the `.scroll-slot` calc height bakes the chapter
+    // count into a `(N * SLOT_VH + 1) * 100vh` string, since that is the
+    // hydration-safe replacement for the old `height:Xpx` assertion.
     const html = renderHome();
-    const heightMatch = html.match(/height:([0-9.]+)px/);
-    expect(heightMatch).not.toBeNull();
-    const h = Number.parseFloat(heightMatch![1]!);
-    const slotPx = SLOT_VH * SSR_DEFAULT_VH;
-    // total = count * slotPx + vh → (h - vh) / slotPx = count
-    const derivedCount = Math.round((h - SSR_DEFAULT_VH) / slotPx);
-    expect(derivedCount).toBe(EXPECTED_CHAPTER_COUNT);
+    // NB: the calc expression contains nested parens — capture the whole
+    // `height:` declaration instead of a balanced-paren match.
+    const match = html.match(/style="[^"]*height:\s*(calc\([^"]+?\))[;"]/);
+    expect(match).not.toBeNull();
+    const inner = match![1]!
+      .replace(/&#x2a;/g, '*')
+      .replace(/&amp;#x2a;/g, '*')
+      .replace(/\s+/g, '');
+    // The expression must mention the chapter count, slot-vh, and
+    // terminate in `100vh` so the chapter count is reconstructable.
+    expect(inner).toContain(`${EXPECTED_CHAPTER_COUNT}`);
+    expect(inner).toContain(`${SLOT_VH}`);
+    expect(inner).toContain('100vh');
+  });
+
+  it('renders byte-identical scroll-slot markup across renders (hydration-safe)', () => {
+    // Regression guard for Next.js hydration mismatch: two sequential
+    // `renderToStaticMarkup` calls must produce the same `.scroll-slot`
+    // inline style. Under the old JS-computed `height: totalScrollH`
+    // approach this still passed (both calls used SSR default vh=800),
+    // but the real mismatch surfaced between server render and client
+    // rehydrate; the CSS-calc expression removes that divergence by
+    // never depending on JS-evaluated vh for the slot height.
+    const a = renderHome();
+    const b = renderHome();
+    const aSlot = a.match(/class="scroll-slot"[^>]*style="([^"]+)"/);
+    const bSlot = b.match(/class="scroll-slot"[^>]*style="([^"]+)"/);
+    expect(aSlot).not.toBeNull();
+    expect(bSlot).not.toBeNull();
+    expect(aSlot![1]).toBe(bSlot![1]);
   });
 });
