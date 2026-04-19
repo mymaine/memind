@@ -2,10 +2,13 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import {
   creatorResultSchema,
+  type AssistantDeltaEventPayload,
   type CreatorResult,
   type LogEvent,
   type Persona,
   type PersonaRunContext,
+  type ToolUseEndEventPayload,
+  type ToolUseStartEventPayload,
 } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import {
@@ -116,12 +119,29 @@ export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
   outputSchema: creatorResultSchema,
   async run(input, ctx: PersonaRunContext) {
     const parsed = creatorPersonaInputSchema.parse(input);
+    // Brain-driven runs wire their RunStore forwarders onto `ctx.onLog` etc.
+    // so the nested tool loop (`narrative_generator` / `meme_image_creator` /
+    // `onchain_deployer` / `lore_writer`) surfaces progress via SSE. Callers
+    // that don't care (standalone `/runs?kind=creator` phase) simply omit the
+    // callbacks and pay nothing.
+    const onLog = ctx.onLog as ((event: LogEvent) => void) | undefined;
+    const onToolUseStart = ctx.onToolUseStart as
+      | ((event: ToolUseStartEventPayload) => void)
+      | undefined;
+    const onToolUseEnd = ctx.onToolUseEnd as ((event: ToolUseEndEventPayload) => void) | undefined;
+    const onAssistantDelta = ctx.onAssistantDelta as
+      | ((event: AssistantDeltaEventPayload) => void)
+      | undefined;
     const { result } = await runCreatorAgent({
       client: ctx.client as Anthropic,
       registry: ctx.registry as ToolRegistry,
       theme: parsed.theme,
       ...(parsed.model !== undefined ? { model: parsed.model } : {}),
       ...(parsed.maxTurns !== undefined ? { maxTurns: parsed.maxTurns } : {}),
+      ...(onLog !== undefined ? { onLog } : {}),
+      ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
+      ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
+      ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
     });
     return result;
   },

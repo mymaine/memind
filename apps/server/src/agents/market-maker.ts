@@ -471,8 +471,11 @@ export const shillerPersona: Persona<ShillerPersonaInput, ShillerPersonaOutput> 
   outputSchema: shillerPersonaOutputSchema,
   async run(input, ctx: PersonaRunContext) {
     // Shiller does not route through the Anthropic client or tool registry —
-    // the persona contract still requires a ctx, but both fields are unused.
-    void ctx;
+    // the persona contract still requires a ctx, but those fields are unused.
+    // Brain-driven runs wire `ctx.onLog` onto the RunStore so the "[shill
+    // mode] processing order …" + "[shill mode] tweet posted …" log events
+    // emitted by runShillerAgent show up in the FooterDrawer.
+    const onLog = ctx.onLog as ((event: LogEvent) => void) | undefined;
     const parsed = shillerPersonaInputSchema.parse(input);
     const out = await runShillerAgent({
       postShillForTool: parsed.postShillForTool,
@@ -484,6 +487,7 @@ export const shillerPersona: Persona<ShillerPersonaInput, ShillerPersonaOutput> 
       ...(parsed.includeFourMemeUrl !== undefined
         ? { includeFourMemeUrl: parsed.includeFourMemeUrl }
         : {}),
+      ...(onLog !== undefined ? { onLog } : {}),
     });
     return out;
   },

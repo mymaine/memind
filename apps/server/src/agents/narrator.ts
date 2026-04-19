@@ -1,6 +1,14 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import type { Artifact, LogEvent, Persona, PersonaRunContext } from '@hack-fourmeme/shared';
+import type {
+  Artifact,
+  AssistantDeltaEventPayload,
+  LogEvent,
+  Persona,
+  PersonaRunContext,
+  ToolUseEndEventPayload,
+  ToolUseStartEventPayload,
+} from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { LoreStore } from '../state/lore-store.js';
 import { type AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
@@ -316,6 +324,18 @@ export const narratorPersona: Persona<NarratorPersonaInput, NarratorPersonaOutpu
         'narratorPersona.run: PersonaRunContext.store is required (LoreStore instance)',
       );
     }
+    // Brain-driven runs wire their RunStore forwarders onto `ctx.*` so the
+    // nested extend_lore loop + the `lore-anchor` artifact both reach the
+    // FooterDrawer Logs/Artifacts tabs via SSE. Missing callbacks are a no-op.
+    const onLog = ctx.onLog as ((event: LogEvent) => void) | undefined;
+    const onArtifact = ctx.onArtifact as ((artifact: Artifact) => void) | undefined;
+    const onToolUseStart = ctx.onToolUseStart as
+      | ((event: ToolUseStartEventPayload) => void)
+      | undefined;
+    const onToolUseEnd = ctx.onToolUseEnd as ((event: ToolUseEndEventPayload) => void) | undefined;
+    const onAssistantDelta = ctx.onAssistantDelta as
+      | ((event: AssistantDeltaEventPayload) => void)
+      | undefined;
     const out = await runNarratorAgent({
       client: ctx.client as Anthropic,
       registry: ctx.registry as ToolRegistry,
@@ -331,6 +351,11 @@ export const narratorPersona: Persona<NarratorPersonaInput, NarratorPersonaOutpu
         : {}),
       ...(parsed.model !== undefined ? { model: parsed.model } : {}),
       ...(parsed.maxTurns !== undefined ? { maxTurns: parsed.maxTurns } : {}),
+      ...(onLog !== undefined ? { onLog } : {}),
+      ...(onArtifact !== undefined ? { onArtifact } : {}),
+      ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
+      ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
+      ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
     });
     return {
       tokenAddr: out.tokenAddr,
