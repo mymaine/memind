@@ -1,6 +1,17 @@
 import { z } from 'zod';
 
-export const agentIdSchema = z.enum(['creator', 'narrator', 'market-maker', 'heartbeat']);
+// `brain` + `shiller` appended in BRAIN-P1 (see
+// docs/features/brain-conversational-surface.md). Order of the original four
+// ids is preserved so exhaustive switches in downstream workspaces keep their
+// existing branches; new ids always appear at the tail.
+export const agentIdSchema = z.enum([
+  'creator',
+  'narrator',
+  'market-maker',
+  'heartbeat',
+  'brain',
+  'shiller',
+]);
 export type AgentId = z.infer<typeof agentIdSchema>;
 
 export const agentStatusSchema = z.enum(['idle', 'running', 'done', 'error']);
@@ -317,8 +328,24 @@ export type ArtifactKind = Artifact['kind'];
 // are reserved for a follow-up without breaking the wire format.
 // ---------------------------------------------------------------------------
 
-export const runKindSchema = z.enum(['creator', 'a2a', 'heartbeat', 'shill-market']);
+// `brain-chat` appended in BRAIN-P1 for the Brain meta-agent conversational
+// surface. Order of the original four kinds is preserved so existing route
+// dispatchers keep matching their branches.
+export const runKindSchema = z.enum(['creator', 'a2a', 'heartbeat', 'shill-market', 'brain-chat']);
 export type RunKind = z.infer<typeof runKindSchema>;
+
+// ---------------------------------------------------------------------------
+// Chat messages (BRAIN-P1) — OpenAI-compatible `{role, content}` shape used by
+// the `brain-chat` run kind. The Brain meta-agent consumes a `messages[]`
+// array on each POST /api/runs call to rebuild conversation context on a
+// stateless server. `content` is min-1 so empty sends never reach the LLM.
+// ---------------------------------------------------------------------------
+
+export const chatMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().min(1),
+});
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
 export const runStatusSchema = z.enum(['pending', 'running', 'done', 'error']);
 export type RunStatus = z.infer<typeof runStatusSchema>;
