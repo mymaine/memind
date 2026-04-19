@@ -70,13 +70,20 @@ export function deriveSlashPaletteView(args: {
   if (!input.startsWith('/')) {
     return { open: false, activeIndex: 0, candidates: [] };
   }
-  // Prefix after the slash — may be empty when the user has only typed `/`.
-  // Everything up to the first whitespace counts as the prefix; if the user
-  // has already typed a space (i.e. moved on to arguments) we still show the
-  // palette for the resolved command so they can re-pick.
+  // Prefix after the slash — everything up to the first whitespace. When
+  // the user has moved past the command token and started typing
+  // arguments (UAT 2026-04-20 #4), the palette auto-closes so Enter goes
+  // back to submitting the message instead of picking a candidate. We
+  // detect "arguments typed" as `\s\S` — at least one whitespace followed
+  // by one non-whitespace character after the command token.
   const afterSlash = input.slice(1);
   const match = /^(\S*)/.exec(afterSlash);
   const prefix = match ? (match[1] ?? '') : '';
+  const afterCommandToken = afterSlash.slice(prefix.length);
+  const argumentsTyped = /\s\S/.test(afterCommandToken);
+  if (argumentsTyped) {
+    return { open: false, activeIndex: 0, candidates: [] };
+  }
 
   const candidates = SLASH_COMMANDS.filter(
     (c) => c.scopes.includes(scope) && c.name.startsWith(prefix),
