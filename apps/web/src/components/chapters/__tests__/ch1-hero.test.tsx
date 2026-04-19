@@ -14,9 +14,15 @@
  * vitest runs under `node` with no jsdom (matches every existing scene +
  * sticky-stage test), so we render via `renderToStaticMarkup` + regex.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Ch1Hero } from '../ch1-hero.js';
+
+// Absolute path to globals.css — lets the CSS-regression tests below
+// assert shipped spacing rules without spinning up jsdom.
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../../app/globals.css'), 'utf8');
 
 const FULL = 'Pay USDC. Get tweets.';
 
@@ -80,5 +86,19 @@ describe('<Ch1Hero>', () => {
     // re-deriving the curve here.
     const html = renderToStaticMarkup(<Ch1Hero p={0.5} />);
     expect(html).toMatch(/class="ch-hero-glyph"[^>]*style="transform:translateX\(-?\d/);
+  });
+
+  it('leaves breathing room between .ch-hero-sub and .ch-hero-bottom (UAT issue #4)', () => {
+    // UAT reported the sub-headline `> give every meme coin an AI brain`
+    // and the BNB/BASE/IPFS chain-pill row were visually touching. The
+    // fix ships as CSS: sub gets margin-bottom, bottom row gets margin-top.
+    // Regression lock the minimum values so a future cleanup cannot
+    // regress the spacing without also updating this test.
+    expect(GLOBALS_CSS).toMatch(
+      /\.ch-hero-sub\s*\{[^}]*margin-bottom:\s*(?:4[0-9]|[5-9]\d|\d{3,})px/,
+    );
+    expect(GLOBALS_CSS).toMatch(
+      /\.ch-hero-bottom\s*\{[^}]*margin-top:\s*(?:1[6-9]|[2-9]\d|\d{3,})px/,
+    );
   });
 });

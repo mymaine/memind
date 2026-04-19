@@ -510,6 +510,12 @@ code,
   justify-content: space-between;
   align-items: center;
 }
+/* UAT issue #4 — push the bottom row (chain pills + scroll hint) clear of
+ * the sub-headline. Combined with .ch-hero-sub margin-bottom:40px this
+ * yields the intended ~56px visual gap. */
+.ch-hero-bottom {
+  margin-top: 16px;
+}
 .ch-hero .ch-headline {
   align-self: end;
   font-size: 132px;
@@ -517,6 +523,11 @@ code,
 }
 .ch-hero-sub {
   margin-top: 16px;
+  /* UAT issue #4 — give the sub-headline more breathing room so the
+   * chain-pill row below never visually collides with the "AI brain and a
+   * wallet" line. 40px bottom margin pairs with .ch-hero-bottom margin-top
+   * to create ~56px visible gap. */
+  margin-bottom: 40px;
   color: var(--fg-secondary);
   font-family: var(--font-mono);
   font-size: 14px;
