@@ -42,6 +42,7 @@ import { Ch11Evidence } from '@/components/chapters/ch11-evidence';
 import { BrainPanel } from '@/components/brain-panel';
 import { FooterDrawer } from '@/components/footer-drawer';
 import { Header } from '@/components/header';
+import { ScanlinesOverlay } from '@/components/scanlines-overlay';
 import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
 import { Watermark } from '@/components/watermark';
@@ -216,6 +217,14 @@ export default function HomePage(): ReactElement {
         onBrainClick={() => openBrain()}
       />
       <SectionToc activeIdx={activeIdx} onJump={onJump} />
+      {/*
+       * CRT scanlines overlay (AC-MSR-13). Enabled by default per the
+       * design-handoff TWEAK_DEFAULTS.scanlines=true, but suppressed
+       * whenever reduced-motion is on — the flicker of the repeating
+       * gradient stacks poorly with the motion-sensitivity the OS
+       * flag is signalling. Tweaks-panel overrides land in AC-MSR-12.
+       */}
+      <ScanlinesOverlay enabled={!reducedMotion} />
       <div className="scroll-slot" style={{ height: totalScrollH }}>
         <StickyStage
           chapters={CHAPTERS}

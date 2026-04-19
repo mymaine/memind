@@ -125,6 +125,13 @@ describe('HomePage StickyStage shell', () => {
     expect(html).toMatch(/aria-label="Close brain panel"/);
   });
 
+  it('mounts the CRT scanlines overlay in the default (no-reduced-motion) render', () => {
+    // AC-MSR-13: the decorative scanlines layer is on by default. Under
+    // SSR `useReducedMotion()` returns false, so the overlay renders.
+    const html = renderHome();
+    expect(html).toMatch(/<div[^>]*class="scanlines-overlay"[^>]*aria-hidden="true"/);
+  });
+
   it('exposes the TopBar brain indicator as the trigger for opening the BrainPanel', () => {
     // AC-MSR-7: clicking the TopBar <BrainIndicator /> opens the BrainPanel.
     // SSR-only assertion: the indicator's `aria-label="Open brain panel"`
