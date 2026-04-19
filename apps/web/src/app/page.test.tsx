@@ -51,6 +51,24 @@ describe('HomePage StickyStage shell', () => {
     expect(html).toContain('TOKEN BRAIN');
   });
 
+  it('mounts the frameless SectionToc alongside the sticky stage', () => {
+    const html = renderHome();
+    expect(html).toMatch(/<nav[^>]*class="toc"/);
+    // TOC iterates CHAPTER_META - 11 .toc-item buttons should render.
+    const items = html.match(/class="toc-item[^"]*"/g) ?? [];
+    expect(items.length).toBe(EXPECTED_CHAPTER_COUNT);
+  });
+
+  it('mounts the bottom-right Watermark reflecting the current chapter', () => {
+    const html = renderHome();
+    expect(html).toMatch(/class="watermark mono"/);
+    // SSR scroll position is 0 → activeIdx=0 → watermark shows 01 / 11 +
+    // the first chapter title from CHAPTER_META.
+    expect(html).toContain('01');
+    expect(html).toContain('/ 11');
+    expect(html).toContain('PAY USDC. GET TWEETS.');
+  });
+
   it('reserves CHAPTERS.length * SLOT_VH * vh + vh scroll pixels via inline height', () => {
     const html = renderHome();
     const expectedHeight = EXPECTED_CHAPTER_COUNT * SLOT_VH * SSR_DEFAULT_VH + SSR_DEFAULT_VH;

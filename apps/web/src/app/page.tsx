@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Home page — StickyStage scrollytelling shell + TopBar mount
- * (memind-scrollytelling-rebuild P0 Task 1 + AC-MSR-3).
+ * Home page — StickyStage scrollytelling shell + TopBar / TOC / Watermark
+ * (memind-scrollytelling-rebuild AC-MSR-1/-3/-4/-5).
  *
  * All 11 chapters are absolutely positioned inside a single sticky viewport
  * (`.sticky-viewport`) and cross-fade in place as the user scrolls through
@@ -13,18 +13,26 @@
  *
  * Real chapter components replace placeholders one-by-one in P0 Tasks 3-13;
  * each slot currently gets a <ChPlaceholder /> tile unless an entry in
- * `REAL_COMPS` overrides it. TOC / Watermark / FooterDrawer / BrainPanel
- * mounts land in the next P0 tasks.
+ * `REAL_COMPS` overrides it. FooterDrawer / BrainPanel mounts land in the
+ * next P0 tasks.
  *
- * The TopBar (<Header />) mounts here (not layout.tsx) because it needs live
+ * Shell composition (AC-MSR-3/-4/-5):
+ *   - <Header /> (TopBar) - fixed top, reads activeIdx + progress
+ *   - <SectionToc /> - fixed left, click to jump to mid-hold of chapter
+ *   - <StickyStage /> - the cross-fading viewport of chapter tiles
+ *   - <Watermark /> - fixed bottom-right chapter stamp
+ *
+ * The TopBar mounts here (not layout.tsx) because it needs live
  * `activeIdx` / `progress` props from the StickyStage scroll chain. The
  * RunStateProvider still lives in layout.tsx, so the TopBar's embedded
  * <BrainIndicator /> reads run state through context.
  */
-import { useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Ch1Hero } from '@/components/chapters/ch1-hero';
 import { Header } from '@/components/header';
+import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
+import { Watermark } from '@/components/watermark';
 import { useActiveChapter } from '@/hooks/useActiveChapter';
 import { useRun } from '@/hooks/useRun';
 import { usePublishRunState } from '@/hooks/useRunStateContext';
@@ -109,6 +117,17 @@ export default function HomePage(): ReactElement {
   const slotPx = SLOT_VH * vh;
   const totalScrollH = CHAPTERS.length * slotPx + vh;
 
+  // TOC click handler - scrolls to the mid-hold window of the selected
+  // chapter so the target is fully visible on arrival (see spec §Anchor Jump
+  // port from app.jsx:onJump). Browser smooth-scroll handles easing.
+  const onJump = useCallback((i: number) => {
+    if (typeof window === 'undefined') return;
+    const px = SLOT_VH * window.innerHeight;
+    window.scrollTo({ top: i * px + px * 0.3, behavior: 'smooth' });
+  }, []);
+
+  const currentTitle = CHAPTERS[activeIdx]?.title ?? '';
+
   return (
     <>
       <Header
@@ -120,9 +139,11 @@ export default function HomePage(): ReactElement {
         // so the button still mounts and the TOKEN BRAIN pill renders.
         onBrainClick={() => {}}
       />
+      <SectionToc activeIdx={activeIdx} onJump={onJump} />
       <div className="scroll-slot" style={{ height: totalScrollH }}>
         <StickyStage chapters={CHAPTERS} scrollY={scrollY} vh={vh} />
       </div>
+      <Watermark activeIdx={activeIdx} total={CHAPTERS.length} title={currentTitle} />
     </>
   );
 }
