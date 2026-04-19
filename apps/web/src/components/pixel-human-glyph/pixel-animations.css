@@ -500,24 +500,24 @@
 }
 
 .pixel--surprise .pixel-stage {
-  animation: pixel-surprise 600ms cubic-bezier(0.34, 1.56, 0.64, 1) 1 forwards;
+  animation: pixel-surprise 600ms cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
 }
 
 .pixel--surprise [data-part='hand-left'] {
   transform-box: fill-box;
-  animation: pixel-surprise-hand-left 600ms ease-out 1 forwards;
+  animation: pixel-surprise-hand-left 600ms ease-out infinite;
 }
 .pixel--surprise [data-part='hand-right'] {
   transform-box: fill-box;
-  animation: pixel-surprise-hand-right 600ms ease-out 1 forwards;
+  animation: pixel-surprise-hand-right 600ms ease-out infinite;
 }
 .pixel--surprise [data-part='foot-left'] {
   transform-box: fill-box;
-  animation: pixel-surprise-foot-left 600ms ease-out 1 forwards;
+  animation: pixel-surprise-foot-left 600ms ease-out infinite;
 }
 .pixel--surprise [data-part='foot-right'] {
   transform-box: fill-box;
-  animation: pixel-surprise-foot-right 600ms ease-out 1 forwards;
+  animation: pixel-surprise-foot-right 600ms ease-out infinite;
 }
 
 @keyframes pixel-surprise-bang {
@@ -537,7 +537,7 @@
 
 .pixel-symbols--surprise .pixel-symbols__bang {
   transform-box: fill-box;
-  animation: pixel-surprise-bang 600ms ease-out 1 forwards;
+  animation: pixel-surprise-bang 600ms ease-out infinite;
 }
 
 /* ---- Celebrate (one-shot 1200ms) --------------------------------------- */
@@ -810,22 +810,22 @@
 }
 
 .pixel--megaphone .pixel-stage {
-  animation: pixel-megaphone-stage 2500ms ease-in-out 1 forwards;
+  animation: pixel-megaphone-stage 2500ms ease-in-out infinite;
 }
 
 .pixel--megaphone [data-part='hand-right'] {
   transform-box: fill-box;
-  animation: pixel-megaphone-hand-right 2500ms ease-in-out 1 forwards;
+  animation: pixel-megaphone-hand-right 2500ms ease-in-out infinite;
 }
 
 .pixel-symbols--megaphone .pixel-symbols__horn {
   transform-box: fill-box;
-  animation: pixel-megaphone-horn 2500ms ease-in-out 1 forwards;
+  animation: pixel-megaphone-horn 2500ms ease-in-out infinite;
 }
 
 .pixel-symbols--megaphone .pixel-symbols__wave {
   transform-box: fill-box;
-  animation: pixel-megaphone-wave 2500ms ease-in-out 1 forwards;
+  animation: pixel-megaphone-wave 2500ms ease-in-out infinite;
 }
 
 .pixel-symbols--megaphone .pixel-symbols__wave--0 {

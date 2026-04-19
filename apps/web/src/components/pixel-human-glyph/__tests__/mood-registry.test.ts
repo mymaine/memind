@@ -41,26 +41,30 @@ describe('getMoodConfig', () => {
     expect(getMoodConfig('sleep').loop).toBe(true);
     expect(getMoodConfig('work').loop).toBe(true);
     expect(getMoodConfig('think').loop).toBe(true);
+    // UAT round 4 (2026-04-20): surprise + megaphone flipped to looping
+    // so DEGEN / SHILLER persona portraits stay animated through the
+    // full Ch4 hold window.
+    expect(getMoodConfig('surprise').loop).toBe(true);
+    expect(getMoodConfig('megaphone').loop).toBe(true);
     expect(getMoodConfig('jump').loop).toBe(false);
-    expect(getMoodConfig('surprise').loop).toBe(false);
     expect(getMoodConfig('celebrate').loop).toBe(false);
     expect(getMoodConfig('sunglasses').loop).toBe(false);
     expect(getMoodConfig('type-keyboard').loop).toBe(false);
-    expect(getMoodConfig('megaphone').loop).toBe(false);
   });
 
   it('gives one-shot moods a finite positive duration in ms', () => {
     expect(getMoodConfig('jump').durationMs).toBe(800);
-    expect(getMoodConfig('surprise').durationMs).toBe(600);
     expect(getMoodConfig('celebrate').durationMs).toBe(1200);
     expect(getMoodConfig('sunglasses').durationMs).toBe(2500);
     expect(getMoodConfig('type-keyboard').durationMs).toBe(3000);
-    expect(getMoodConfig('megaphone').durationMs).toBe(2500);
   });
 
   it('gives loop moods durationMs=null so consumers do not schedule timeouts for them', () => {
     expect(getMoodConfig('idle').durationMs).toBeNull();
     expect(getMoodConfig('walk-left').durationMs).toBeNull();
     expect(getMoodConfig('sleep').durationMs).toBeNull();
+    // Post UAT round 4: surprise + megaphone now loop, durationMs is null.
+    expect(getMoodConfig('surprise').durationMs).toBeNull();
+    expect(getMoodConfig('megaphone').durationMs).toBeNull();
   });
 });

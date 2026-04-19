@@ -60,13 +60,18 @@ const REGISTRY: Readonly<Record<ShillingMood, MoodConfig>> = {
   sleep: { loop: true, durationMs: null },
   work: { loop: true, durationMs: null },
   think: { loop: true, durationMs: null },
-  surprise: { loop: false, durationMs: 600 },
+  // UAT round 4 (2026-04-20): flip `surprise` + `megaphone` to looping so
+  // DEGEN (surprise) and SHILLER (megaphone) stay animated through the
+  // full Ch4 hold window. CSS iteration count mirrors this in
+  // pixel-animations.css — both `pixel-surprise*` and `pixel-megaphone*`
+  // keyframes now run `infinite` instead of `1 forwards`.
+  surprise: { loop: true, durationMs: null },
   celebrate: { loop: false, durationMs: 1200 },
   // Prop-based one-shots: draw-out -> hold/action -> stow. Duration covers
   // the full round-trip including both transitions.
   sunglasses: { loop: false, durationMs: 2500 },
   'type-keyboard': { loop: false, durationMs: 3000 },
-  megaphone: { loop: false, durationMs: 2500 },
+  megaphone: { loop: true, durationMs: null },
 };
 
 export function getMoodConfig(mood: ShillingMood): MoodConfig {
