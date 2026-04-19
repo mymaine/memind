@@ -6,8 +6,10 @@
  *
  * All 11 chapters are absolutely positioned inside a single sticky viewport.
  * Each chapter owns `SLOT_VH * vh` pixels of scroll distance. Within that
- * slot the chapter cross-fades in (18%), holds fully resolved (64%), then
- * cross-fades out (18%) — opacity / scale / blur only, NO translateY.
+ * slot the chapter cross-fades in (12%), holds fully resolved (76%), then
+ * cross-fades out (12%) — opacity / scale / blur only, NO translateY.
+ * Hold widened from 64% to 76% after UAT Issue #3 so chapter animations
+ * have room to dwell on their resolved state before the cross-fade.
  *
  * The pure `mapStageStyle()` helper is exported for unit tests so the
  * opacity / scale / blur curve is verifiable without mounting the
