@@ -237,6 +237,33 @@ describe('<ArtifactsTab />', () => {
     expect(out).not.toMatch(/<a[^>]*href[^>]*>[^<]*artifact-row|artifact-row[^<]*<\/a>/);
   });
 
+  it('shortenRef preserves the 0x prefix and does NOT uppercase the ref (UAT 2026-04-20)', () => {
+    // UAT fix: footer rendered `0X0A1A..4444` because the parent `.mono`
+    // class set text-transform: uppercase. The shortenRef kernel itself
+    // stays lowercase — CSS override lives in globals.css under
+    // `.artifact-row .artifact-hash`. This is the kernel regression guard.
+    const mixed = '0xAbCdEf0123456789AbCdEf0123456789AbCdEf01';
+    expect(shortenRef(mixed)).toBe('0xAbCd..Ef01');
+    expect(shortenRef('0xdeadbeefcafebabef00d')).toBe('0xdead..f00d');
+  });
+
+  it('renders the hash column with textTransform:none so 0x stays lowercase', () => {
+    const artifacts: Artifact[] = [
+      {
+        kind: 'bsc-token',
+        chain: 'bsc-mainnet',
+        address: '0xabcdef0123456789abcdef0123456789abcdef01',
+        explorerUrl: 'https://bscscan.com/token/0xabcdef0123456789abcdef0123456789abcdef01',
+      },
+    ];
+    const out = renderToStaticMarkup(<ArtifactsTab artifacts={artifacts} />);
+    // The hash span must carry the `artifact-hash` class plus an inline
+    // text-transform:none so the parent `.mono { text-transform: uppercase }`
+    // does not shout the 0x into 0X in the DOM render.
+    expect(out).toContain('artifact-hash');
+    expect(out).toMatch(/text-transform:\s*none/i);
+  });
+
   it('mapArtifactToFooterRow handles meme-image upload-failed by labelling the hash', () => {
     const row = mapArtifactToFooterRow({
       kind: 'meme-image',

@@ -204,7 +204,10 @@ export function ArtifactsTab(props: ArtifactsTabProps): ReactElement {
               {row.chain}
             </span>
             <span className="artifact-label">{row.label}</span>
-            <span className="mono artifact-hash" style={{ color: 'var(--fg-tertiary)' }}>
+            <span
+              className="mono artifact-hash"
+              style={{ color: 'var(--fg-tertiary)', textTransform: 'none' }}
+            >
               {row.hashShort}
             </span>
             <span className="ev-check" style={{ marginLeft: 'auto' }}>

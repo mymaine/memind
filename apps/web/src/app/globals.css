@@ -1451,6 +1451,16 @@ code,
   color: var(--fg-emphasis);
 }
 /*
+ * UAT fix (2026-04-20): keep the hash column lowercase + 0x-prefixed so
+ * judges can copy/paste straight to BSCScan. The parent `.mono` class
+ * defaults to text-transform: uppercase, so override here. The inline
+ * style on the span is a belt-and-braces guard.
+ */
+.artifact-row .artifact-hash {
+  text-transform: none;
+  letter-spacing: 0.5px;
+}
+/*
  * UAT fix (2026-04-20): whole row is a clickable link to the matching
  * explorer (BSCScan / Base Sepolia / Pinata gateway / X). Suppress the
  * default anchor underline and pick up a subtle hover treatment so the
