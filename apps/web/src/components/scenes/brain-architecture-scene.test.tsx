@@ -94,12 +94,14 @@ describe('<BrainArchitectureScene /> structural contract', () => {
     }
   });
 
-  it('does not embed any <canvas>, <svg>, or external chart root (no chart library)', () => {
+  it('does not embed any <canvas> or external chart root (no chart library)', () => {
     const out = render({ freeze: true });
-    // Pitch-surface rule: no chart/viz library. <canvas> and <svg> never
-    // appear; no recognised chart-library root class attaches to the scene.
+    // Pitch-surface rule: no chart/viz library. <canvas> never appears and
+    // no recognised chart-library root class attaches to the scene. Inline
+    // <svg> is now allowed because the scene mounts <PixelHumanGlyph>
+    // mascots as brand marks (central Brain + per-persona ports) — those
+    // are pure CSS-driven pixel art, not chart output.
     expect(out).not.toMatch(/<canvas\b/);
-    expect(out).not.toMatch(/<svg\b/);
     expect(out).not.toMatch(/class="[^"]*\brecharts\b/);
     expect(out).not.toMatch(/class="[^"]*\bchartjs\b/);
     expect(out).not.toMatch(/class="[^"]*\bplotly\b/);
@@ -118,5 +120,39 @@ describe('<BrainArchitectureScene /> structural contract', () => {
   it('freeze=true locks the scene into its revealed state (scroll-independent paint)', () => {
     const out = render({ freeze: true });
     expect(out).toMatch(/<section[^>]+class="[^"]*\bscene--revealed\b/);
+  });
+
+  it('mounts a PixelHumanGlyph mascot inside the central Brain hub (mood="think")', () => {
+    const out = render();
+    // The hub mascot is the centrepiece — size 120 `think` glyph sits
+    // between the "runtime" overline and the "Token Brain" label.
+    expect(out).toMatch(/data-testid="brain-hub-mascot"/);
+    // Scope the mood match to the hub mascot wrapper so a future
+    // persona-port `think` mood would not satisfy this assertion.
+    expect(out).toMatch(
+      /data-testid="brain-hub-mascot"[^]*?data-mood="think"/,
+    );
+  });
+
+  it('mounts a PixelHumanGlyph mascot inside each shipped persona port with the mapped mood', () => {
+    const out = render();
+    // One mascot per shipped persona — the 4 ports map 1:1 to mood names.
+    const expected: ReadonlyArray<readonly [string, string]> = [
+      ['Creator', 'type-keyboard'],
+      ['Narrator', 'work'],
+      ['Market-maker / Shiller', 'megaphone'],
+      ['Heartbeat', 'walk-right'],
+    ];
+    for (const [name, mood] of expected) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+      // Each port's mascot lives inside a wrapper keyed by persona name.
+      // Assert the mood prop lands on the glyph inside that wrapper.
+      expect(out).toMatch(new RegExp(`data-testid="brain-port-mascot-${escaped}"`));
+      expect(out).toMatch(
+        new RegExp(
+          `data-testid="brain-port-mascot-${escaped}"[^]*?data-mood="${mood}"`,
+        ),
+      );
+    }
   });
 });

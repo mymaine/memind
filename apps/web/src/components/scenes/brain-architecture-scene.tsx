@@ -37,6 +37,18 @@
 import { useRef } from 'react';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
 import { BRAIN_ARCHITECTURE, type BrainPersonaPort } from '@/lib/narrative-copy';
+import { PixelHumanGlyph, type ShillingMood } from '@/components/pixel-human-glyph';
+
+// Map persona name → mascot mood. Keyed by the exact name strings from
+// BRAIN_ARCHITECTURE.shippedPersonas so a copy drift shows up as a missing
+// mascot rather than a silent mismatch. Only shipped personas get a mood;
+// future slots render without a mascot (they are dashed, muted placeholders).
+const PERSONA_MOOD_BY_NAME: Readonly<Record<string, ShillingMood>> = {
+  Creator: 'type-keyboard',
+  Narrator: 'work',
+  'Market-maker / Shiller': 'megaphone',
+  Heartbeat: 'walk-right',
+};
 
 export interface BrainArchitectureSceneProps {
   /** Deterministic reveal for tests — applies `.scene--revealed` regardless
@@ -73,6 +85,9 @@ function BrainPortCard({ port }: { readonly port: BrainPersonaPort }): React.Rea
       : 'brain-port--future border-dashed border-border-default opacity-60',
   ].join(' ');
 
+  // Only shipped personas get a mascot — future slots stay visually muted.
+  const personaMood = isShipped ? PERSONA_MOOD_BY_NAME[port.name] : undefined;
+
   return (
     <article className={cardClass} data-testid={`brain-port-${port.name}`}>
       <div className="flex items-center justify-between gap-2">
@@ -88,6 +103,18 @@ function BrainPortCard({ port }: { readonly port: BrainPersonaPort }): React.Rea
           </span>
         )}
       </div>
+      {personaMood !== undefined ? (
+        <div
+          className="mt-1 flex items-center justify-center"
+          data-testid={`brain-port-mascot-${port.name}`}
+        >
+          <PixelHumanGlyph
+            size={60}
+            mood={personaMood}
+            ariaLabel={`Memind mascot: ${port.name} persona`}
+          />
+        </div>
+      ) : null}
       <p
         className={`font-[family-name:var(--font-sans-body)] text-[12px] leading-[1.4] ${
           isShipped ? 'text-fg-secondary' : 'text-fg-tertiary'
@@ -139,7 +166,7 @@ export function BrainArchitectureScene({
         {/* Brain hub — centred on md+, static full-width on mobile. */}
         <div className="flex flex-col items-center gap-4">
           <div
-            className="brain-hub flex flex-col items-center gap-1 rounded-[var(--radius-card)] border-2 border-accent bg-bg-elevated px-5 py-3 text-center"
+            className="brain-hub flex flex-col items-center gap-2 rounded-[var(--radius-card)] border-2 border-accent bg-bg-elevated px-5 py-3 text-center"
             data-testid="brain-hub"
           >
             <span
@@ -150,6 +177,16 @@ export function BrainArchitectureScene({
                   without introducing a second typographic scale */}
               runtime
             </span>
+            {/* Central mascot — "think" mood for the Brain hub. Size 120 is
+                large enough to read as the centrepiece without crowding
+                the surrounding persona row. */}
+            <div data-testid="brain-hub-mascot">
+              <PixelHumanGlyph
+                size={120}
+                mood="think"
+                ariaLabel="Memind mascot: Token Brain runtime"
+              />
+            </div>
             <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold leading-[1.1] text-accent-text">
               {BRAIN_ARCHITECTURE.brainLabel}
             </span>
