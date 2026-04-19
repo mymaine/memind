@@ -45,7 +45,9 @@ describe('<BrainChatSlashPalette /> — open rendering (cases 1 + 3 + 6)', () =>
     expect(out).toContain('order');
     expect(out).toContain('Order a shill');
     // Active index = 1, so the second row should carry the highlight marker.
-    expect(out).toMatch(/data-active="true"[^>]*>[^<]*order/);
+    // The row body sits inside nested spans; we assert the active row's
+    // data-slash-name attribute identifies which command is highlighted.
+    expect(out).toMatch(/data-slash-name="order"[^>]*data-active="true"/);
   });
 });
 
