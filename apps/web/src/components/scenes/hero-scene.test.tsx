@@ -88,4 +88,14 @@ describe('<HeroScene /> structural contract', () => {
     // And confirm the default is NOT also present — ensures prop wins.
     expect(out).not.toContain(HERO_PITCH_HOME);
   });
+
+  it('mounts the PixelHumanGlyph mascot with the `sunglasses` mood under the pitch column', () => {
+    const out = render();
+    // Frozen render keeps the mascot on its default (first) cycle index —
+    // sunglasses mood. Asserting `data-mood` is the tightest guarantee the
+    // glyph landed with the right mood prop; the slot wrapper testid pins
+    // the mount location (left-column, under the CTAs).
+    expect(out).toMatch(/data-testid="hero-mascot"/);
+    expect(out).toMatch(/data-mood="sunglasses"/);
+  });
 });

@@ -67,6 +67,15 @@ import {
   type ParticleFlowPhase,
 } from '@/components/animations/usdc-particle-flow-utils';
 import { TweetTypewriter } from '@/components/animations/tweet-typewriter';
+import { PixelHumanGlyph, type ShillingMood } from '@/components/pixel-human-glyph';
+
+// Hero mascot rotates between `sunglasses` (default "demo is live" swagger)
+// and `celebrate` every HERO_MASCOT_CYCLE_MS so the pitch column has a
+// subtle rhythm that matches the market animation on the right. Both moods
+// are one-shots in the registry — we drive the alternation with a cycle
+// index + a remount key so each beat replays cleanly.
+const HERO_MASCOT_CYCLE_MS = 6000;
+const HERO_MASCOT_MOODS: readonly ShillingMood[] = ['sunglasses', 'celebrate'];
 
 // Tweet typewriter duration inside the posted window. Posted lasts 1.5s
 // (4000-5500ms) per spec; the typewriter finishes just before idle resumes.
@@ -126,6 +135,9 @@ export function HeroScene({
   // in-phase motion and the child typewriter owns its own sub-rAF.
   const [phase, setPhase] = useState<ParticleFlowPhase>(forceStatic ? 'posted' : 'idle');
   const [cycleIndex, setCycleIndex] = useState(0);
+  // Mascot index cycles sunglasses → celebrate → sunglasses … every 6s.
+  // Frozen render keeps the default (sunglasses) so tests stay deterministic.
+  const [mascotIndex, setMascotIndex] = useState(0);
 
   // Reveal latch: `useScrollReveal` observes the section, but Hero is the
   // first paint — we cannot depend on scroll to reveal it. A mount-time
@@ -182,7 +194,20 @@ export function HeroScene({
     };
   }, [forceStatic]);
 
+  // Mascot mood alternation — separate from the particle rAF so its cadence
+  // does not depend on HERO_CYCLE_MS. setInterval is fine here because we
+  // only flip once per HERO_MASCOT_CYCLE_MS; no per-frame work.
+  useEffect(() => {
+    if (forceStatic) return;
+    if (typeof window === 'undefined') return;
+    const id = window.setInterval(() => {
+      setMascotIndex((i) => (i + 1) % HERO_MASCOT_MOODS.length);
+    }, HERO_MASCOT_CYCLE_MS);
+    return () => window.clearInterval(id);
+  }, [forceStatic]);
+
   const tweetVisible = phase === 'posted';
+  const mascotMood = HERO_MASCOT_MOODS[mascotIndex] ?? 'sunglasses';
 
   return (
     <section
@@ -225,6 +250,23 @@ export function HeroScene({
             >
               {secondaryCta}
             </Link>
+          </div>
+
+          {/* Mascot — lives under the CTA row so it reads as the project's
+              stage presence. `key={mascotIndex}` forces a remount each beat
+              so the one-shot mood animation replays cleanly; the default
+              colours (accent green + warning gold) come from the component
+              itself, no prop override. */}
+          <div
+            className="mt-2 flex items-center gap-3"
+            data-testid="hero-mascot"
+          >
+            <PixelHumanGlyph
+              key={`hero-mascot-${mascotIndex}`}
+              size={200}
+              mood={mascotMood}
+              ariaLabel="Memind mascot: hero stage presence"
+            />
           </div>
         </div>
 
