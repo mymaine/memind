@@ -17,7 +17,7 @@
  *     CSS-only affordance.
  */
 import { useEffect, useState, type ReactElement } from 'react';
-import { SECTION_TOC_ITEMS } from './section-toc';
+import { CHAPTER_META } from '@/lib/chapters';
 import { deriveBrainStatus, type BrainStatus } from './brain-status-bar-utils';
 import { useRunState } from '@/hooks/useRunStateContext';
 import { useSectionObserver } from '@/hooks/useSectionObserver';
@@ -134,7 +134,7 @@ export function AsciiBackdropView(props: AsciiBackdropViewProps): ReactElement {
 }
 
 // Module-level tuple so useSectionObserver gets a stable reference.
-const SECTION_IDS: readonly string[] = SECTION_TOC_ITEMS.map((item) => item.id);
+const SECTION_IDS: readonly string[] = CHAPTER_META.map((item) => item.id);
 
 // Approximate char/line dimensions at 12px JetBrains Mono, line-height 1.6.
 // Loose so the grid comfortably over-fills the viewport even if browser

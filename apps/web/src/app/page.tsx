@@ -27,6 +27,7 @@ import { useActiveChapter } from '@/hooks/useActiveChapter';
 import { useRun } from '@/hooks/useRun';
 import { usePublishRunState } from '@/hooks/useRunStateContext';
 import { useScrollY } from '@/hooks/useScrollY';
+import { CHAPTER_META } from '@/lib/chapters';
 
 const SLOT_VH = 2.2;
 
@@ -66,27 +67,15 @@ function makePlaceholderComp(label: string): StickyStageChapter['Comp'] {
   return PlaceholderComp;
 }
 
-const CHAPTERS: readonly StickyStageChapter[] = [
-  { id: 'hero', title: 'PAY USDC. GET TWEETS.', Comp: makePlaceholderComp('CH01 HERO') },
-  { id: 'problem', title: 'THE GRAVEYARD', Comp: makePlaceholderComp('CH02 PROBLEM') },
-  { id: 'solution', title: 'THE FIX', Comp: makePlaceholderComp('CH03 SOLUTION') },
-  {
-    id: 'brain-architecture',
-    title: 'BRAIN ARCHITECTURE',
-    Comp: makePlaceholderComp('CH04 BRAIN'),
-  },
-  { id: 'launch-demo', title: 'LAUNCH DEMO', Comp: makePlaceholderComp('CH05 LAUNCH') },
-  { id: 'order-shill', title: 'SHILL DEMO', Comp: makePlaceholderComp('CH06 SHILL') },
-  {
-    id: 'heartbeat-demo',
-    title: 'HEARTBEAT',
-    Comp: makePlaceholderComp('CH07 HEARTBEAT'),
-  },
-  { id: 'take-rate', title: 'TAKE RATE', Comp: makePlaceholderComp('CH08 TAKE RATE') },
-  { id: 'sku-matrix', title: 'SKU MATRIX', Comp: makePlaceholderComp('CH09 SKU') },
-  { id: 'phase-map', title: 'PHASE MAP', Comp: makePlaceholderComp('CH10 PHASE') },
-  { id: 'evidence', title: 'EVIDENCE', Comp: makePlaceholderComp('CH11 EVIDENCE') },
-];
+// Chapter registry for the placeholder phase of the rebuild. Real chapter
+// components land in P0 Tasks 3-13; until then each slot gets a
+// <ChPlaceholder /> tile keyed off CHAPTER_META so the StickyStage engine
+// still has 11 tiles to cross-fade and the TOC / Watermark stay in sync.
+const CHAPTERS: readonly StickyStageChapter[] = CHAPTER_META.map((m, idx) => ({
+  id: m.id,
+  title: m.title,
+  Comp: makePlaceholderComp(`CH${String(idx + 1).padStart(2, '0')} ${m.title}`),
+}));
 
 export default function HomePage(): ReactElement {
   const hookResult = useRun();
