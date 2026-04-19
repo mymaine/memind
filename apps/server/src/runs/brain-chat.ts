@@ -17,6 +17,24 @@
  *   - Keeping state (tokenMetaByAddr, orderByAddr) local to a single run
  *     satisfies the spec's "no persistence, single server instance demo" rail.
  *
+ * Registry isolation — why each persona gets its OWN sub-registry:
+ *   - The Brain meta-agent (`runBrainAgent`) registers its four `invoke_*`
+ *     tools into the registry we pass it, then runs its LLM loop against
+ *     that registry. That is the *brain* registry.
+ *   - Each `invoke_*` tool's execute path calls `persona.run(input, ctx)`
+ *     where `ctx.registry` MUST be the persona's own internal sub-tool
+ *     registry (e.g. creator needs narrative_generator / meme_image_creator
+ *     / onchain_deployer / lore_writer). If we reused the brain's registry
+ *     here, the creator persona's inner `runAgentLoop` would see the four
+ *     `invoke_*` tools, call `invoke_creator` on itself, and spin an
+ *     infinite recursion that wall-clocks the entire `/launch` demo path.
+ *   - Therefore the orchestrator builds one fresh registry per sub-agent
+ *     (creator / narrator / heartbeat) populated with only that persona's
+ *     real sub-tools, plus a separate brain registry that only ever holds
+ *     the four invoke_* tools. The shiller persona intentionally gets an
+ *     empty fresh registry because its `run(...)` ignores `ctx.registry`
+ *     (the post_shill_for tool is passed on TInput).
+ *
  * Not handled here (intentionally):
  *   - Per-run persistence of chat history — the HTTP caller ships the full
  *     messages array with every POST (stateless server).
@@ -26,6 +44,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
+import { PinataSDK } from 'pinata';
 import type { AgentTool, ChatMessage } from '@hack-fourmeme/shared';
 import { chatMessageSchema } from '@hack-fourmeme/shared';
 import { z } from 'zod';
@@ -48,7 +68,13 @@ import {
   type PostShillForInput,
   type PostShillForOutput,
 } from '../tools/post-shill-for.js';
-import { createPostToXTool } from '../tools/x-post.js';
+import { createPostToXTool, xPostInputSchema, xPostOutputSchema } from '../tools/x-post.js';
+import { createNarrativeTool } from '../tools/narrative.js';
+import { createImageTool } from '../tools/image.js';
+import { createLoreTool } from '../tools/lore.js';
+import { createOnchainDeployerTool } from '../tools/deployer.js';
+import { createLoreExtendTool } from '../tools/lore-extend.js';
+import { createCheckTokenStatusTool } from '../tools/token-status.js';
 import { creatorPersona } from '../agents/creator.js';
 import { narratorPersona } from '../agents/narrator.js';
 import { shillerPersona } from '../agents/market-maker.js';
@@ -142,6 +168,125 @@ function buildPostShillForTool(
   });
 }
 
+// ─── Sub-registry builders ─────────────────────────────────────────────────
+//
+// Each persona that runs its own `runAgentLoop` needs a dedicated sub-tool
+// registry containing ONLY its real tools (never any `invoke_*` wrapper) so
+// the inner LLM loop cannot see its own invocation tool and recurse.
+// ----------------------------------------------------------------------------
+
+/**
+ * Build the creator persona's sub-tool registry: narrative_generator,
+ * meme_image_creator, onchain_deployer, lore_writer. Mirrors the wiring in
+ * `runs/creator-phase.ts` so both entry points produce the same creator
+ * tool surface.
+ *
+ * Throws early when a required secret is missing so the failure surfaces as
+ * the Brain's `invoke_creator` call rather than a downstream mid-loop crash.
+ */
+export function buildCreatorSubRegistry(config: AppConfig, anthropic: Anthropic): ToolRegistry {
+  const googleKey = process.env.GOOGLE_API_KEY?.trim();
+  if (googleKey === undefined || googleKey === '') {
+    throw new Error(
+      'runBrainChat: GOOGLE_API_KEY missing (creator persona requires Gemini for meme image generation)',
+    );
+  }
+  const bscKey = config.wallets.bscDeployer.privateKey;
+  if (bscKey === undefined) {
+    throw new Error(
+      'runBrainChat: BSC_DEPLOYER_PRIVATE_KEY missing (creator persona requires BSC deployer)',
+    );
+  }
+  if (config.pinata.jwt === undefined) {
+    throw new Error(
+      'runBrainChat: PINATA_JWT missing (creator persona requires Pinata to pin the meme image and lore)',
+    );
+  }
+
+  const gemini = new GoogleGenAI({ apiKey: googleKey });
+  const pinata = new PinataSDK({
+    pinataJwt: config.pinata.jwt,
+    pinataGateway: 'gateway.pinata.cloud',
+  });
+
+  const reg = new ToolRegistry();
+  reg.register(createNarrativeTool({ client: anthropic, model: MODEL }));
+  reg.register(createImageTool({ client: gemini, pinata }));
+  reg.register(createLoreTool({ anthropic, pinata, model: MODEL }));
+  reg.register(createOnchainDeployerTool({ privateKey: bscKey as `0x${string}` }));
+  return reg;
+}
+
+/**
+ * Build the narrator persona's sub-tool registry: extend_lore only. The
+ * narrator's systemPrompt forces a single `extend_lore` call per invocation;
+ * no other tool is needed. Mirrors the wiring in `a2a.ts#defaultRunNarratorPhase`.
+ */
+export function buildNarratorSubRegistry(config: AppConfig, anthropic: Anthropic): ToolRegistry {
+  if (config.pinata.jwt === undefined) {
+    throw new Error(
+      'runBrainChat: PINATA_JWT missing (narrator persona requires Pinata to pin lore chapters)',
+    );
+  }
+  const reg = new ToolRegistry();
+  reg.register(createLoreExtendTool({ anthropic, pinataJwt: config.pinata.jwt, model: MODEL }));
+  return reg;
+}
+
+/**
+ * Build the heartbeat persona's sub-tool registry: check_token_status (viem),
+ * post_to_x (X API or dry-run), and extend_lore. Mirrors the production wiring
+ * in `heartbeat-runner.ts` minus the test seams — Brain-driven heartbeat ticks
+ * never need stubs because they ride on the same Anthropic / viem / Pinata
+ * stack the real heartbeat runner uses.
+ */
+export function buildHeartbeatSubRegistry(config: AppConfig, anthropic: Anthropic): ToolRegistry {
+  const reg = new ToolRegistry();
+  reg.register(createCheckTokenStatusTool({ rpcUrl: config.bsc.rpcUrl }));
+
+  const x = config.x;
+  const haveCreds =
+    x.apiKey !== undefined &&
+    x.apiKeySecret !== undefined &&
+    x.accessToken !== undefined &&
+    x.accessTokenSecret !== undefined;
+  if (haveCreds) {
+    reg.register(
+      createPostToXTool({
+        apiKey: x.apiKey as string,
+        apiKeySecret: x.apiKeySecret as string,
+        accessToken: x.accessToken as string,
+        accessTokenSecret: x.accessTokenSecret as string,
+        handle: x.handle,
+      }),
+    );
+  } else {
+    // Dry-run post_to_x — mirrors heartbeat-runner's dry-run branch so a
+    // Brain-driven heartbeat tick can still pick the post action without live
+    // X creds. Never real-posts; returns a fixed sentinel tweet id.
+    reg.register({
+      name: 'post_to_x',
+      description:
+        'Dry-run post_to_x stub — X API credentials are not configured, so the tweet is not actually posted.',
+      inputSchema: xPostInputSchema,
+      outputSchema: xPostOutputSchema,
+      async execute(input: { text: string }) {
+        return {
+          tweetId: 'dry-run',
+          text: input.text,
+          postedAt: new Date().toISOString(),
+          url: 'about:blank',
+        };
+      },
+    } as unknown as AgentTool<unknown, unknown>);
+  }
+
+  if (config.pinata.jwt !== undefined) {
+    reg.register(createLoreExtendTool({ anthropic, pinataJwt: config.pinata.jwt, model: MODEL }));
+  }
+  return reg;
+}
+
 export interface RunBrainChatDeps {
   config: AppConfig;
   anthropic: Anthropic;
@@ -156,6 +301,15 @@ export interface RunBrainChatDeps {
    * event callbacks so AC-BRAIN-2 bubbling is verifiable without Anthropic.
    */
   runBrainAgentImpl?: (params: RunBrainAgentParams) => Promise<AgentLoopResult>;
+  /**
+   * Test seam — override sub-registry construction so unit tests can avoid
+   * the GOOGLE_API_KEY / BSC_DEPLOYER_PRIVATE_KEY / PINATA_JWT preconditions
+   * the real builders enforce. Production callers leave these undefined and
+   * the orchestrator falls back to the real `buildXxxSubRegistry` helpers.
+   */
+  buildCreatorSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
+  buildNarratorSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
+  buildHeartbeatSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
 }
 
 /**
@@ -176,6 +330,9 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   const validated = brainChatMessagesSchema.parse(messages);
 
   const runBrainAgentFn = deps.runBrainAgentImpl ?? runBrainAgent;
+  const buildCreatorReg = deps.buildCreatorSubRegistryImpl ?? buildCreatorSubRegistry;
+  const buildNarratorReg = deps.buildNarratorSubRegistryImpl ?? buildNarratorSubRegistry;
+  const buildHeartbeatReg = deps.buildHeartbeatSubRegistryImpl ?? buildHeartbeatSubRegistry;
 
   store.setStatus(runId, 'running');
 
@@ -194,10 +351,32 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   //     `/order` call can pick up the pending queue entry.
   const tokenMetaByAddr = new Map<string, NarratorTokenMeta>();
 
-  // Build the four persona-invoke tools with their run-level dependencies.
-  // Registry is fresh per run so concurrent Brain runs don't clobber tool
-  // registration state.
-  const registry = new ToolRegistry();
+  // ─── Registry isolation ──────────────────────────────────────────────────
+  //
+  // One registry per scope:
+  //   - `brainRegistry` — the Brain meta-agent's registry. Only the four
+  //     `invoke_*` tools end up here (brain.ts#runBrainAgent registers them).
+  //     The Brain LLM loop runs against this registry.
+  //   - `creatorSubRegistry` / `narratorSubRegistry` / `heartbeatSubRegistry`
+  //     — each persona's internal tools. Passed to the matching
+  //     `createInvoke*Tool({ registry })` so the persona's nested
+  //     `runAgentLoop` (via `ctx.registry`) only sees its own sub-tools.
+  //   - `shillerSubRegistry` — a fresh empty registry. The shiller persona's
+  //     `run(...)` ignores `ctx.registry` (see market-maker.ts), but the
+  //     factory still requires a registry reference to thread onto the ctx.
+  //     An empty one avoids accidentally sharing state with any other scope.
+  //
+  // Historical bug: this orchestrator used to build a single registry and
+  // feed it to BOTH `runBrainAgent` AND each `createInvoke*Tool`. After
+  // `runBrainAgent` registered the four invoke_* tools, every persona's
+  // `ctx.registry` contained them — so `creatorPersona.run(...)` would enter
+  // `runAgentLoop` with `invoke_creator` in its toolset and immediately call
+  // it on itself, causing infinite recursion that bricked `/launch`.
+  const brainRegistry = new ToolRegistry();
+  const creatorSubRegistry = buildCreatorReg(config, anthropic);
+  const narratorSubRegistry = buildNarratorReg(config, anthropic);
+  const heartbeatSubRegistry = buildHeartbeatReg(config, anthropic);
+  const shillerSubRegistry = new ToolRegistry();
 
   // Shared event-forwarders — each tool factory takes this bundle so every
   // nested persona-side log / artifact / tool_use / assistant:delta event
@@ -220,7 +399,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   const invokeCreatorTool = createInvokeCreatorTool({
     persona: creatorPersona,
     client: anthropic,
-    registry,
+    registry: creatorSubRegistry,
     ...eventForwarders,
   });
 
@@ -247,7 +426,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   const invokeNarratorTool = createInvokeNarratorTool({
     persona: narratorPersona,
     client: anthropic,
-    registry,
+    registry: narratorSubRegistry,
     store: loreStore,
     resolveTokenMeta,
     ...eventForwarders,
@@ -287,6 +466,17 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     };
   };
 
+  // NB: the shiller persona's `run(...)` does not use `ctx.registry`. We
+  // still create and thread a fresh empty registry (via the
+  // createInvokeShillerTool factory's internal ctx construction) to keep
+  // the surface uniform; the factory itself currently does not accept a
+  // `registry` param, so we rely on its in-tool empty-stub (see
+  // invoke-persona.ts#createInvokeShillerTool where `ctx.registry` is set
+  // to `{}` before persona.run). The `shillerSubRegistry` variable below
+  // exists only to make the isolation rule grep-able and is deliberately
+  // unused by the factory today.
+  void shillerSubRegistry;
+
   const invokeShillerTool = createInvokeShillerTool({
     persona: shillerPersona,
     postShillForTool,
@@ -298,7 +488,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   const invokeHeartbeatTickTool = createInvokeHeartbeatTickTool({
     persona: heartbeatPersona,
     client: anthropic,
-    registry,
+    registry: heartbeatSubRegistry,
     model: MODEL,
     systemPrompt: HEARTBEAT_SYSTEM_PROMPT,
     buildUserInput: ({ tickId, tickAt }) =>
@@ -317,7 +507,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // RunStore callbacks so the SSE consumer (routes.ts) sees them end-to-end.
   await runBrainAgentFn({
     client: anthropic,
-    registry,
+    registry: brainRegistry,
     messages: validated,
     tools,
     model: MODEL,
