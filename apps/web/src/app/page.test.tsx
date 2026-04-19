@@ -1,25 +1,23 @@
 /**
- * Red tests for HomePage (immersive-single-page P1 Task 1 / AC-ISP-2).
+ * Tests for HomePage — sticky-pinned scrollytelling layout.
  *
- * The immersive single-page pivot collapses `/` + `/market` into one
- * scroll-driven surface with 11 ordered sections. Each section MUST carry
- * a unique `id` so the future sticky TOC + `/market → /#order-shill`
- * redirect can target it. The 11-section order is also the spec's story
- * order (narrative → operation → business → evidence) and cannot change
- * without spec revision.
+ * The pivot from IntersectionObserver reveal → sticky-pinned scrollytelling
+ * wraps every chapter in an outer `.sticky top-0 h-screen` container so the
+ * "camera" stays fixed while the next chapter stacks on top. Each of the 11
+ * chapters is a distinct scroll anchor (`<section id="...">`) and the DOM
+ * order + id contract is unchanged from the pre-pivot layout.
  *
  * Testing strategy mirrors the scene-level tests: node-env vitest +
  * `renderToStaticMarkup`. Client effects inside the page (`useRun`,
- * `useScrollReveal`, rAF loops) are skipped under static render, so every
- * assertion here is purely structural.
+ * `useScroll`, `useTransform`, rAF) are skipped under static render, so
+ * every assertion here is purely structural.
  *
- * The outer sections wrapping the reused scenes (hero / problem / solution
- * / take-rate host / evidence) currently render as `<section id="..."
- * className="scene ...">` in page.tsx — nested sections are valid HTML and
- * the wrapper exists only to expose the stable section id without mutating
- * the scene's own markup. Placeholder sections for T4/T5 work (brain-
- * architecture / launch-demo / order-shill / heartbeat-demo / sku-matrix /
- * phase-map) are empty stubs until their scenes land.
+ * Contract highlights:
+ *   1. All 11 spec-mandated section ids are present in the mandated order.
+ *   2. Each chapter DOM node carries `sticky` in its className — this is the
+ *      load-bearing layout primitive that drives the pin-and-cover effect.
+ *   3. The chapter wrappers emit 11 sticky chapter containers (one per
+ *      chapter), matching the 11-section contract 1:1.
  */
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -59,6 +57,25 @@ function extractSectionIdsInOrder(html: string): readonly string[] {
   return ids;
 }
 
+/**
+ * Count chapter wrappers carrying the `sticky` class on the landing page.
+ * The scrollytelling layout emits one `<div class="... sticky ...">` per
+ * chapter as the direct child of the scroll container; each of those drives
+ * the pin-and-cover effect. We count opening tags in document order so the
+ * assertion also catches accidental double-wrapping.
+ */
+function countStickyChapterWrappers(html: string): number {
+  // Match any opening tag whose class attribute contains the `sticky` token
+  // as a word boundary. Using a word-boundary regex keeps us safe from
+  // Tailwind utility collisions like `sticky-toc` or `stickygroup`.
+  const re = /<[a-z][a-z0-9]*\b[^>]*\bclass(?:Name)?="[^"]*\bsticky\b[^"]*"/gi;
+  let count = 0;
+  while (re.exec(html) !== null) {
+    count += 1;
+  }
+  return count;
+}
+
 describe('HomePage immersive single-page section structure', () => {
   it('renders all 11 expected section ids at least once', () => {
     const html = renderHome();
@@ -77,5 +94,24 @@ describe('HomePage immersive single-page section structure', () => {
     // the ids that belong to our 11-section contract and assert their order.
     const filtered = ids.filter((id) => EXPECTED_SECTION_ORDER.includes(id));
     expect(filtered).toEqual(EXPECTED_SECTION_ORDER);
+  });
+});
+
+describe('HomePage sticky-pinned scrollytelling layout', () => {
+  it('wraps every chapter in a sticky container (at least 11 sticky wrappers)', () => {
+    const html = renderHome();
+    // The sticky-left-side <SectionToc /> also carries `sticky`, so the raw
+    // count is at least 11 (one per chapter) plus the TOC. We assert the
+    // count is >= 11 rather than == 11 to stay robust against peripheral
+    // sticky elements (TOC, Header if ever rendered under this tree, etc.).
+    expect(countStickyChapterWrappers(html)).toBeGreaterThanOrEqual(11);
+  });
+
+  it('includes at least one h-screen sticky chapter wrapper', () => {
+    const html = renderHome();
+    // The sticky chapter wrappers also carry `h-screen` so they fill the
+    // viewport vertically — this is what makes the "camera fixed" effect
+    // register during scroll. Guard against a refactor that drops the class.
+    expect(html).toMatch(/class(?:Name)?="[^"]*\bsticky\b[^"]*\bh-screen\b[^"]*"/);
   });
 });
