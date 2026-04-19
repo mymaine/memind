@@ -2,14 +2,12 @@
  * Tests for <Ch4Brain /> — fourth chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch4).
  *
- * Ports the interior-progress contract from the design handoff, with two
- * FACT CORRECTIONS:
- *   - brain-core-sub reads `claude-sonnet-4.5 · 5s tick` (matches what
- *     `apps/server` actually calls via OpenRouter), NOT the design-stub
- *     `gpt-4o · 5s tick`.
- *   - UAT issue #7: X ships as a live channel from Phase 3 onward, so the
- *     port ring now shows 4 channels total (X live + 3 soon). A legend
- *     above the stage spells out persona-vs-channel semantics.
+ * Two FACT CORRECTIONS vs. the original draft:
+ *   - brain-core-sub reads `autonomous tick · 60s` — no model name, no
+ *     provider. The cadence matches the Heartbeat production default.
+ *   - X ships as a live channel from Phase 3 onward, so the port ring
+ *     shows 4 channels total (X live + 3 soon). A legend above the stage
+ *     spells out persona-vs-channel semantics.
  *
  * Interior progress `p ∈ [0, 1]` drives:
  *
@@ -97,14 +95,14 @@ describe('<Ch4Brain>', () => {
     expect(html).toMatch(/class="brain-core-label"[^>]*>TOKEN BRAIN</);
   });
 
-  it('brain-core-sub reads "claude-sonnet-4.5 · 5s tick" (fact correction)', () => {
-    // Regression guard — the design handoff still says "gpt-4o · 5s tick",
-    // but the backend uses anthropic/claude-sonnet-4-5 via OpenRouter. If
-    // someone re-ports verbatim from chapters.jsx this test will catch it.
+  it('brain-core-sub reads "autonomous tick · 60s" (no model / provider leak)', () => {
+    // Regression guard — the brain core sub-caption must not leak the
+    // underlying LLM model or provider name. Cadence is the Heartbeat
+    // production default (60s).
     const html = renderToStaticMarkup(<Ch4Brain p={0.5} />);
-    expect(html).toContain('claude-sonnet-4.5');
-    expect(html).toContain('5s tick');
-    expect(html).not.toContain('gpt-4o');
+    expect(html).toContain('autonomous tick');
+    expect(html).toContain('60s');
+    expect(html).not.toMatch(/claude|sonnet|opus|haiku|gpt|openrouter|anthropic/i);
   });
 
   it('at p=0 channel ports render with opacity 0 (pulse below threshold)', () => {

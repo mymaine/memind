@@ -75,7 +75,7 @@ export function Ch6Shill({ p }: Ch6ShillProps): ReactElement {
             </div>
             <div className="demo-line demo-line-brain" style={{ opacity: clamp((p - 0.08) * 10) }}>
               <span className="demo-who">BRAIN</span>
-              <span className="demo-text">{'scheduling 3 drops \u2014 cost 0.24 USDC.'}</span>
+              <span className="demo-text">{'scheduling 3 drops \u2014 cost 0.03 USDC.'}</span>
             </div>
             {TWEETS.map((tw, i) => {
               const visible = p > tw.t;

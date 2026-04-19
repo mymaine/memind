@@ -19,7 +19,7 @@ const FIXTURE_LOGS: LogEvent[] = [
     agent: 'brain',
     tool: 'tick',
     level: 'info',
-    message: 'heartbeat t+5s',
+    message: 'heartbeat t+60s',
   },
   {
     ts: '2026-04-20T14:52:10.121Z',
@@ -60,7 +60,7 @@ describe('<LogsTab />', () => {
     expect(out).toContain('WARN');
     expect(out).toContain('ERROR');
     // Message verbatim.
-    expect(out).toContain('heartbeat t+5s');
+    expect(out).toContain('heartbeat t+60s');
     expect(out).toContain('lore schema mismatch');
   });
 

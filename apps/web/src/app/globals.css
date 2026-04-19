@@ -1188,6 +1188,25 @@ body:has(.logs-drawer.open) .toc {
   color: var(--chain-bnb);
   border-color: var(--chain-bnb);
 }
+/* sku-status chip: honest `live` vs `planned` badge next to the tier chip */
+.sku-status {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-default);
+  text-transform: uppercase;
+  margin-left: 6px;
+}
+.sku-status-live {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.sku-status-planned {
+  color: var(--fg-tertiary);
+  border-color: var(--border-default);
+  border-style: dashed;
+}
 .sku-name {
   font-family: var(--font-mono);
   font-size: 18px;

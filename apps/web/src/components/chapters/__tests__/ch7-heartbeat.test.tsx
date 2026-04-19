@@ -26,7 +26,7 @@ describe('<Ch7Heartbeat>', () => {
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(0);
     // Headline + operator.log header still render.
-    expect(html).toContain('every 5 seconds');
+    expect(html).toContain('every 60 seconds');
     expect(html).toContain('operator.log');
   });
 
@@ -34,17 +34,17 @@ describe('<Ch7Heartbeat>', () => {
     const html = renderToStaticMarkup(<Ch7Heartbeat p={0.5} />);
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(7);
-    // First 7 decisions present; eighth ("sleep 5s") not yet.
+    // First 7 decisions present; eighth ("sleep 60s") not yet.
     expect(html).toContain('read mentions');
     expect(html).toContain('mint reply');
-    expect(html).not.toContain('sleep 5s');
+    expect(html).not.toContain('sleep 60s');
   });
 
   it('at p=1 all eight decision rows are rendered (ticks capped by array length)', () => {
     const html = renderToStaticMarkup(<Ch7Heartbeat p={1} />);
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(8);
-    expect(html).toContain('sleep 5s');
+    expect(html).toContain('sleep 60s');
   });
 
   it('at p=0.5 the EKG polyline stroke-dashoffset resolves to 500 (1000 - p*1000)', () => {
@@ -55,9 +55,9 @@ describe('<Ch7Heartbeat>', () => {
     expect(html).toMatch(/stroke-dasharray="1000"/);
   });
 
-  it('renders the headline copy "every 5 seconds, the brain wakes up and decides"', () => {
+  it('renders the headline copy "every 60 seconds, the brain wakes up and decides"', () => {
     const html = renderToStaticMarkup(<Ch7Heartbeat p={0.4} />);
-    expect(html).toContain('every 5 seconds');
+    expect(html).toContain('every 60 seconds');
     expect(html).toContain('wakes up and');
     expect(html).toContain('decides');
     // Mascot glyph mounts with walk-right mood.

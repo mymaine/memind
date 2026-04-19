@@ -11,11 +11,11 @@
  *   - A phase node is "active" (border+dot highlighted) when
  *     `|cursor - i| < 0.6`.
  *
- * Fact correction (spec §Ch10 事實修正): the design handoff's Phase 2
- * description includes "Base L2 expansion". We only use Base Sepolia for
- * x402 settlement; the main token deploy stays on BSC mainnet, so the
- * copy is rewritten to reference the 2026-04-20 heartbeat ship instead.
- * Phase 1 and Phase 3 copy stays verbatim.
+ * Fact correction: the original draft's Phase 2 copy referenced "Base L2
+ * expansion", which is misleading — we only use Base Sepolia for x402
+ * settlement; the main token deploy stays on BSC mainnet. Phase 2 is now
+ * stated as the heartbeat milestone (shipped 2026-04-20), with the status
+ * chip + cadence aligned so the chapter no longer self-contradicts.
  *
  * Outer shell + CSS classes (`.ch-biz`, `.phase-track`, `.phase-line`,
  * `.phase-line-fill`, `.phase-node`, `.phase-dot`, `.phase-when`,
@@ -40,8 +40,9 @@ type Phase = {
   readonly status: PhaseStatus;
 };
 
-// Phase 2 copy rewritten per spec §Ch10 事實修正. Phase 1 + Phase 3 are
-// verbatim from chapters.jsx lines 490-493.
+// Phase 2 status now matches reality: the heartbeat agent has shipped,
+// so the chip reads `shipped` and the timestamp is an actual date. Phase
+// 3 remains a roadmap signal — no deploy date promised.
 const PHASES: readonly Phase[] = [
   {
     name: 'PHASE 1 \u00b7 LAUNCH',
@@ -51,13 +52,13 @@ const PHASES: readonly Phase[] = [
   },
   {
     name: 'PHASE 2 \u00b7 HEARTBEAT',
-    when: 'Q3 26',
-    desc: 'autonomous tick. onchain-aware decisions. heartbeat agent shipped 2026-04-20.',
-    status: 'building',
+    when: '2026-04',
+    desc: 'autonomous 60s tick. onchain-aware decisions. shipped 2026-04-20.',
+    status: 'shipped',
   },
   {
     name: 'PHASE 3 \u00b7 SWARM',
-    when: '27',
+    when: 'next',
     desc: 'brain-to-brain messaging. meme-coin marketplaces. IPFS memory.',
     status: 'future',
   },

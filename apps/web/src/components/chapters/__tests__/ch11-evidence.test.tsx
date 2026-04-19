@@ -9,11 +9,10 @@
  *      run has shipped >= 5 artifacts, the first 5 are rendered through
  *      `mapArtifactToEvidenceRow`. Otherwise we fall back to a 5-row
  *      FALLBACK table anchored on actual 2026-04-18 launch hashes.
- *   2. Engineering rows: the handoff's `gpt-4o` reference is replaced
- *      with `claude-sonnet-4.5 · 5s / autonomous` (we ship Claude via
- *      OpenRouter, not OpenAI). The `194 kB` bundle number is replaced
- *      with the static `≤ 230 kB budget` string (avoids drifting with
- *      every build).
+ *   2. Engineering rows: brain.tick row reads `60s · autonomous` — no
+ *      model or provider name leaked. The `194 kB` bundle number is
+ *      replaced with the static `≤ 230 kB budget` string (avoids drifting
+ *      with every build).
  *
  * Ch11 is the only chapter that reads context, so tests that touch the
  * hook wrap the component in <RunStateProvider> + a publish helper.
@@ -190,11 +189,11 @@ describe('<Ch11Evidence> real-data binding', () => {
 });
 
 describe('<Ch11Evidence> engineering row fact corrections', () => {
-  it('brain.tick row reads "claude-sonnet-4.5 · 5s / autonomous" (not gpt-4o)', () => {
+  it('brain.tick row reads "60s · autonomous" with no model or provider leak', () => {
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    expect(html).toContain('claude-sonnet-4.5 \u00b7 5s / autonomous');
-    // Regression guard: the handoff's gpt-4o wording MUST be gone.
-    expect(html).not.toMatch(/gpt-4o/i);
+    expect(html).toContain('60s \u00b7 autonomous');
+    // Regression guard: no LLM model or provider identifier may appear.
+    expect(html).not.toMatch(/claude|sonnet|opus|haiku|gpt|openrouter|anthropic/i);
   });
 
   it('bundle row states the budget, not the "194 kB" live number', () => {

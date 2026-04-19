@@ -14,12 +14,10 @@
  *      pad remaining slots from the hardcoded FALLBACK so the grid is
  *      always 5 pills (UAT 2026-04-20). A 0-artifact run still shows the
  *      full fallback grid anchored on 2026-04-18 BSC launch data.
- *   2. Engineering rows (spec §Ch11 Engineering rows). The handoff's
- *      `gpt-4o · 5s / 890ms avg` is replaced with
- *      `claude-sonnet-4.5 · 5s / autonomous` (we ship Claude via
- *      OpenRouter). The `194 kB` number is replaced with the static
- *      `≤ 230 kB budget` budget statement so the chapter doesn't need
- *      re-cutting on every bundle change.
+ *   2. Engineering rows. The brain.tick row states cadence only —
+ *      `60s · autonomous` — with no model or provider name. The bundle
+ *      row states a static `≤ 230 kB budget` statement so the chapter
+ *      doesn't need re-cutting on every bundle change.
  *
  * Outer shell + CSS classes (`.ch-evidence`, `.ev-grid`, `.ev-col`,
  * `.ev-col-head`, `.ev-pill`, `.ev-pill-eng`, `.ev-dot`, `.ev-kind`,
@@ -197,14 +195,14 @@ const FALLBACK_ONCHAIN: readonly EvidenceRow[] = [
   },
 ];
 
-// Engineering rows with spec-mandated corrections (spec §Ch11 Engineering
-// rows). brain.tick says `claude-sonnet-4.5 · 5s / autonomous` because we
-// ship Claude via OpenRouter, not gpt-4o. bundle states the static 230 kB
-// budget so the chapter doesn't drift with each build.
+// Engineering rows. Deliberately no model or provider name — the brain.tick
+// row states cadence only (60s, matches the Heartbeat production default).
+// bundle states the static 230 kB budget so the chapter doesn't drift with
+// each build.
 const ENG_ROWS: ReadonlyArray<{ label: string; val: string }> = [
   { label: 'PixelHumanGlyph \u00b7 14 moods', val: 'pure CSS, 0 frame-JS' },
   { label: 'bundle \u00b7 first load', val: '\u2264 230 kB budget' },
-  { label: 'brain.tick', val: 'claude-sonnet-4.5 \u00b7 5s / autonomous' },
+  { label: 'brain.tick', val: '60s \u00b7 autonomous' },
 ];
 
 export function Ch11Evidence({ p }: Ch11EvidenceProps): ReactElement {

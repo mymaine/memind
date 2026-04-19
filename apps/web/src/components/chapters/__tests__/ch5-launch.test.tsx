@@ -59,7 +59,7 @@ describe('<Ch5Launch>', () => {
     expect(html).toContain('1,000,000,000');
     expect(html).toContain('glitchy');
     expect(html).toContain('BNB');
-    expect(html).toContain('0.87 USDC');
+    expect(html).toContain('~0.05 BNB gas');
     expect(html).toMatch(/class="spec-row"/);
   });
 

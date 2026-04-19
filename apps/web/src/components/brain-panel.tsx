@@ -177,7 +177,7 @@ export function BrainPanel({
       <section className="brain-panel-meta" aria-label="Brain meta">
         <MetaRow label="status" value={status} />
         <MetaRow label="persona" value={persona ?? '—'} />
-        <MetaRow label="tick" value="5s · autonomous" />
+        <MetaRow label="tick" value="60s · autonomous" />
         <MetaRow
           label="memory"
           value={`${logsCount.toString()} logs · ${artifactsCount.toString()} artifacts`}

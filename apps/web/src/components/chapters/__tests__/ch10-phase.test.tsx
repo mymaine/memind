@@ -2,9 +2,9 @@
  * Tests for <Ch10Phase /> — phase map chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch10).
  *
- * Ports the interior-progress contract from the design handoff:
+ * Interior-progress contract:
  *
- *   - Three phase nodes: LAUNCH (shipped) / HEARTBEAT (building) /
+ *   - Three phase nodes: LAUNCH (shipped) / HEARTBEAT (shipped) /
  *     SWARM (future). Each node carries a status chip wired to the
  *     `phase-status-shipped|building|future` classes.
  *   - Progress cursor line: `cursor = lerp(0, 2, clamp(p * 1.2))` drives
@@ -12,10 +12,12 @@
  *     one closest to the cursor within 0.6 units.
  *   - Two bottom glyphs: walk-left (tertiary) + walk-right (accent).
  *
- * Fact correction (spec §Ch10 事實修正): Phase 2 desc MUST NOT mention
- * "Base L2 expansion". We ship Base Sepolia only for x402; main token
- * deploy stays on BSC mainnet. Rewritten to mention the heartbeat ship
- * date instead. This is a regression guard.
+ * Fact corrections (regression guards):
+ *   - Phase 2 desc MUST NOT mention "Base L2 expansion". We ship Base
+ *     Sepolia only for x402; main token deploy stays on BSC mainnet.
+ *   - Phase 2 status chip is `shipped` (not `building`) now that the
+ *     heartbeat agent has actually landed. The `when` column reads
+ *     `2026-04` and the desc notes the exact ship date.
  *
  * vitest runs without jsdom; render via `renderToStaticMarkup` + regex.
  */
@@ -33,11 +35,15 @@ describe('<Ch10Phase>', () => {
     expect(html).toContain('PHASE 3 \u00b7 SWARM');
   });
 
-  it('applies the correct status class to each phase (shipped / building / future)', () => {
+  it('applies the correct status class to each phase (2x shipped + 1x future)', () => {
     const html = renderToStaticMarkup(<Ch10Phase p={1} />);
-    expect(html).toContain('phase-status phase-status-shipped');
-    expect(html).toContain('phase-status phase-status-building');
-    expect(html).toContain('phase-status phase-status-future');
+    const shipped = (html.match(/phase-status phase-status-shipped/g) ?? []).length;
+    const future = (html.match(/phase-status phase-status-future/g) ?? []).length;
+    expect(shipped).toBe(2);
+    expect(future).toBe(1);
+    // Regression guard: Phase 2 used to read `building` while the desc
+    // claimed the heartbeat was already shipped. The chip is now correct.
+    expect(html).not.toContain('phase-status phase-status-building');
   });
 
   it('progress cursor line width scales with p (0 at p=0, 100% at p >= 1/1.2)', () => {
@@ -49,13 +55,13 @@ describe('<Ch10Phase>', () => {
     expect(full).toMatch(/class="phase-line-fill"[^>]*style="width:100%/);
   });
 
-  it('Phase 2 description does NOT mention "Base L2 expansion" (fact correction)', () => {
+  it('Phase 2 description is honest: no "Base L2 expansion", states the ship date', () => {
     const html = renderToStaticMarkup(<Ch10Phase p={1} />);
-    // Regression guard: spec §Ch10 事實修正 replaces the original
-    // "Base L2 expansion" copy with the heartbeat-shipped phrasing.
+    // Regression guard: the original draft claimed a Base L2 expansion we
+    // never built; the fix references the actual heartbeat ship instead.
     expect(html).not.toMatch(/Base L2 expansion/i);
     // The corrected copy references the 2026-04-20 heartbeat ship.
-    expect(html).toMatch(/heartbeat agent shipped 2026-04-20/);
+    expect(html).toMatch(/shipped 2026-04-20/);
   });
 
   it('renders the two bottom glyphs (walk-left tertiary + walk-right accent)', () => {

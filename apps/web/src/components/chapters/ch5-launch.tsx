@@ -128,7 +128,7 @@ export function Ch5Launch({ p }: Ch5LaunchProps): ReactElement {
             </div>
             <div className="spec-row">
               <Mono dim>cost</Mono>
-              <Mono>0.87 USDC</Mono>
+              <Mono>~0.05 BNB gas</Mono>
             </div>
           </div>
         </div>

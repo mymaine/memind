@@ -1,5 +1,5 @@
 ---
-summary: '1 Memind per memecoin (each Memind is internally a Brain runtime hosting pluggable personas). Product surface is an 11-chapter sticky-stage scrollytelling with a slide-in Brain conversational panel; the runtime substrate is the agent loop + x402 + shared memory. Code directory still calls them agents for historical continuity.'
+summary: '1 Memind per memecoin. Each Memind is internally a Brain runtime hosting pluggable personas. Product surface is an 11-chapter sticky-stage scrollytelling with a slide-in Brain conversational panel; the runtime substrate is the agent loop + x402 + shared memory. Code directory still calls them agents for historical continuity.'
 read_when:
   - Before making cross-persona changes
   - Before adjusting x402 endpoints or the payment flow
@@ -17,16 +17,16 @@ The product is framed as **one Memind per memecoin**. Each Memind is internally 
 
 | Memind claim                  | Implementation fact                                                                                                                                | File                                                                           |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| One Memind per Node process   | Single `Anthropic` client, single `ToolRegistry`, single event-emitter fan-out                                                                     | `apps/server/src/index.ts`, `apps/server/src/agents/runtime.ts`                |
+| One Memind per Node process   | Single LLM client, single `ToolRegistry`, single event-emitter fan-out                                                                             | `apps/server/src/index.ts`, `apps/server/src/agents/runtime.ts`                |
 | Shared memory across personas | `LoreStore` + `AnchorLedger` + `ShillOrderStore` all live in one `apps/server/src/state/` namespace, read/written by every persona                 | `apps/server/src/state/*.ts`                                                   |
 | Each persona is pluggable     | Every persona is a thin `runAgentLoop` wrapper (`systemPrompt` + selected tool subset) — no persona-specific runtime                               | `apps/server/src/agents/{creator,narrator,market-maker,heartbeat,brain}.ts`    |
 | Explicit pluggable contract   | `Persona<TInput, TOutput>` interface in shared package + `persona-adapters.ts` wrappers (creator / narrator / shiller / heartbeat)                 | `packages/shared/src/persona.ts`, `apps/server/src/agents/persona-adapters.ts` |
 | Autonomous tick               | Heartbeat persona drives a `setInterval` loop that picks the next action (post / extend_lore / idle) every tick                                    | `apps/server/src/agents/heartbeat.ts`                                          |
 | Meta-agent orchestration      | **Brain** persona wraps four `invoke_*` tool factories (creator / narrator / shiller / heartbeat_tick); routes slash-driven chat turns to personas | `apps/server/src/agents/brain.ts`, `apps/server/src/tools/invoke-persona.ts`   |
 
-**Why the code directory still says `agents/`**: renaming buys zero runtime behaviour and churns imports across 40+ files mid-hackathon. Pitch surface (README / narrative copy / chapter components / BrainIndicator / slash commands) uses Memind / persona vocabulary; code keeps `agent` for continuity. The `Persona` interface explicitly documents the mapping. The architectural primitive **Brain** is preserved as the runtime concept inside each Memind — i.e. _Memind = product brand; Brain = runtime substrate; persona = pluggable SKU_.
+**Why the code directory still says `agents/`**: renaming buys zero runtime behaviour and churns imports across 40+ files. Pitch surface (narrative copy / chapter components / BrainIndicator / slash commands) uses Memind / persona vocabulary; code keeps `agent` for continuity. The `Persona` interface documents the mapping. The architectural primitive **Brain** is preserved as the runtime concept inside each Memind — i.e. _Memind = product brand; Brain = runtime substrate; persona = pluggable SKU_.
 
-**Adding a new SKU = adding a new persona to the Memind**: Memind Launch / Memind Pitch (shipped as "Shiller") / Memind Ops / Memind Alpha each ship as ~50 lines — a new `systemPrompt`, a subset of existing tools (with at most one new `AgentTool`), and an adapter in `persona-adapters.ts` that satisfies `Persona<TInput, TOutput>`. The Brain meta-agent can invoke any new persona by adding one more `invoke_<persona>` tool factory to `tools/invoke-persona.ts`. No new x402 infrastructure, no new runtime, no new memory layer. The pluggability is the product.
+**Adding a new SKU = adding a new persona to the Memind**: each new SKU ships as ~50 lines — a new `systemPrompt`, a subset of existing tools (with at most one new `AgentTool`), and an adapter in `persona-adapters.ts` that satisfies `Persona<TInput, TOutput>`. The Brain meta-agent can invoke any new persona by adding one more `invoke_<persona>` tool factory to `tools/invoke-persona.ts`. No new x402 infrastructure, no new runtime, no new memory layer. The pluggability is the product.
 
 ## Top-Level Shape
 
@@ -54,7 +54,7 @@ hack-bnb-fourmeme-agent-creator/
 │   │       │   ├── sticky-stage.tsx  # Cross-fade engine (opacity/scale/blur)
 │   │       │   ├── logs-drawer.tsx   # Left-side dev-tools drawer, 3 tabs
 │   │       │   ├── footer-drawer-tabs/  # logs-tab / artifacts-tab / console-tab
-│   │       │   ├── pixel-human-glyph/   # 10-mood pixel-art avatar
+│   │       │   ├── pixel-human-glyph/   # 14-mood pixel-art avatar
 │   │       │   ├── scanlines-overlay.tsx + watermark.tsx + tweaks-panel.tsx
 │   │       ├── hooks/    # useRun / useRunStateContext / useBrainChat /
 │   │       │             # useActiveChapter / useScrollY / useReducedMotion /
@@ -75,7 +75,8 @@ hack-bnb-fourmeme-agent-creator/
 │           │                 # x-fetch-lore / invoke-persona (4 factories)
 │           ├── state/        # LoreStore + AnchorLedger + ShillOrderStore
 │           ├── chain/        # viem client, TokenManager2 partial ABI, anchor-tx
-│           ├── x402/         # paymentMiddleware + /lore/:addr + /shill/:tokenAddr
+│           ├── x402/         # paymentMiddleware + 4 paid routes (shipped
+│           │                 # handlers: /lore, /alpha, /metadata, /shill)
 │           ├── runs/         # store (RunStore) + a2a + brain-chat + creator-phase +
 │           │                 # heartbeat-runner + shill-market + routes
 │           ├── routes/       # health.ts (GET /health)
@@ -83,7 +84,6 @@ hack-bnb-fourmeme-agent-creator/
 ├── packages/
 │   └── shared/           # zod schemas + types + Persona interface
 │                         # (agentId / runKind / artifact union / SSE payloads)
-├── docs/
 └── scripts/              # hello-world probes and fallback test scripts
 ```
 
@@ -123,11 +123,11 @@ hack-bnb-fourmeme-agent-creator/
                  │      │       │        │        │         │       │
                  │ ┌────▼───────▼────────▼────────▼─────────▼─────┐ │
                  │ │ Tool Registry                                │ │
-                 │ │ - narrative_generator   (Anthropic)          │ │
-                 │ │ - meme_image_creator    (Gemini 2.5 Flash)   │ │
+                 │ │ - narrative_generator   (LLM)                │ │
+                 │ │ - meme_image_creator    (image model)        │ │
                  │ │ - onchain_deployer      (four-meme-ai CLI)   │ │
-                 │ │ - lore_writer           (Anthropic + Pinata) │ │
-                 │ │ - extend_lore           (Anthropic + Pinata) │ │
+                 │ │ - lore_writer           (LLM + Pinata)       │ │
+                 │ │ - extend_lore           (LLM + Pinata)       │ │
                  │ │ - check_token_status    (viem / BSC RPC)     │ │
                  │ │ - post_to_x             (OAuth 1.0a + fetch) │ │
                  │ │ - post_shill_for        (paid-shill tweet)   │ │
@@ -145,13 +145,13 @@ hack-bnb-fourmeme-agent-creator/
                  │ └────────────────┘   └─────────────────────────┘ │
                  │                                                  │
                  │ ┌──────────────────────────────────────────────┐ │
-                 │ │ x402 Server (express) — 2 paid endpoints     │ │
-                 │ │ GET  /lore/:addr       (0.01 USDC, store)    │ │
-                 │ │ POST /shill/:tokenAddr (0.01 USDC, creator-  │ │
-                 │ │   paid; enqueues ShillOrderStore)            │ │
-                 │ │   (/alpha /metadata remain spec designs, not │ │
-                 │ │    currently mounted — only the two above    │ │
-                 │ │    are shipped)                              │ │
+                 │ │ x402 Server (express) — 4 paid endpoints     │ │
+                 │ │ GET  /lore/:addr       ($0.01, store-backed) │ │
+                 │ │ GET  /alpha/:addr      ($0.01, mock payload) │ │
+                 │ │ GET  /metadata/:addr   ($0.005, mock)        │ │
+                 │ │ POST /shill/:tokenAddr ($0.01, creator-paid; │ │
+                 │ │   enqueues ShillOrderStore)                  │ │
+                 │ │ Prices + paths live in x402/config.ts        │ │
                  │ └──────────────────────────────────────────────┘ │
                  │ ┌──────────────────────────────────────────────┐ │
                  │ │ Runs API (/api/runs)                         │ │
@@ -176,35 +176,36 @@ hack-bnb-fourmeme-agent-creator/
 
 ## Main Data Flow
 
-### Flow 1 — Creator Agent autonomous token launch (AC1)
+### Flow 1 — Creator Agent autonomous token launch
 
 ```
 User input (one-line theme, typed into BrainPanel or Ch5 LaunchPanel)
-  → Creator.plan()                               [Anthropic LLM via OpenRouter]
-  → Creator.tool[narrative_generator]            [Anthropic]
-  → Creator.tool[meme_image_creator]             [Google Gemini 2.5 Flash Image]
+  → Creator.plan()                               [LLM]
+  → Creator.tool[narrative_generator]            [LLM]
+  → Creator.tool[meme_image_creator]             [image model]
   → Creator.tool[onchain_deployer]               [shell-exec four-meme-ai → BSC mainnet]
-  → Creator.tool[lore_writer]                    [Anthropic → Pinata]
+  → Creator.tool[lore_writer]                    [LLM → Pinata]
   → emit artifacts: bsc-token, token-deploy-tx, meme-image, lore-cid
   → return { tokenAddr, ipfsHash, loreUri }
 ```
 
-### Flow 2 — Narrator publishes → LoreStore → x402 /lore serves paid reads (AC2 half)
+### Flow 2 — Narrator publishes → LoreStore → x402 /lore serves paid reads
 
 ```
-Narrator Agent triggered by demo/heartbeat/a2a/brain-chat
+Narrator Agent triggered by demo / heartbeat / a2a / brain-chat
   → runAgentLoop + extend_lore tool
-  → Anthropic generates the next chapter (context-defensive cap: 5 chapters / 12k chars)
+  → LLM generates the next chapter (context-defensive cap: 5 chapters / 12k chars)
   → Pinata upload → ipfsHash
   → LoreStore.upsert({ tokenAddr, chapterNumber, chapterText, ipfsHash, … })
   → AnchorLedger.append({ tokenAddr, chapterNumber, loreCid,
                            contentHash = keccak256(`${addr}:${ch}:${cid}`) })
   → emit artifacts: lore-cid (author:'narrator'), lore-anchor (layer-1)
-  → /lore/:addr now serves the latest chapter from the store (falls back to mock
-    payload when the store is empty, preserving Phase 2 compatibility)
+  → /lore/:addr now serves the latest chapter from the store; when the store
+    is empty the handler returns a mock payload so the x402 contract stays
+    non-empty for the paid demo.
 ```
 
-### Flow 3 — Agent-to-agent x402 payment (AC2 other half)
+### Flow 3 — Agent-to-agent x402 payment
 
 ```
 Market-maker Agent (triggered by pnpm demo:a2a, Ch5→Ch6 run, or brain-chat /order)
@@ -219,7 +220,7 @@ Market-maker Agent (triggered by pnpm demo:a2a, Ch5→Ch6 run, or brain-chat /or
   → returns { body, settlementTxHash, baseSepoliaExplorerUrl }
 ```
 
-### Flow 4 — AC3 on-chain anchor (layer 1 always, layer 2 env-gated)
+### Flow 4 — On-chain lore anchor (layer 1 always, layer 2 env-gated)
 
 ```
 Narrator emits lore-cid
@@ -230,7 +231,7 @@ Narrator emits lore-cid
       markOnChain() + emit second lore-anchor artifact with BscScan url
 ```
 
-### Flow 5 — Dashboard-driven A2A / Shill-market run (AC4)
+### Flow 5 — Dashboard-driven A2A / Shill-market run
 
 ```
 Browser (Ch5 LaunchPanel or Ch6 OrderPanel or BrainPanel slash /order)
@@ -253,12 +254,13 @@ Server SSE handler
   → dashboard renders evidence pills (BSC token / deploy tx / lore CIDs / x402 tx / tweet url)
 ```
 
-### Flow 6 — Heartbeat autonomous tick (AC7)
+### Flow 6 — Heartbeat autonomous tick
 
 ```
 HeartbeatAgent (triggered by pnpm demo:heartbeat or
                 POST /api/runs {kind:'heartbeat', tokenAddress})
-  every HEARTBEAT_INTERVAL_MS milliseconds (demo accelerated to 15s / production 60s):
+  every HEARTBEAT_INTERVAL_MS milliseconds (production default 60s;
+  dashboard run default 10s):
   → isTickRunning lock (overlapping ticks are skipped, skippedCount++)
   → runAgentLoop (agentId='heartbeat', maxTurns=4)
      → check_token_status
@@ -300,11 +302,11 @@ Client
 | Module                | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                   | Out of scope                              |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | `apps/web`            | 11-chapter sticky-stage scrollytelling (`Ch1Hero` → `Ch11Evidence`) hosted by `<StickyStage>`; shared sticky `<Header>` with progress + BrainIndicator; `<SectionToc>` left nav; `<Watermark>` chapter stamp; `<LogsDrawer>` 3-tab dev drawer (logs / artifacts / console) bound to RunStateContext; `<BrainPanel>` right-side slide-in conversational surface; `/market` kept as 307 redirect to `#order-shill` | Agent logic, on-chain calls, server state |
-| `apps/server/agents/` | Creator / Narrator / Market-maker (dual persona: a2a lore buyer or Memind Pitch persona) / Heartbeat / **Brain (meta-agent)** plan/execute logic; shared `_json.ts` fence-tolerant JSON parser; `_stream-map.ts` Anthropic `messages.stream` → SSE event mapper; `persona-adapters.ts` `Persona<T,T>` wrappers                                                                                                   | HTTP routing, direct shell calls          |
-| `apps/server/tools/`  | Ten+ tools: narrative / image / deployer / lore / lore-extend / token-status / x-post / post*shill_for / x-fetch-lore + four `invoke*\*`persona tool factories (Brain meta-agent);`registry.ts` collects them                                                                                                                                                                                                    | Agent decision logic                      |
-| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key) + AnchorLedger (AC3 keccak256 commitment log, upsert by anchorId) + ShillOrderStore (Phase 4.6 Memind Pitch queue shared between `/shill/:tokenAddr` producer and Shiller persona consumer; class name unchanged)                                                                                                                       | Persistence, multi-instance sync          |
-| `apps/server/x402/`   | `paymentMiddleware` (Base Sepolia USDC) + two shipped paid-endpoint handlers — `GET /lore/:addr` (store-backed) and `POST /shill/:tokenAddr` (creator-paid Memind Pitch order, enqueues ShillOrderStore — endpoint path retained). `/alpha` / `/metadata` remain spec designs not currently mounted.                                                                                                             | Agent runtime, wallet signing             |
-| `apps/server/chain/`  | viem client and the TokenManager2 partial ABI (both proxy and implementation are unverified on-chain, so the subset is hand-authored); `anchor-tx.ts` builds the zero-value self-tx memo for AC3 layer 2                                                                                                                                                                                                         | Agent business logic                      |
+| `apps/server/agents/` | Creator / Narrator / Market-maker (dual persona: a2a lore buyer or Shiller persona) / Heartbeat / **Brain (meta-agent)** plan/execute logic; shared `_json.ts` fence-tolerant JSON parser; `_stream-map.ts` streaming-event mapper; `persona-adapters.ts` `Persona<T,T>` wrappers                                                                                                                                | HTTP routing, direct shell calls          |
+| `apps/server/tools/`  | Ten+ tools: narrative / image / deployer / lore / lore-extend / token-status / x-post / post-shill-for / x-fetch-lore + four `invoke_*` persona tool factories (Brain meta-agent); `registry.ts` collects them                                                                                                                                                                                                   | Agent decision logic                      |
+| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key) + AnchorLedger (keccak256 commitment log, upsert by anchorId) + ShillOrderStore (paid-shill queue shared between `/shill/:tokenAddr` producer and Shiller persona consumer)                                                                                                                                                             | Persistence, multi-instance sync          |
+| `apps/server/x402/`   | `paymentMiddleware` (Base Sepolia USDC) + four paid-endpoint handlers mounted at startup. `/lore/:addr` is store-backed (falls back to a mock payload when the store is empty). `/alpha/:addr` and `/metadata/:addr` return mock payloads today; paths + prices live in `x402/config.ts`. `/shill/:tokenAddr` is creator-paid and enqueues a ShillOrderStore entry for the Shiller persona to consume.           | Agent runtime, wallet signing             |
+| `apps/server/chain/`  | viem client and the TokenManager2 partial ABI (both proxy and implementation are unverified on-chain, so the subset is hand-authored); `anchor-tx.ts` builds the zero-value self-tx memo for the optional on-chain anchor layer                                                                                                                                                                                  | Agent business logic                      |
 | `apps/server/runs/`   | `RunStore` (Map + per-run EventEmitter + replay); `runA2ADemo` / `runBrainChat` / `runHeartbeatDemo` / `runShillMarketDemo` / `runCreatorPhase` pure orchestrators; POST/GET/SSE route handlers; CLI and HTTP share the same orchestration code path                                                                                                                                                             | Agent business logic, persistence         |
 | `apps/server/routes/` | Tiny health route (`GET /health` → `{ status:'ok', ts }`)                                                                                                                                                                                                                                                                                                                                                        | Run orchestration, x402 handlers          |
 | `apps/server/demos/`  | Runnable end-to-end CLI scripts: demo-creator-run / demo-a2a-run / demo-heartbeat-run / demo-shill-run                                                                                                                                                                                                                                                                                                           | Unit tests, framework dependencies        |
@@ -319,7 +321,7 @@ Canonical contract — both client and server import from `@hack-fourmeme/shared
 | `agentIdSchema`           | `creator` \| `narrator` \| `market-maker` \| `heartbeat` \| `brain` \| `shiller`                                                                                                          |
 | `runKindSchema`           | `creator` \| `a2a` \| `heartbeat` \| `shill-market` \| `brain-chat`                                                                                                                       |
 | `runStatusSchema`         | `pending` \| `running` \| `done` \| `error`                                                                                                                                               |
-| `chainSchema`             | `bsc-mainnet` \| `base-sepolia` \| `ipfs` (BSC testnet deliberately absent — four.meme only exists on BSC mainnet)                                                                        |
+| `chainSchema`             | `bsc-mainnet` \| `base-sepolia` \| `ipfs` (BSC testnet deliberately absent — four.meme's TokenManager2 is only deployed on BSC mainnet)                                                   |
 | `artifactSchema` (`kind`) | `bsc-token` \| `token-deploy-tx` \| `lore-cid` \| `x402-tx` \| `tweet-url` \| `heartbeat-tick` \| `heartbeat-decision` \| `meme-image` \| `lore-anchor` \| `shill-order` \| `shill-tweet` |
 | SSE payloads              | `LogEventPayload`, `ArtifactEventPayload`, `StatusEventPayload`, `ToolUseStartEventPayload`, `ToolUseEndEventPayload`, `AssistantDeltaEventPayload`                                       |
 | `chatMessageSchema`       | `{ role: 'user' \| 'assistant', content: string }` (used in BrainChat `messages[]`)                                                                                                       |
@@ -332,15 +334,15 @@ Canonical contract — both client and server import from `@hack-fourmeme/shared
 | #   | Chapter id           | Role                                                                           | Runtime coupling              |
 | --- | -------------------- | ------------------------------------------------------------------------------ | ----------------------------- |
 | 1   | `hero`               | Title card, `PAY USDC. GET TWEETS.` hook, CTA can pre-fill BrainPanel composer | None                          |
-| 2   | `problem`            | 32k-ticker row with IntersectionObserver play/pause + reduced-motion slice     | None                          |
+| 2   | `problem`            | Graveyard ticker + grid + IntersectionObserver play/pause                      | None                          |
 | 3   | `solution`           | Three-card fix with x402 micro-animation pill                                  | None                          |
 | 4   | `brain-architecture` | Brain-runtime / persona pluggability diagram                                   | None                          |
 | 5   | `launch-demo`        | Inline Creator demo — LaunchPanel typing + run trigger                         | `useRun` + `useBrainChat`     |
 | 6   | `order-shill`        | Inline Shiller demo — OrderPanel + shill tweet feed                            | `useRun` + `useBrainChat`     |
 | 7   | `heartbeat-demo`     | Heartbeat pulse animation + tick feed                                          | Reads shared RunState context |
-| 8   | `take-rate`          | SKU take-rate bar chart                                                        | None                          |
-| 9   | `sku-matrix`         | SKU grid (Memind Launch / Pitch / Ops / Alpha — shipped vs planned)            | None                          |
-| 10  | `phase-map`          | Phase 1→Phase 3 Agentic Mode roadmap + current location                        | None                          |
+| 8   | `take-rate`          | Revenue-mix bar chart: 1 live SKU (shill at $0.01) + 3 planned                 | None                          |
+| 9   | `sku-matrix`         | SKU grid: SHILL.ORDER (live) vs three planned SKUs                             | None                          |
+| 10  | `phase-map`          | Phase 1 / Phase 2 / Phase 3 roadmap with shipped-vs-future chips               | None                          |
 | 11  | `evidence`           | Five on-chain evidence pills + CTA that fires `memind:open-brain` CustomEvent  | Dispatches BrainPanel open    |
 
 **Why sticky-stage over per-section layout**: one viewport-sized sticky container cross-fades between 11 chapter components, so the active chapter is always vertically centred and the scroll feels deterministic. Chapter meta + scroll-target math (`CHAPTER_META`, `SLOT_VH`, `chapterScrollTarget`, `resolveChapterIndexFromHash`) live in `lib/chapters.ts`. Reduced motion is honoured through both the OS media query (`useReducedMotion`) and the in-page `<TweaksPanel>` — either source short-circuits the cross-fade to the final state.
@@ -357,24 +359,23 @@ Slash commands (`lib/slash-commands.ts`) are resolved client-side; server-kind o
 
 ## External Dependencies
 
-| Dependency                                                         | Purpose                                                                                | Fallback plan                                                                                                                                                     |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@x402/express` v2.10+                                             | x402 server middleware (paymentMiddleware + x402ResourceServer)                        | No fallback (2026-04-18 probe proved real Base Sepolia settlement end-to-end)                                                                                     |
-| `@x402/fetch` v2.10+                                               | Market-maker client auto-payment (wrapFetchWithPayment + ExactEvmScheme)               | Hand-assemble HTTP + EIP-3009                                                                                                                                     |
-| `@x402/evm` + `@x402/core` v2.10+                                  | EVM scheme implementation + decodePaymentResponseHeader                                | No fallback                                                                                                                                                       |
-| `@four-meme/four-meme-ai@1.0.8` CLI (invoked via `npx` shell-exec) | four.meme token deployment (**BSC mainnet only**; official scoped package)             | viem direct call against the TokenManager2 ABI (`0x5c95...762b`, mainnet)                                                                                         |
-| `pinata` v2.5+                                                     | IPFS pinning (official new SDK, JWT-authenticated; shared by lore and lore-extend)     | AWS S3 + fake hash (demo fallback)                                                                                                                                |
-| `@anthropic-ai/sdk` via OpenRouter gateway                         | LLM backend for every agent (OPENROUTER_API_KEY preferred, ANTHROPIC_API_KEY fallback) | No fallback                                                                                                                                                       |
-| `@google/genai` (Gemini 2.5 Flash Image)                           | meme image generation (Phase 2 migration from Replicate)                               | No fallback                                                                                                                                                       |
-| X API v2 (`api.x.com/2/tweets`)                                    | post_to_x posting (hand-written OAuth 1.0a User Context; no third-party OAuth library) | Before credit top-up, dry-run stub; real posts are pay-per-usage (re-verify pricing before demo; **do not embed URLs in posts — may trigger URL-post surcharge**) |
-| `viem` v2                                                          | EOA wallet, event-log reads, BSC RPC and Base Sepolia RPC                              | No fallback                                                                                                                                                       |
-| `motion@12` (web only)                                             | BrainPanel slide + chapter micro-animations                                            | CSS transitions                                                                                                                                                   |
-| Base Sepolia USDC                                                  | x402 settlement asset                                                                  | No fallback                                                                                                                                                       |
-| Pieverse TEE wallet                                                | Stretch goal (bounty)                                                                  | Skipped by default                                                                                                                                                |
+| Dependency                                                         | Purpose                                                                          | Fallback plan                                                                                                                                                        |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@x402/express` v2.10+                                             | x402 server middleware (paymentMiddleware + x402ResourceServer)                  | No fallback (real Base Sepolia settlement proven end-to-end via probe)                                                                                               |
+| `@x402/fetch` v2.10+                                               | Market-maker client auto-payment (wrapFetchWithPayment + ExactEvmScheme)         | Hand-assemble HTTP + EIP-3009                                                                                                                                        |
+| `@x402/evm` + `@x402/core` v2.10+                                  | EVM scheme implementation + decodePaymentResponseHeader                          | No fallback                                                                                                                                                          |
+| `@four-meme/four-meme-ai@1.0.8` CLI (invoked via `npx` shell-exec) | four.meme token deployment (**BSC mainnet only**; official scoped package)       | viem direct call against the TokenManager2 ABI (`0x5c95...762b`, mainnet)                                                                                            |
+| `pinata` v2.5+                                                     | IPFS pinning (JWT-authenticated; shared by lore and lore-extend)                 | AWS S3 + fake hash (demo fallback)                                                                                                                                   |
+| LLM SDK                                                            | Backs every agent loop; configurable via env                                     | No fallback                                                                                                                                                          |
+| Image-generation SDK                                               | Meme image generation for the Creator persona                                    | No fallback                                                                                                                                                          |
+| X API v2 (`api.x.com/2/tweets`)                                    | `post_to_x` posting — hand-written OAuth 1.0a User Context; no third-party OAuth | Before credit top-up, dry-run stub. Real posts are pay-per-usage — re-verify pricing before a live demo. Do not embed URLs in post bodies (URL-post surcharge risk). |
+| `viem` v2                                                          | EOA wallet, event-log reads, BSC RPC and Base Sepolia RPC                        | No fallback                                                                                                                                                          |
+| `motion@12` (web only)                                             | BrainPanel slide + chapter micro-animations                                      | CSS transitions                                                                                                                                                      |
+| Base Sepolia USDC                                                  | x402 settlement asset                                                            | No fallback                                                                                                                                                          |
 
 ## Security / Secrets
 
 - **All private keys live in `.env.local`**, guarded by `.gitignore`. They must never land in the repo.
 - **Wallet separation**: the agent runtime wallet (Base Sepolia test USDC, x402 payments) and the four.meme deployment wallet (**BSC mainnet real BNB**, ~$1 covers many deploys) are distinct EOAs.
-- **x402 facilitator URL and scheme** default to `@x402/*` v2 Base Sepolia (`eip155:84532`); we do not self-host. Facilitator: `https://x402.org/facilitator`.
+- **x402 facilitator URL and scheme** default to `@x402/*` v2 on Base Sepolia (`eip155:84532`); we do not self-host. Facilitator: `https://x402.org/facilitator`.
 - **X API credentials** (5 OAuth 1.0a fields) are shared between `heartbeat.post_to_x` and `shiller.post_shill_for`; the same aged account is used for both to preserve trust score.

@@ -46,7 +46,7 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
       <Label n={2}>the graveyard</Label>
       <BigHeadline size={104}>
         <span style={{ color: 'var(--fg-tertiary)' }}>{n.toLocaleString()}</span>
-        <span className="ch-sub-line"> meme coins launched / day.</span>
+        <span className="ch-sub-line"> meme coins in a single peak day (2025-10).</span>
       </BigHeadline>
       <div className="ch-problem-body">
         <div className="graveyard-grid">
@@ -84,7 +84,7 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
               accentColor="var(--fg-tertiary)"
             />
             <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
-              tokens/day.sleeping
+              tokens.sleeping
             </span>
           </div>
         </div>

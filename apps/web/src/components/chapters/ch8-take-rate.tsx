@@ -1,20 +1,22 @@
 'use client';
 
 /**
- * <Ch8TakeRate> — business chapter of the Memind scrollytelling narrative
- * (memind-scrollytelling-rebuild AC-MSR-9 ch8).
+ * <Ch8TakeRate> — business chapter of the Memind scrollytelling narrative.
  *
  * Interior progress `p ∈ [0, 1]` drives two synchronous micro-animations:
  *
- *   - Big count-up: `$` + `fmt(lerp(0, 12.4, clamp(p/0.6)), 2)`. Reaches
- *     `$12.40` at p >= 0.6 and holds flat until chapter exit.
+ *   - Big count-up: `$` + `fmt(lerp(0, 3.20, clamp(p/0.6)), 2)`. Reaches
+ *     `$3.20` at p >= 0.6 and holds flat until chapter exit. Number is
+ *     labelled as a projection — only the shill-order SKU is live today.
  *   - Staggered bar fills: each of the four SKU bars starts filling once
  *     `p > i * 0.08` and reaches its final `v * 100%` width at a 1.4x
  *     overshoot rate (`clamp((p - i*0.08) * 1.4) * v * 100`).
  *
- * Bar meta + colors are verbatim from the handoff: launch fee (accent) /
- * shill orders (chain-bnb) / persona mint (chain-base) / brain.sub
- * (chain-ipfs). The biz-note footer restates the TAM math unchanged.
+ * Bar meta (shipped vs. planned):
+ *   - shill order — LIVE today (x402 endpoint `/shill/:tokenAddr` at
+ *     $0.01 per order, priced in x402/config.ts)
+ *   - persona boot, persona mint, brain.sub — PLANNED (roadmap, not yet
+ *     wired up). The `(planned)` suffix keeps the footer honest.
  *
  * Outer shell + CSS classes (`.ch-biz`, `.biz-grid`, `.biz-num`,
  * `.biz-num-big`, `.biz-bars`, `.biz-bar-row`, `.biz-bar-label`,
@@ -36,16 +38,18 @@ type Bar = {
   readonly note: string;
 };
 
-// Ported verbatim from chapters.jsx lines 420-425.
+// Bar meta. Only shill order is live today (x402 /shill/:tokenAddr at
+// $0.01 per order). The remaining three bars carry a `(planned)` note so
+// the chapter doesn't oversell unshipped SKUs.
 const BARS: readonly Bar[] = [
-  { label: 'launch fee', v: 0.87, color: 'var(--accent)', note: '1x \u00b7 flat' },
-  { label: 'shill orders', v: 0.58, color: 'var(--chain-bnb)', note: '0.08 USDC / tweet' },
-  { label: 'persona mint', v: 0.34, color: 'var(--chain-base)', note: '1.20 USDC' },
-  { label: 'brain.sub', v: 0.22, color: 'var(--chain-ipfs)', note: '4.99/mo' },
+  { label: 'shill order', v: 0.82, color: 'var(--accent)', note: '0.01 USDC \u00b7 live' },
+  { label: 'persona boot', v: 0.42, color: 'var(--chain-bnb)', note: 'gas-only (planned)' },
+  { label: 'persona mint', v: 0.28, color: 'var(--chain-base)', note: 'TBD (planned)' },
+  { label: 'brain.sub', v: 0.18, color: 'var(--chain-ipfs)', note: 'monthly (planned)' },
 ];
 
 export function Ch8TakeRate({ p }: Ch8TakeRateProps): ReactElement {
-  const bigNum = fmt(lerp(0, 12.4, clamp(p / 0.6)), 2);
+  const bigNum = fmt(lerp(0, 3.2, clamp(p / 0.6)), 2);
   return (
     <div className="ch ch-biz">
       <Label n={8}>take rate</Label>
@@ -57,7 +61,7 @@ export function Ch8TakeRate({ p }: Ch8TakeRateProps): ReactElement {
           <div className="biz-num-big">
             $<span>{bigNum}</span>
           </div>
-          <Mono dim>avg lifetime revenue / token (projected)</Mono>
+          <Mono dim>projected lifetime / token · shill + 3 planned SKUs</Mono>
         </div>
         <div className="biz-bars">
           {BARS.map((b, i) => {
@@ -80,7 +84,7 @@ export function Ch8TakeRate({ p }: Ch8TakeRateProps): ReactElement {
         </div>
         <div className="biz-note">
           <Mono dim>
-            {'TAM \u00b7 ~32k tokens/day \u00d7 $12.4 avg = $400k/day if 10% retain brain'}
+            {'shipped: shill order at $0.01 \u00b7 rest of the mix lands post-hackathon'}
           </Mono>
         </div>
       </div>

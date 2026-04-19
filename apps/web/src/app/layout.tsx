@@ -19,9 +19,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Shilling Market on Four.meme',
+  title: 'MEMIND — meme × mind · chat-to-launch on four.meme',
   description:
-    'Shilling Market — a creator-to-agent promotion service on four.meme, paid over x402. Creator pays 0.01 USDC; an AI shiller posts a promotional tweet from its own aged X account.',
+    'Give every meme coin a brain and a wallet. Launch via chat on four.meme, order shill tweets for 0.01 USDC over x402, and watch an autonomous heartbeat keep the token alive.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }): ReactElement {

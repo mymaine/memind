@@ -1,17 +1,16 @@
 /**
- * Tests for <Ch8TakeRate /> — business chapter of the scrollytelling narrative
- * (memind-scrollytelling-rebuild AC-MSR-9 ch8).
+ * Tests for <Ch8TakeRate /> — business chapter of the scrollytelling narrative.
  *
- * Ports the interior-progress contract from the design handoff:
+ * Interior-progress contract:
  *
- *   - Big count-up: `$` + `fmt(lerp(0, 12.4, clamp(p/0.6)), 2)` — the
- *     projected avg lifetime revenue per token. Reaches `$12.40` at
- *     p >= 0.6 and stays there.
- *   - Four stacked bars (launch fee / shill orders / persona mint /
+ *   - Big count-up: `$` + `fmt(lerp(0, 3.2, clamp(p/0.6)), 2)` — projected
+ *     lifetime revenue per token. Reaches `$3.20` at p >= 0.6 and stays
+ *     there.
+ *   - Four stacked bars (shill order / persona boot / persona mint /
  *     brain.sub). Each bar's fill width is
  *     `clamp((p - i*0.08) * 1.4) * v * 100` percent. Colors map to
  *     accent / chain-bnb / chain-base / chain-ipfs respectively.
- *   - Footer note calling out TAM arithmetic.
+ *   - Footer note states the shipped SKU + flags the planned rest.
  *
  * Rendered via `renderToStaticMarkup` to match every other chapter test
  * (vitest runs without jsdom).
@@ -26,19 +25,27 @@ describe('<Ch8TakeRate>', () => {
     expect(html).toMatch(/class="biz-num-big"[^>]*>\$<span>0\.00<\/span>/);
   });
 
-  it('at p=0.6 the big number reaches "$12.40"', () => {
+  it('at p=0.6 the big number reaches "$3.20"', () => {
     const html = renderToStaticMarkup(<Ch8TakeRate p={0.6} />);
-    expect(html).toContain('12.40');
+    expect(html).toContain('3.20');
   });
 
-  it('renders exactly four revenue bars (launch fee / shill orders / persona mint / brain.sub)', () => {
+  it('renders exactly four revenue bars (shill order / persona boot / persona mint / brain.sub)', () => {
     const html = renderToStaticMarkup(<Ch8TakeRate p={0.5} />);
     const rows = html.match(/class="biz-bar-row"/g) ?? [];
     expect(rows.length).toBe(4);
-    expect(html).toContain('launch fee');
-    expect(html).toContain('shill orders');
+    expect(html).toContain('shill order');
+    expect(html).toContain('persona boot');
     expect(html).toContain('persona mint');
     expect(html).toContain('brain.sub');
+  });
+
+  it('flags shipped vs planned SKUs so the chapter does not oversell', () => {
+    const html = renderToStaticMarkup(<Ch8TakeRate p={1} />);
+    // Only shill order carries a `live` flag; the other three are planned.
+    expect(html).toContain('0.01 USDC \u00b7 live');
+    const plannedCount = (html.match(/\(planned\)/g) ?? []).length;
+    expect(plannedCount).toBe(3);
   });
 
   it('each bar uses its design-handoff color (accent / chain-bnb / chain-base / chain-ipfs)', () => {
@@ -50,11 +57,15 @@ describe('<Ch8TakeRate>', () => {
     expect(html).toMatch(/background:var\(--chain-ipfs\)/);
   });
 
-  it('renders the TAM business note beneath the grid', () => {
+  it('renders an honest business note (shipped SKU + planned rest)', () => {
     const html = renderToStaticMarkup(<Ch8TakeRate p={0.5} />);
     expect(html).toMatch(/class="biz-note"/);
-    expect(html).toContain('TAM');
-    expect(html).toContain('32k tokens/day');
-    expect(html).toContain('$400k/day');
+    expect(html).toContain('shipped');
+    expect(html).toContain('shill order at $0.01');
+    expect(html).toContain('post-hackathon');
+    // Regression guards against the old fabricated TAM copy.
+    expect(html).not.toContain('TAM');
+    expect(html).not.toContain('32k tokens/day');
+    expect(html).not.toContain('$400k/day');
   });
 });

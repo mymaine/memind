@@ -25,7 +25,8 @@ interface Ch7HeartbeatProps {
   readonly p: number;
 }
 
-// Ported verbatim from chapters.jsx lines 371-380.
+// Decision log sequence driven by scroll progress. Cadence matches the
+// Heartbeat production default (60s between ticks).
 const DECISIONS: readonly string[] = [
   'read mentions',
   'check liquidity',
@@ -34,7 +35,7 @@ const DECISIONS: readonly string[] = [
   'reject (sentiment low)',
   'reschedule shill',
   'mint reply',
-  'sleep 5s',
+  'sleep 60s',
 ];
 
 // Raw EKG points from chapters.jsx line 390 — left alone so the pulse
@@ -51,7 +52,7 @@ export function Ch7Heartbeat({ p }: Ch7HeartbeatProps): ReactElement {
       <Label n={7}>autonomous heartbeat</Label>
       <BigHeadline size={72}>
         <span>
-          every 5 seconds, the brain wakes up and{' '}
+          every 60 seconds, the brain wakes up and{' '}
           <span style={{ color: 'var(--accent)' }}>decides</span>.
         </span>
       </BigHeadline>
@@ -81,7 +82,7 @@ export function Ch7Heartbeat({ p }: Ch7HeartbeatProps): ReactElement {
             <Mono dim>
               tick {'\u00b7'} tick {'\u00b7'} tick
             </Mono>
-            <Mono dim>t=70s</Mono>
+            <Mono dim>t=8m</Mono>
           </div>
         </div>
         <div className="hb-ops">
@@ -90,7 +91,7 @@ export function Ch7Heartbeat({ p }: Ch7HeartbeatProps): ReactElement {
           </div>
           {visibleDecisions.map((d, i) => (
             <div key={i} className="hb-op-row">
-              <Mono dim>{`${String(i * 5).padStart(2, '0')}s`}</Mono>
+              <Mono dim>{`tick ${String(i + 1).padStart(2, '0')}`}</Mono>
               <Mono>{d}</Mono>
               <Mono dim>{i % 3 === 0 ? '\u2713 onchain' : 'offchain'}</Mono>
             </div>

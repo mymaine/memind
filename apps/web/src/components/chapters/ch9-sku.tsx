@@ -26,51 +26,62 @@ interface Ch9SKUProps {
 
 type SkuTier = 'free' | 'pro' | 'item' | 'bundle';
 
+type SkuStatus = 'live' | 'planned';
+
 type Sku = {
   readonly code: string;
   readonly name: string;
   readonly tier: SkuTier;
   readonly desc: string;
   readonly price: string;
+  /**
+   * Distinguishes what's wired up today (the x402 `/shill/:tokenAddr`
+   * order flow at $0.01) from SKUs that live only on the roadmap. Keeps
+   * the chapter from overselling unshipped surfaces.
+   */
+  readonly status: SkuStatus;
 };
 
-// Ported verbatim from chapters.jsx lines 457-462.
 const SKUS: readonly Sku[] = [
   {
     code: 'SKU-01',
+    name: 'SHILL.ORDER',
+    tier: 'bundle',
+    desc: 'pay 0.01 USDC, an AI shiller posts a promo tweet from its own aged X account.',
+    price: '$0.01 / order',
+    status: 'live',
+  },
+  {
+    code: 'SKU-02',
     name: 'BRAIN.BASIC',
     tier: 'free',
     desc: 'idle + shill only. 1 persona.',
     price: '$0',
-  },
-  {
-    code: 'SKU-02',
-    name: 'BRAIN.PRO',
-    tier: 'pro',
-    desc: '4 personas. onchain decisions. heartbeat 5s.',
-    price: '$4.99/mo',
+    status: 'planned',
   },
   {
     code: 'SKU-03',
-    name: 'PERSONA.MINT',
-    tier: 'item',
-    desc: 'mint a custom persona NFT. 14 moods.',
-    price: '$1.20',
+    name: 'BRAIN.PRO',
+    tier: 'pro',
+    desc: '4 personas. onchain decisions. heartbeat 60s.',
+    price: 'monthly (tbd)',
+    status: 'planned',
   },
   {
     code: 'SKU-04',
-    name: 'SHILL.CREDITS',
-    tier: 'bundle',
-    desc: '100 tweets, any persona. no decay.',
-    price: '$6.40',
+    name: 'PERSONA.MINT',
+    tier: 'item',
+    desc: 'mint a custom persona. 14 moods to pick from.',
+    price: 'tbd',
+    status: 'planned',
   },
 ];
 
 export function Ch9SKU({ p }: Ch9SKUProps): ReactElement {
   return (
     <div className="ch ch-biz">
-      <Label n={9}>{'seller side \u00b7 4 SKUs'}</Label>
-      <BigHeadline size={72}>what we sell, to whom.</BigHeadline>
+      <Label n={9}>{'seller side \u00b7 1 live + 3 planned'}</Label>
+      <BigHeadline size={72}>what we sell today, what lands next.</BigHeadline>
       <div className="sku-grid">
         {SKUS.map((s, i) => {
           const appear = clamp((p - i * 0.1) * 2);
@@ -79,10 +90,14 @@ export function Ch9SKU({ p }: Ch9SKUProps): ReactElement {
               key={s.code}
               className="sku-card"
               style={{ opacity: appear, transform: `scale(${lerp(0.94, 1, appear)})` }}
+              data-sku-status={s.status}
             >
               <div className="sku-head">
                 <Mono dim>{s.code}</Mono>
                 <span className={`sku-tier sku-tier-${s.tier}`}>{s.tier}</span>
+                <span className={`sku-status sku-status-${s.status}`}>
+                  {s.status === 'live' ? 'live' : 'planned'}
+                </span>
               </div>
               <div className="sku-name">{s.name}</div>
               <div className="sku-desc">{s.desc}</div>

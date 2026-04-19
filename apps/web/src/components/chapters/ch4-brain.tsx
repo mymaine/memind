@@ -4,18 +4,15 @@
  * <Ch4Brain> — fourth chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch4).
  *
- * Ported from the design handoff, with two FACT CORRECTIONS:
+ * Two FACT CORRECTIONS vs. the original draft:
  *
- *   - `brain-core-sub` reads "claude-sonnet-4.5 · 5s tick" to match what
- *     `apps/server` actually calls via OpenRouter
- *     (`anthropic/claude-sonnet-4-5`). The design handoff still says
- *     `gpt-4o · 5s tick`; the ch4-brain.test.tsx regression guards this.
- *   - UAT issue #7 — X (Twitter) ships as a live delivery channel from
- *     Phase 3 onward, so the port ring now declares 4 channels: `X (live)` +
- *     3 soon channels (TELEGRAM / DISCORD / ON-CHAIN MSG). The sub-caption
- *     above the stage clarifies persona = content voice vs. channel =
- *     delivery surface — the UAT reported confusion about what the 4+3
- *     labels meant.
+ *   - `brain-core-sub` reads "autonomous tick · 60s" — no model name, no
+ *     provider. The tick cadence matches the Heartbeat production default
+ *     (60s). The ch4-brain.test.tsx regression guards the exact string.
+ *   - X (Twitter) ships as a live delivery channel from Phase 3 onward, so
+ *     the port ring declares 4 channels: `X (live)` + 3 soon channels
+ *     (TELEGRAM / DISCORD / ON-CHAIN MSG). The sub-caption above the stage
+ *     clarifies persona = content voice vs. channel = delivery surface.
  *
  * Interior progress `p ∈ [0, 1]` drives:
  *
@@ -252,7 +249,7 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
             accentColor="var(--chain-bnb)"
           />
           <div className="brain-core-label">TOKEN BRAIN</div>
-          <div className="brain-core-sub">claude-sonnet-4.5 · 5s tick</div>
+          <div className="brain-core-sub">autonomous tick · 60s</div>
         </div>
         {/* Persona ports — absolute-positioned around the brain core.
          * `persona-voice` sub-label spells out the content voice for each
