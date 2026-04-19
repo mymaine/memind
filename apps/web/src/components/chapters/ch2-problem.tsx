@@ -36,8 +36,12 @@ const ALIVE_INDICES = new Set<number>([47, 183, 241, 309]);
 
 export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
   const n = Math.floor(lerp(0, 351, clamp(p / 0.6)));
-  const fadeStage = clamp((p - 0.3) / 0.4);
-  const fadeMul = 1 - fadeStage * 0.92;
+  // UAT 2026-04-20 timing: the count-up finishes at p=0.6, so the
+  // graveyard fade stays dormant until then and sweeps in across the
+  // remaining p=0.6 → 1.0 window. Gives the viewer "351 tokens first,
+  // then watch them die" instead of a simultaneous blur.
+  const fadeStage = clamp((p - 0.6) / 0.4);
+  const fadeMul = 1 - fadeStage * 0.96;
 
   return (
     <div className="ch ch-problem">
@@ -61,7 +65,9 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
           {Array.from({ length: TOTAL_CELLS }, (_, i) => {
             const alive = ALIVE_INDICES.has(i);
             const fade = (i * 13) % 100;
-            const opacity = alive ? 1 : lerp(0.08, 0.28, fade / 100) * fadeMul;
+            // Initial brightness bumped from 0.08–0.28 to 0.6–0.92 so
+            // viewers read "351 live tokens" before the fade begins.
+            const opacity = alive ? 1 : lerp(0.6, 0.92, fade / 100) * fadeMul;
             const className = alive ? 'grave-cell grave-cell--alive' : 'grave-cell';
             return (
               <span

@@ -69,19 +69,30 @@ describe('<Ch2Problem>', () => {
     expect(GLOBALS_CSS).toMatch(/@keyframes\s+grave-alive-pulse\s*\{/);
   });
 
-  it('dim majority fades hard as p passes 0.7 (UAT issue #5)', () => {
-    // Collect inline opacity values for every non-alive cell at p=0.7 and
-    // confirm their average sits below 0.05 — the UAT fix raises the decay
-    // from 60% to ~92% so dim cells nearly vanish when the stage reaches
-    // its climax.
-    const html = renderToStaticMarkup(<Ch2Problem p={0.7} />);
-    const dimMatches = [...html.matchAll(/class="grave-cell"[^>]*style="opacity:([0-9.]+)/g)].map(
-      (m) => Number(m[1]),
-    );
-    // 384 total cells minus 4 alive = 380 dim cells.
-    expect(dimMatches.length).toBe(380);
-    const avg = dimMatches.reduce((s, v) => s + v, 0) / dimMatches.length;
-    expect(avg).toBeLessThan(0.05);
+  it('graveyard reads bright at p=0.6 and nearly black at p=1.0 (2026-04-20 timing)', () => {
+    // Timing rebuild: the fade now dormant until the count-up finishes
+    // at p=0.6, then sweeps the graveyard dim across p=0.6→1.0. Two
+    // checkpoints lock the contract:
+    //   - At p=0.6 (count-up complete, fade about to start) the dim
+    //     average sits ≥ 0.7 — viewer still reads "351 live tokens".
+    //   - At p=1.0 the dim average collapses below 0.06 — only the 4
+    //     alive cells remain legible.
+    const dimFor = (p: number): number[] =>
+      [
+        ...renderToStaticMarkup(<Ch2Problem p={p} />).matchAll(
+          /class="grave-cell"[^>]*style="opacity:([0-9.]+)/g,
+        ),
+      ].map((m) => Number(m[1]));
+
+    const atStart = dimFor(0.6);
+    expect(atStart.length).toBe(380);
+    const avgStart = atStart.reduce((s, v) => s + v, 0) / atStart.length;
+    expect(avgStart).toBeGreaterThan(0.7);
+
+    const atEnd = dimFor(1);
+    expect(atEnd.length).toBe(380);
+    const avgEnd = atEnd.reduce((s, v) => s + v, 0) / atEnd.length;
+    expect(avgEnd).toBeLessThan(0.06);
   });
 
   it('renders the "filtered the spam" aside + the sleep mascot + the Dune source link', () => {
