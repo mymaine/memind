@@ -1,6 +1,16 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import type { AgentTool, CreatorResult, Persona, PersonaRunContext } from '@hack-fourmeme/shared';
+import type {
+  AgentTool,
+  Artifact,
+  AssistantDeltaEventPayload,
+  CreatorResult,
+  LogEvent,
+  Persona,
+  PersonaRunContext,
+  ToolUseEndEventPayload,
+  ToolUseStartEventPayload,
+} from '@hack-fourmeme/shared';
 import type { ToolRegistry } from './registry.js';
 import type { CreatorPersonaInput } from '../agents/creator.js';
 import type { NarratorPersonaInput, NarratorPersonaOutput } from '../agents/narrator.js';
@@ -8,8 +18,28 @@ import type { ShillerPersonaInput, ShillerPersonaOutput } from '../agents/market
 import type { HeartbeatPersonaInput, HeartbeatPersonaOutput } from '../agents/heartbeat.js';
 import type { PostShillForInput, PostShillForOutput } from './post-shill-for.js';
 import type { LoreStore } from '../state/lore-store.js';
-import type { LogEvent } from '@hack-fourmeme/shared';
 import type { runAgentLoop } from '../agents/runtime.js';
+
+/**
+ * Shared event-forwarding callback bundle. Each factory may accept these so the
+ * orchestrator (typically `runs/brain-chat.ts`) can forward every persona-side
+ * log / artifact / tool_use / assistant-delta event to its RunStore. Callbacks
+ * land on `PersonaRunContext` via the `[extra: string]: unknown` escape hatch
+ * and the individual persona adapters narrow the types at their call site.
+ *
+ * Why here (not on a shared type): the callbacks are intentionally tied to the
+ * persona-invoke tool surface. Other callers of the persona adapters (e.g. the
+ * a2a phase runners) already wire `onLog` etc. through their dedicated
+ * `runXxxAgent` params and do not go through this factory layer, so a separate
+ * cross-cutting type would only add indirection.
+ */
+export interface PersonaInvokeEventCallbacks {
+  onLog?: (event: LogEvent) => void;
+  onArtifact?: (artifact: Artifact) => void;
+  onToolUseStart?: (event: ToolUseStartEventPayload) => void;
+  onToolUseEnd?: (event: ToolUseEndEventPayload) => void;
+  onAssistantDelta?: (event: AssistantDeltaEventPayload) => void;
+}
 
 /**
  * Brain meta-agent persona-invoke tools (BRAIN-P2).
@@ -81,7 +111,7 @@ export type InvokeHeartbeatTickInput = z.infer<typeof invokeHeartbeatTickInputSc
 
 // ─── invoke_creator ─────────────────────────────────────────────────────────
 
-export interface CreateInvokeCreatorToolDeps {
+export interface CreateInvokeCreatorToolDeps extends PersonaInvokeEventCallbacks {
   persona: Persona<CreatorPersonaInput, CreatorResult>;
   client: Anthropic;
   registry: ToolRegistry;
@@ -90,7 +120,16 @@ export interface CreateInvokeCreatorToolDeps {
 export function createInvokeCreatorTool(
   deps: CreateInvokeCreatorToolDeps,
 ): AgentTool<InvokeCreatorInput, CreatorResult> {
-  const { persona, client, registry } = deps;
+  const {
+    persona,
+    client,
+    registry,
+    onLog,
+    onArtifact,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
+  } = deps;
   return {
     name: INVOKE_CREATOR_TOOL_NAME,
     description:
@@ -103,8 +142,84 @@ export function createInvokeCreatorTool(
     outputSchema: z.any() as unknown as z.ZodType<CreatorResult>,
     async execute(input): Promise<CreatorResult> {
       const parsed = invokeCreatorInputSchema.parse(input);
-      const ctx: PersonaRunContext = { client, registry };
-      return persona.run({ theme: parsed.theme }, ctx);
+      const startedAt = Date.now();
+      onLog?.({
+        ts: new Date(startedAt).toISOString(),
+        agent: 'creator',
+        tool: 'invoke_creator',
+        level: 'info',
+        message: `creator persona starting (theme: ${parsed.theme})`,
+      });
+      // Thread every event callback onto the ctx so the persona adapter can
+      // forward them into its runAgentLoop call. Keys are the same strings
+      // the adapter narrows via `ctx.onLog` / `ctx.onArtifact` etc.
+      const ctx: PersonaRunContext = {
+        client,
+        registry,
+        ...(onLog !== undefined ? { onLog } : {}),
+        ...(onArtifact !== undefined ? { onArtifact } : {}),
+        ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
+        ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
+        ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
+      };
+      try {
+        const result = await persona.run({ theme: parsed.theme }, ctx);
+        // Emit result-derived artifacts so the FooterDrawer Artifacts tab
+        // pills (bsc-token / token-deploy-tx / lore-cid) appear as soon as
+        // the persona returns. `persona.run` itself does not emit these —
+        // they are derived from the returned CreatorResult shape.
+        if (onArtifact && typeof result.tokenAddr === 'string') {
+          onArtifact({
+            kind: 'bsc-token',
+            chain: 'bsc-mainnet',
+            address: result.tokenAddr as `0x${string}`,
+            explorerUrl: `https://bscscan.com/token/${result.tokenAddr}`,
+            label: 'four.meme token (BSC mainnet)',
+          });
+        }
+        if (
+          onArtifact &&
+          typeof result.tokenDeployTx === 'string' &&
+          /^0x[a-fA-F0-9]{64}$/.test(result.tokenDeployTx)
+        ) {
+          onArtifact({
+            kind: 'token-deploy-tx',
+            chain: 'bsc-mainnet',
+            txHash: result.tokenDeployTx,
+            explorerUrl: `https://bscscan.com/tx/${result.tokenDeployTx}`,
+            label: 'Creator deploy tx',
+          });
+        }
+        if (onArtifact && typeof result.loreIpfsCid === 'string' && result.loreIpfsCid !== '') {
+          onArtifact({
+            kind: 'lore-cid',
+            cid: result.loreIpfsCid,
+            gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.loreIpfsCid}`,
+            author: 'creator',
+            label: 'Creator lore chapter 1',
+          });
+        }
+        const durationMs = Date.now() - startedAt;
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'creator',
+          tool: 'invoke_creator',
+          level: 'info',
+          message: `creator persona finished (${durationMs.toString()}ms, token=${result.tokenAddr})`,
+          meta: { durationMs },
+        });
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'creator',
+          tool: 'invoke_creator',
+          level: 'error',
+          message: `creator persona failed: ${message}`,
+        });
+        throw err;
+      }
     },
   };
 }
@@ -118,7 +233,7 @@ export interface NarratorTokenMeta {
   targetChapterNumber?: number;
 }
 
-export interface CreateInvokeNarratorToolDeps {
+export interface CreateInvokeNarratorToolDeps extends PersonaInvokeEventCallbacks {
   persona: Persona<NarratorPersonaInput, NarratorPersonaOutput>;
   client: Anthropic;
   registry: ToolRegistry;
@@ -140,7 +255,18 @@ export interface CreateInvokeNarratorToolDeps {
 export function createInvokeNarratorTool(
   deps: CreateInvokeNarratorToolDeps,
 ): AgentTool<InvokeNarratorInput, NarratorPersonaOutput> {
-  const { persona, client, registry, store, resolveTokenMeta } = deps;
+  const {
+    persona,
+    client,
+    registry,
+    store,
+    resolveTokenMeta,
+    onLog,
+    onArtifact,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
+  } = deps;
   return {
     name: INVOKE_NARRATOR_TOOL_NAME,
     description:
@@ -159,8 +285,61 @@ export function createInvokeNarratorTool(
           ? { targetChapterNumber: meta.targetChapterNumber }
           : {}),
       };
-      const ctx: PersonaRunContext = { client, registry, store };
-      return persona.run(personaInput, ctx);
+      const startedAt = Date.now();
+      onLog?.({
+        ts: new Date(startedAt).toISOString(),
+        agent: 'narrator',
+        tool: 'invoke_narrator',
+        level: 'info',
+        message: `narrator persona starting (token: ${parsed.tokenAddr})`,
+      });
+      const ctx: PersonaRunContext = {
+        client,
+        registry,
+        store,
+        ...(onLog !== undefined ? { onLog } : {}),
+        ...(onArtifact !== undefined ? { onArtifact } : {}),
+        ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
+        ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
+        ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
+      };
+      try {
+        const result = await persona.run(personaInput, ctx);
+        // Emit the new chapter's lore-cid artifact derived from the persona
+        // result. The narrator adapter itself only emits the `lore-anchor`
+        // artifact (when an anchorLedger is wired); the plain lore-cid pill
+        // is this factory's responsibility because it is the dashboard's
+        // primary chapter-progress indicator.
+        if (onArtifact && typeof result.ipfsHash === 'string' && result.ipfsHash !== '') {
+          onArtifact({
+            kind: 'lore-cid',
+            cid: result.ipfsHash,
+            gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.ipfsHash}`,
+            author: 'narrator',
+            chapterNumber: result.chapterNumber,
+          });
+        }
+        const durationMs = Date.now() - startedAt;
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'narrator',
+          tool: 'invoke_narrator',
+          level: 'info',
+          message: `narrator persona finished (${durationMs.toString()}ms, chapter=${result.chapterNumber.toString()})`,
+          meta: { durationMs },
+        });
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'narrator',
+          tool: 'invoke_narrator',
+          level: 'error',
+          message: `narrator persona failed: ${message}`,
+        });
+        throw err;
+      }
     },
   };
 }
@@ -174,7 +353,7 @@ export interface ShillerOrderContext {
   includeFourMemeUrl?: boolean;
 }
 
-export interface CreateInvokeShillerToolDeps {
+export interface CreateInvokeShillerToolDeps extends PersonaInvokeEventCallbacks {
   persona: Persona<ShillerPersonaInput, ShillerPersonaOutput>;
   /**
    * Injected `post_shill_for` tool. Threaded directly onto the persona's
@@ -195,7 +374,16 @@ export interface CreateInvokeShillerToolDeps {
 export function createInvokeShillerTool(
   deps: CreateInvokeShillerToolDeps,
 ): AgentTool<InvokeShillerInput, ShillerPersonaOutput> {
-  const { persona, postShillForTool, resolveOrder } = deps;
+  const {
+    persona,
+    postShillForTool,
+    resolveOrder,
+    onLog,
+    onArtifact,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
+  } = deps;
   return {
     name: INVOKE_SHILLER_TOOL_NAME,
     description:
@@ -216,22 +404,74 @@ export function createInvokeShillerTool(
           ? { includeFourMemeUrl: order.includeFourMemeUrl }
           : {}),
       };
+      const startedAt = Date.now();
+      onLog?.({
+        ts: new Date(startedAt).toISOString(),
+        agent: 'shiller',
+        tool: 'invoke_shiller',
+        level: 'info',
+        message: `shiller persona starting (order: ${order.orderId}, token: ${parsed.tokenAddr})`,
+      });
       // Shiller persona's run method ignores ctx.client / ctx.registry — the
       // post_shill_for tool carries the only side-effect path. We still pass
-      // empty stubs so the PersonaRunContext shape stays uniform for future
-      // bubbling hooks.
+      // empty stubs so the PersonaRunContext shape stays uniform. Event
+      // callbacks are forwarded onto ctx so future instrumentation in the
+      // shiller adapter (e.g. wrapping post_shill_for to emit per-guard
+      // logs) can pick them up without another factory change.
       const ctx: PersonaRunContext = {
         client: {} as unknown,
         registry: {} as unknown,
+        ...(onLog !== undefined ? { onLog } : {}),
+        ...(onArtifact !== undefined ? { onArtifact } : {}),
+        ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
+        ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
+        ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
       };
-      return persona.run(personaInput, ctx);
+      try {
+        const result = await persona.run(personaInput, ctx);
+        // Emit a tweet-url artifact when the persona actually posted so the
+        // dashboard Artifacts tab surfaces the live tweet link.
+        if (
+          onArtifact &&
+          result.decision === 'shill' &&
+          typeof result.tweetUrl === 'string' &&
+          typeof result.tweetId === 'string'
+        ) {
+          onArtifact({
+            kind: 'tweet-url',
+            url: result.tweetUrl,
+            tweetId: result.tweetId,
+            label: 'Shiller tweet',
+          });
+        }
+        const durationMs = Date.now() - startedAt;
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'shiller',
+          tool: 'invoke_shiller',
+          level: 'info',
+          message: `shiller persona finished (${durationMs.toString()}ms, decision=${result.decision})`,
+          meta: { durationMs, decision: result.decision },
+        });
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'shiller',
+          tool: 'invoke_shiller',
+          level: 'error',
+          message: `shiller persona failed: ${message}`,
+        });
+        throw err;
+      }
     },
   };
 }
 
 // ─── invoke_heartbeat_tick ──────────────────────────────────────────────────
 
-export interface CreateInvokeHeartbeatTickToolDeps {
+export interface CreateInvokeHeartbeatTickToolDeps extends PersonaInvokeEventCallbacks {
   persona: Persona<HeartbeatPersonaInput, HeartbeatPersonaOutput>;
   client: Anthropic;
   registry: ToolRegistry;
@@ -243,7 +483,6 @@ export interface CreateInvokeHeartbeatTickToolDeps {
   buildUserInput: (ctx: { tickId: string; tickAt: string }) => string;
   /** Default intervalMs when the Brain does not override per-call. */
   defaultIntervalMs?: number;
-  onLog?: (event: LogEvent) => void;
   /** Optional test seam — pass through to the persona adapter. */
   runAgentLoopImpl?: typeof runAgentLoop;
 }
@@ -262,6 +501,10 @@ export function createInvokeHeartbeatTickTool(
     buildUserInput,
     defaultIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
     onLog,
+    onArtifact,
+    onToolUseStart,
+    onToolUseEnd,
+    onAssistantDelta,
     runAgentLoopImpl,
   } = deps;
   return {
@@ -280,8 +523,46 @@ export function createInvokeHeartbeatTickTool(
         ...(onLog !== undefined ? { onLog } : {}),
         ...(runAgentLoopImpl !== undefined ? { runAgentLoopImpl } : {}),
       };
-      const ctx: PersonaRunContext = { client, registry };
-      return persona.run(personaInput, ctx);
+      const startedAt = Date.now();
+      onLog?.({
+        ts: new Date(startedAt).toISOString(),
+        agent: 'heartbeat',
+        tool: 'invoke_heartbeat_tick',
+        level: 'info',
+        message: `heartbeat tick starting (token: ${parsed.tokenAddr})`,
+      });
+      const ctx: PersonaRunContext = {
+        client,
+        registry,
+        ...(onLog !== undefined ? { onLog } : {}),
+        ...(onArtifact !== undefined ? { onArtifact } : {}),
+        ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
+        ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
+        ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
+      };
+      try {
+        const result = await persona.run(personaInput, ctx);
+        const durationMs = Date.now() - startedAt;
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'heartbeat',
+          tool: 'invoke_heartbeat_tick',
+          level: 'info',
+          message: `heartbeat tick finished (${durationMs.toString()}ms, success=${result.successCount.toString()}, error=${result.errorCount.toString()})`,
+          meta: { durationMs },
+        });
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'heartbeat',
+          tool: 'invoke_heartbeat_tick',
+          level: 'error',
+          message: `heartbeat tick failed: ${message}`,
+        });
+        throw err;
+      }
     },
   };
 }

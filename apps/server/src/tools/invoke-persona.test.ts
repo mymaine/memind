@@ -1,7 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { AgentTool, CreatorResult, Persona, PersonaRunContext } from '@hack-fourmeme/shared';
+import type {
+  AgentTool,
+  Artifact,
+  CreatorResult,
+  LogEvent,
+  Persona,
+  PersonaRunContext,
+} from '@hack-fourmeme/shared';
 import { ToolRegistry } from './registry.js';
 import {
   createInvokeCreatorTool,
@@ -144,6 +151,123 @@ describe('createInvokeCreatorTool', () => {
     expect(output.tokenAddr).toBe(FAKE_TOKEN_ADDR);
     expect(output.loreIpfsCid).toBe('bafkrei-out');
   });
+
+  it('emits entry + exit logs and threads event callbacks through ctx', async () => {
+    const run = vi.fn(
+      async (_input: CreatorPersonaInput, _ctx: PersonaRunContext): Promise<CreatorResult> => ({
+        tokenAddr: FAKE_TOKEN_ADDR,
+        tokenDeployTx: FAKE_TX,
+        loreIpfsCid: 'bafkrei-xyz',
+        metadata: {
+          name: 'HBNB2026-B',
+          symbol: 'HBNB2026-B',
+          description: 'b',
+          imageLocalPath: '/tmp/b.png',
+        },
+      }),
+    );
+    const persona = makeCreatorPersona(run);
+    const onLog = vi.fn<(event: LogEvent) => void>();
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const onToolUseStart = vi.fn();
+    const onToolUseEnd = vi.fn();
+    const onAssistantDelta = vi.fn();
+
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      onLog,
+      onArtifact,
+      onToolUseStart,
+      onToolUseEnd,
+      onAssistantDelta,
+    });
+
+    await tool.execute({ theme: 'BNB Chain 2026 growth' });
+
+    // Entry + exit logs both emitted under agent='creator'.
+    expect(onLog).toHaveBeenCalled();
+    const logMessages = onLog.mock.calls.map((c) => c[0].message);
+    expect(logMessages.some((m) => m.includes('starting'))).toBe(true);
+    expect(logMessages.some((m) => m.includes('finished'))).toBe(true);
+    onLog.mock.calls.forEach((call) => expect(call[0].agent).toBe('creator'));
+
+    // ctx must carry the event callbacks so persona.run → runAgentLoop can
+    // read them off PersonaRunContext.
+    const [, ctx] = run.mock.calls[0]!;
+    expect(ctx.onLog).toBe(onLog);
+    expect(ctx.onArtifact).toBe(onArtifact);
+    expect(ctx.onToolUseStart).toBe(onToolUseStart);
+    expect(ctx.onToolUseEnd).toBe(onToolUseEnd);
+    expect(ctx.onAssistantDelta).toBe(onAssistantDelta);
+  });
+
+  it('emits bsc-token + token-deploy-tx + lore-cid artifacts from the persona result', async () => {
+    const run = async (): Promise<CreatorResult> => ({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      tokenDeployTx: FAKE_TX,
+      loreIpfsCid: 'bafkrei-result',
+      metadata: {
+        name: 'HBNB2026-R',
+        symbol: 'HBNB2026-R',
+        description: 'r',
+        imageLocalPath: '/tmp/r.png',
+      },
+    });
+    const persona = makeCreatorPersona(run);
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      onArtifact,
+    });
+
+    await tool.execute({ theme: 'theme' });
+
+    const kinds = onArtifact.mock.calls.map((c) => c[0].kind);
+    expect(kinds).toContain('bsc-token');
+    expect(kinds).toContain('token-deploy-tx');
+    expect(kinds).toContain('lore-cid');
+
+    const bscToken = onArtifact.mock.calls.find((c) => c[0].kind === 'bsc-token')?.[0];
+    expect(bscToken).toMatchObject({
+      kind: 'bsc-token',
+      chain: 'bsc-mainnet',
+      address: FAKE_TOKEN_ADDR,
+    });
+    const deployTx = onArtifact.mock.calls.find((c) => c[0].kind === 'token-deploy-tx')?.[0];
+    expect(deployTx).toMatchObject({
+      kind: 'token-deploy-tx',
+      chain: 'bsc-mainnet',
+      txHash: FAKE_TX,
+    });
+    const loreCid = onArtifact.mock.calls.find((c) => c[0].kind === 'lore-cid')?.[0];
+    expect(loreCid).toMatchObject({
+      kind: 'lore-cid',
+      cid: 'bafkrei-result',
+      author: 'creator',
+    });
+  });
+
+  it('emits an error log and rethrows when the persona run fails', async () => {
+    const persona = makeCreatorPersona(async () => {
+      throw new Error('boom');
+    });
+    const onLog = vi.fn<(event: LogEvent) => void>();
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      onLog,
+    });
+
+    await expect(tool.execute({ theme: 'will fail' })).rejects.toThrow('boom');
+    const errorLogs = onLog.mock.calls.filter((c) => c[0].level === 'error');
+    expect(errorLogs.length).toBeGreaterThanOrEqual(1);
+    expect(errorLogs[0]![0].message).toContain('boom');
+  });
 });
 
 // ─── invoke_narrator ────────────────────────────────────────────────────────
@@ -228,6 +352,65 @@ describe('createInvokeNarratorTool', () => {
     expect(ctx.registry).toBe(registry);
     expect(ctx.store).toBe(fakeStore);
     expect(output.chapterNumber).toBe(3);
+  });
+
+  it('emits entry/exit logs, a lore-cid artifact, and threads ctx callbacks', async () => {
+    const run = vi.fn(
+      async (
+        _input: NarratorPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<NarratorPersonaOutput> => ({
+        tokenAddr: FAKE_TOKEN_ADDR,
+        chapterNumber: 2,
+        ipfsHash: 'bafkrei-narrator',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-narrator',
+        chapterText: 'ch2',
+      }),
+    );
+    const persona = makeNarratorPersona(run);
+    const onLog = vi.fn<(event: LogEvent) => void>();
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const onToolUseStart = vi.fn();
+    const onToolUseEnd = vi.fn();
+    const onAssistantDelta = vi.fn();
+
+    const tool = createInvokeNarratorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      store: { __brand: 'LoreStore' } as unknown as never,
+      resolveTokenMeta: () => ({ tokenName: 'N', tokenSymbol: 'N' }),
+      onLog,
+      onArtifact,
+      onToolUseStart,
+      onToolUseEnd,
+      onAssistantDelta,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    // Entry + exit logs.
+    const logMessages = onLog.mock.calls.map((c) => c[0].message);
+    expect(logMessages.some((m) => m.includes('starting'))).toBe(true);
+    expect(logMessages.some((m) => m.includes('finished'))).toBe(true);
+    onLog.mock.calls.forEach((call) => expect(call[0].agent).toBe('narrator'));
+
+    // lore-cid artifact with author='narrator' + chapterNumber.
+    const loreCid = onArtifact.mock.calls.find((c) => c[0].kind === 'lore-cid')?.[0];
+    expect(loreCid).toMatchObject({
+      kind: 'lore-cid',
+      cid: 'bafkrei-narrator',
+      author: 'narrator',
+      chapterNumber: 2,
+    });
+
+    // ctx carries all callbacks.
+    const [, ctx] = run.mock.calls[0]!;
+    expect(ctx.onLog).toBe(onLog);
+    expect(ctx.onArtifact).toBe(onArtifact);
+    expect(ctx.onToolUseStart).toBe(onToolUseStart);
+    expect(ctx.onToolUseEnd).toBe(onToolUseEnd);
+    expect(ctx.onAssistantDelta).toBe(onAssistantDelta);
   });
 });
 
@@ -316,6 +499,76 @@ describe('createInvokeShillerTool', () => {
     expect(output.decision).toBe('shill');
     expect(output.tweetId).toBe('tid-42');
   });
+
+  it('emits entry/exit logs, a tweet-url artifact on shill, and threads ctx callbacks', async () => {
+    const run = vi.fn(
+      async (
+        _input: ShillerPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<ShillerPersonaOutput> => ({
+        orderId: 'order-z',
+        tokenAddr: FAKE_TOKEN_ADDR,
+        decision: 'shill',
+        tweetId: 'tid-z',
+        tweetUrl: 'https://x.com/stub/status/tid-z',
+        tweetText: 'z',
+        postedAt: '2026-04-19T00:00:00.000Z',
+        toolCalls: [],
+      }),
+    );
+    const persona = makeShillerPersona(run);
+    const onLog = vi.fn<(event: LogEvent) => void>();
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+
+    const tool = createInvokeShillerTool({
+      persona,
+      postShillForTool: fakePostShillForTool(),
+      resolveOrder: () => ({ orderId: 'order-z', loreSnippet: 'snip' }),
+      onLog,
+      onArtifact,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    const logMessages = onLog.mock.calls.map((c) => c[0].message);
+    expect(logMessages.some((m) => m.includes('starting'))).toBe(true);
+    expect(logMessages.some((m) => m.includes('finished'))).toBe(true);
+    onLog.mock.calls.forEach((call) => expect(call[0].agent).toBe('shiller'));
+
+    const tweetUrl = onArtifact.mock.calls.find((c) => c[0].kind === 'tweet-url')?.[0];
+    expect(tweetUrl).toMatchObject({
+      kind: 'tweet-url',
+      url: 'https://x.com/stub/status/tid-z',
+      tweetId: 'tid-z',
+    });
+
+    // ctx carries onLog so runShillerAgent's [shill mode] logs flow through.
+    const [, ctx] = run.mock.calls[0]!;
+    expect(ctx.onLog).toBe(onLog);
+  });
+
+  it('does NOT emit a tweet-url artifact when the persona decides to skip', async () => {
+    const persona = makeShillerPersona(async () => ({
+      orderId: 'order-q',
+      tokenAddr: FAKE_TOKEN_ADDR,
+      decision: 'skip',
+      toolCalls: [],
+      errorMessage: 'guard-exhausted',
+    }));
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+
+    const tool = createInvokeShillerTool({
+      persona,
+      postShillForTool: fakePostShillForTool(),
+      resolveOrder: () => ({ orderId: 'order-q', loreSnippet: 's' }),
+      onArtifact,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    const kinds = onArtifact.mock.calls.map((c) => c[0].kind);
+    expect(kinds).not.toContain('tweet-url');
+  });
 });
 
 // ─── invoke_heartbeat_tick ──────────────────────────────────────────────────
@@ -401,5 +654,55 @@ describe('createInvokeHeartbeatTickTool', () => {
     expect(ctx.registry).toBe(registry);
     expect(output.successCount).toBe(1);
     expect(output.lastTickId).toBe('tick_abc');
+  });
+
+  it('emits entry/exit logs and threads all event callbacks through ctx', async () => {
+    const run = vi.fn(
+      async (
+        _input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => ({
+        lastTickAt: '2026-04-19T00:00:00.000Z',
+        lastTickId: 'tick_1',
+        successCount: 1,
+        errorCount: 0,
+        skippedCount: 0,
+        lastError: null,
+      }),
+    );
+    const persona = makeHeartbeatPersona(run);
+    const onLog = vi.fn<(event: LogEvent) => void>();
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const onToolUseStart = vi.fn();
+    const onToolUseEnd = vi.fn();
+    const onAssistantDelta = vi.fn();
+
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'm',
+      systemPrompt: 'p',
+      buildUserInput: () => 'tick',
+      onLog,
+      onArtifact,
+      onToolUseStart,
+      onToolUseEnd,
+      onAssistantDelta,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    const logMessages = onLog.mock.calls.map((c) => c[0].message);
+    expect(logMessages.some((m) => m.includes('starting'))).toBe(true);
+    expect(logMessages.some((m) => m.includes('finished'))).toBe(true);
+    onLog.mock.calls.forEach((call) => expect(call[0].agent).toBe('heartbeat'));
+
+    const [, ctx] = run.mock.calls[0]!;
+    expect(ctx.onLog).toBe(onLog);
+    expect(ctx.onArtifact).toBe(onArtifact);
+    expect(ctx.onToolUseStart).toBe(onToolUseStart);
+    expect(ctx.onToolUseEnd).toBe(onToolUseEnd);
+    expect(ctx.onAssistantDelta).toBe(onAssistantDelta);
   });
 });
