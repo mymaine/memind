@@ -13,10 +13,10 @@
  *     (returns null so the bar omits that segment entirely rather than
  *     flashing stale state after a run ends).
  *   - Agent ids are the code-side names (creator / narrator / market-maker
- *     / heartbeat) — the pitch-layer persona labels come from
- *     BRAIN_ARCHITECTURE.shippedPersonas in narrative-copy. We keep that
- *     one-way map local so the decision doc's "code keeps agent, UI uses
- *     persona" rule is honoured without leaking it across the repo.
+ *     / heartbeat); the pitch-layer persona labels are the one-way map
+ *     defined below. Keeping the map local honours the decision doc's
+ *     "code keeps agent, UI uses persona" rule without leaking it across
+ *     the repo.
  */
 import type { AgentId } from '@hack-fourmeme/shared';
 import type { RunState } from '@/hooks/useRun-state';
@@ -25,8 +25,7 @@ export type BrainStatus = 'online' | 'idle';
 
 /**
  * One-way code-agent → pitch-persona label map. Kept in one place (here)
- * so renames only touch a single file. These labels match the Name field
- * in `BRAIN_ARCHITECTURE.shippedPersonas` in narrative-copy.
+ * so renames only touch a single file.
  */
 const AGENT_TO_PERSONA_LABEL: Record<AgentId, string> = {
   creator: 'Creator',
