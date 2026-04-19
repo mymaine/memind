@@ -1,105 +1,89 @@
 /**
- * Static-render assertions for the shared <Header /> surface.
+ * Tests for the rewritten <Header /> surface (memind-scrollytelling-rebuild
+ * AC-MSR-3 TopBar).
  *
- * The real Header is a client-only shell that reads usePathname() and
- * useScrollProgress() — calling those outside of Next's server component
- * render tree would crash renderToStaticMarkup, so the logic that cares
- * about props lives in <HeaderView />, a pure presentational component.
- * These tests drive HeaderView directly with explicit props; the Header
- * wrapper is smoke-tested by asserting it exports a function (the
- * meaningful behaviour — active nav, scroll blur — is covered by
- * HeaderView + header-utils tests).
+ * The old Header was a Tailwind-styled slim nav with a GitHub icon + Home
+ * link. It has been replaced by a design-spec TopBar carrying a brand mark
+ * + wordmark + meme x mind tag on the left, and a mono progress indicator
+ * (NN/MM + 120px progress bar) plus a <BrainIndicator /> on the right.
  *
- * Post-immersive-single-page P1 Task 3 / AC-ISP-4 + AC-ISP-6: the menu is
- * slimmed to a single primary nav entry (Home), a GitHub icon link and a
- * <BrainIndicator /> mounted on the right. The former Market + Evidence
- * content anchors were dropped — section jumps are owned by the left-side
- * SectionToc on `md+` and the Header nav on sub-md.
+ * <HeaderView /> is the pure presentational piece (node-testable via
+ * renderToStaticMarkup); <Header /> is the client shell that forwards
+ * props to the view.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Header, HeaderView } from './header.js';
-import { NAV_ITEMS } from './header-utils.js';
-import { BRAND_NAME } from '../lib/narrative-copy.js';
 import { IDLE_STATE } from '@/hooks/useRun-state';
 
 function render(props: Partial<Parameters<typeof HeaderView>[0]> = {}): string {
   return renderToStaticMarkup(
     <HeaderView
-      pathname="/"
-      scrolled={false}
-      brandName={BRAND_NAME}
-      navItems={NAV_ITEMS}
-      githubUrl="#"
+      activeIdx={0}
+      total={11}
+      progress={0}
       runState={IDLE_STATE}
-      brainModalOpen={false}
-      onOpenBrainModal={() => {}}
+      onBrainClick={() => {}}
       {...props}
     />,
   );
 }
 
-describe('<HeaderView /> static render', () => {
-  it('surfaces the BRAND_NAME wordmark', () => {
-    expect(render()).toContain(BRAND_NAME);
-  });
-
-  it('renders the slim primary nav — Home only, no Market or Evidence', () => {
+describe('<HeaderView /> TopBar', () => {
+  it('mounts under the .topbar shell class with brand + nav regions', () => {
     const out = render();
-    expect(out).toContain('>Home<');
-    expect(out).not.toContain('>Market<');
-    expect(out).not.toContain('>Evidence<');
+    expect(out).toMatch(/<header[^>]*class="topbar"/);
+    expect(out).toContain('topbar-brand');
+    expect(out).toContain('topbar-nav');
   });
 
-  it('wraps nav entries in a <nav> landmark labelled "Primary"', () => {
+  it('surfaces the MEMIND wordmark and meme x mind tag', () => {
     const out = render();
-    expect(out).toMatch(/<nav[^>]+aria-label="Primary"/);
+    expect(out).toContain('MEMIND');
+    expect(out).toContain('meme × mind');
   });
 
-  it('mounts a <BrainIndicator /> in the header (aria-label + TOKEN BRAIN label)', () => {
+  it('formats the progress counter as zero-padded NN/MM (01/11 at idx=0)', () => {
+    const out = render({ activeIdx: 0, total: 11 });
+    expect(out).toMatch(/01\s*\/\s*11/);
+  });
+
+  it('renders the zero-padded counter for a later chapter (03/11 at idx=2)', () => {
+    const out = render({ activeIdx: 2, total: 11 });
+    expect(out).toMatch(/03\s*\/\s*11/);
+  });
+
+  it('sizes the progress fill bar off the progress prop (width % mirrors 0..1)', () => {
+    const out = render({ progress: 0.25 });
+    // Fill mounts as `.topbar-progress-fill` with inline width:25%.
+    expect(out).toMatch(/topbar-progress-fill[^>]*style="width:\s*25(?:\.0)?%/);
+  });
+
+  it('mounts a <BrainIndicator /> button carrying the TOKEN BRAIN label', () => {
     const out = render();
     expect(out).toContain('TOKEN BRAIN');
-    expect(out).toMatch(/aria-label="Open Token Brain detail"/);
+    expect(out).toMatch(/<button[^>]*class="brain-ind"/);
   });
 
-  it('exposes the GitHub link with external-link hygiene and an aria-label', () => {
-    const out = render({ githubUrl: 'https://github.com/example/repo' });
-    // Opens in a new tab and drops referrer/window-opener context.
-    expect(out).toContain('target="_blank"');
-    expect(out).toContain('rel="noopener noreferrer"');
-    // Mentions "GitHub" in the accessible name so screen readers announce it.
-    expect(out).toMatch(/aria-label="[^"]*GitHub[^"]*"/);
-    expect(out).toContain('href="https://github.com/example/repo"');
-  });
-
-  it('marks the active nav entry with aria-current=page', () => {
-    const out = render({ pathname: '/' });
-    // Home should light up on `/`.
-    expect(out).toMatch(/aria-current="page"[^>]*>[^<]*Home/);
-  });
-
-  it('switches the outer class to the blur variant when scrolled is true', () => {
-    const before = render({ scrolled: false });
-    const after = render({ scrolled: true });
-    expect(before).toContain('bg-transparent');
-    expect(after).toContain('backdrop-blur-md');
-  });
-
-  it('renders <PixelHumanGlyph mood=idle> as the brand mark (logo)', () => {
-    // The pixel glyph is the shipped brand mark (ASCII ShillingGlyph was
-    // retired from the header after style A/B comparison). We assert the
-    // root <svg> attributes so a future refactor that drops the logo or
-    // flips mood away from idle fails loudly.
-    const out = render();
-    expect(out).toContain('aria-label="Shilling Market logo"');
-    expect(out).toContain('pixel-root');
-    expect(out).toContain('pixel--idle');
-    expect(out).toContain('data-mood="idle"');
+  it('wires onBrainClick through to the BrainIndicator without invoking it at render time', () => {
+    const onBrainClick = vi.fn();
+    renderToStaticMarkup(
+      <HeaderView
+        activeIdx={0}
+        total={11}
+        progress={0}
+        runState={IDLE_STATE}
+        onBrainClick={onBrainClick}
+      />,
+    );
+    // Static render does not fire click events; we only assert the handler
+    // is not accidentally called during the render phase.
+    expect(onBrainClick).not.toHaveBeenCalled();
   });
 });
 
 describe('<Header /> export contract', () => {
-  it('exports a function component so the client shell can be mounted', () => {
+  it('exports a function component so the page shell can mount it', () => {
     expect(typeof Header).toBe('function');
   });
 });

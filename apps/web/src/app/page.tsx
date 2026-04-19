@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Home page — StickyStage scrollytelling shell
- * (memind-scrollytelling-rebuild P0 Task 1).
+ * Home page — StickyStage scrollytelling shell + TopBar mount
+ * (memind-scrollytelling-rebuild P0 Task 1 + AC-MSR-3).
  *
  * All 11 chapters are absolutely positioned inside a single sticky viewport
  * (`.sticky-viewport`) and cross-fade in place as the user scrolls through
@@ -11,18 +11,19 @@
  * stays active for the entire narrative. Opacity / scale / blur are driven
  * by a single `useScrollY()` → `StickyStage` chain — no translateY anywhere.
  *
- * This task only stands up the engine: each chapter is represented by a
- * placeholder tile (`ChPlaceholder`) so the shell is verifiable with a
- * live `next dev` reload. P0 Tasks 3-13 replace the placeholders with the
- * real chapter components one by one. TopBar / TOC / Watermark /
- * FooterDrawer / BrainPanel mounts are deferred to Tasks 2, 14, 15.
+ * Real chapter components replace placeholders one-by-one in P0 Tasks 3-13;
+ * each slot currently gets a <ChPlaceholder /> tile unless an entry in
+ * `REAL_COMPS` overrides it. TOC / Watermark / FooterDrawer / BrainPanel
+ * mounts land in the next P0 tasks.
  *
- * `useRun()` + `usePublishRunState(state)` are kept wired up — the existing
- * <Header /> in layout.tsx still renders the <BrainIndicator /> and needs
- * live run state to drive the ONLINE/IDLE badge.
+ * The TopBar (<Header />) mounts here (not layout.tsx) because it needs live
+ * `activeIdx` / `progress` props from the StickyStage scroll chain. The
+ * RunStateProvider still lives in layout.tsx, so the TopBar's embedded
+ * <BrainIndicator /> reads run state through context.
  */
 import { useEffect, useState, type ReactElement } from 'react';
 import { Ch1Hero } from '@/components/chapters/ch1-hero';
+import { Header } from '@/components/header';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
 import { useActiveChapter } from '@/hooks/useActiveChapter';
 import { useRun } from '@/hooks/useRun';
@@ -85,9 +86,8 @@ const CHAPTERS: readonly StickyStageChapter[] = CHAPTER_META.map((m, idx) => ({
 
 export default function HomePage(): ReactElement {
   const hookResult = useRun();
-  // Publish run state so the layout-level <Header /><BrainIndicator /> keeps
-  // reflecting active persona + ONLINE/IDLE, even while the dedicated
-  // TopBar / BrainPanel mounts are still pending (P0 Tasks 2 / 15).
+  // Publish run state so the TopBar's <BrainIndicator /> reflects live
+  // ONLINE/IDLE + active persona through RunStateContext.
   usePublishRunState(hookResult.state);
 
   // Viewport height state. SSR initialises to a sane 800 so the first paint
@@ -104,14 +104,25 @@ export default function HomePage(): ReactElement {
   }, []);
 
   const scrollY = useScrollY();
-  useActiveChapter(scrollY, vh, CHAPTERS.length);
+  const { activeIdx, progress } = useActiveChapter(scrollY, vh, CHAPTERS.length);
 
   const slotPx = SLOT_VH * vh;
   const totalScrollH = CHAPTERS.length * slotPx + vh;
 
   return (
-    <div className="scroll-slot" style={{ height: totalScrollH }}>
-      <StickyStage chapters={CHAPTERS} scrollY={scrollY} vh={vh} />
-    </div>
+    <>
+      <Header
+        activeIdx={activeIdx}
+        total={CHAPTERS.length}
+        progress={progress}
+        runState={hookResult.state}
+        // BrainPanel open-state handler lands in P0-15; wire a no-op for now
+        // so the button still mounts and the TOKEN BRAIN pill renders.
+        onBrainClick={() => {}}
+      />
+      <div className="scroll-slot" style={{ height: totalScrollH }}>
+        <StickyStage chapters={CHAPTERS} scrollY={scrollY} vh={vh} />
+      </div>
+    </>
   );
 }

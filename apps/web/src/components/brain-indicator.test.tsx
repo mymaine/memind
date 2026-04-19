@@ -1,32 +1,25 @@
 /**
- * Red tests for <BrainIndicatorView /> — the pure presentational Brain
- * indicator shipped inside the slim Header as part of
- * immersive-single-page P1 Task 3 / AC-ISP-6.
+ * Tests for the rewritten <BrainIndicatorView /> - the slim TopBar pill
+ * that replaces the old modal-owning indicator
+ * (memind-scrollytelling-rebuild AC-MSR-3).
  *
- * The runtime <BrainIndicator /> is a client shell that subscribes to the
- * RunStateContext and wires a click handler into <BrainDetailModal />. Tests
- * exercise the pure <BrainIndicatorView /> directly — this mirrors the
- * <HeaderView /> / <BrainStatusBarView /> split convention so all
- * assertions run under node-env vitest via renderToStaticMarkup.
- *
- * Five behaviours per the V4.7-P5 brief (inherited from the old
- * BrainStatusBar tests + new click / aria-label contract):
- *   1. Idle state renders the TOKEN BRAIN label + "idle" status.
- *   2. Running state flips the status to "online" and surfaces the active
- *      persona label (from `deriveActivePersonaLabel`).
- *   3. The click handler is wired onto a native <button> (keyboard
- *      activatable via Enter + Space without extra plumbing).
- *   4. The button exposes an accessible name via aria-label so screen
- *      readers announce "Open Token Brain detail".
- *   5. aria-haspopup="dialog" + aria-expanded follows the modal state so
- *      assistive tech knows the control opens a dialog.
+ * The new indicator does not own any modal state; clicking forwards to the
+ * `onClick` prop which the TopBar wires to the BrainPanel open toggle
+ * (panel mount lands in P0-15). We assert:
+ *   1. Idle state renders TOKEN BRAIN + IDLE.
+ *   2. Running state flips status to ONLINE.
+ *   3. The button is a native <button type="button"> carrying the
+ *      "Open brain panel" aria-label.
+ *   4. Mood derivation from the latest log's agent (creator -> type-keyboard,
+ *      narrator -> think, heartbeat -> walk-right).
+ *   5. Idle state keeps the mascot at `mood=idle`.
  */
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { LogEvent } from '@hack-fourmeme/shared';
 import type { RunState } from '@/hooks/useRun-state';
 import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS, IDLE_STATE } from '@/hooks/useRun-state';
-import { BrainIndicatorView } from './brain-indicator.js';
+import { BrainIndicatorView, deriveGlyphMood } from './brain-indicator.js';
 
 function runningState(logs: LogEvent[]): RunState {
   return {
@@ -51,74 +44,72 @@ function log(agent: LogEvent['agent'], message: string): LogEvent {
 }
 
 describe('<BrainIndicatorView />', () => {
-  it('renders the TOKEN BRAIN label + idle status when no run is in flight', () => {
+  it('renders the TOKEN BRAIN label + IDLE status when no run is in flight', () => {
     const out = renderToStaticMarkup(
-      <BrainIndicatorView runState={IDLE_STATE} modalOpen={false} onOpen={() => {}} />,
+      <BrainIndicatorView runState={IDLE_STATE} onClick={() => {}} />,
     );
     expect(out).toContain('TOKEN BRAIN');
-    expect(out).toContain('idle');
+    expect(out).toContain('IDLE');
   });
 
-  it('flips the status to "online" and surfaces the active persona during a running run', () => {
-    const state = runningState([
-      log('creator', 'drafting lore chapter 1'),
-      log('narrator', 'continuing lore chapter 2'),
-    ]);
-    const out = renderToStaticMarkup(
-      <BrainIndicatorView runState={state} modalOpen={false} onOpen={() => {}} />,
-    );
-    expect(out).toContain('online');
-    expect(out.toLowerCase()).toContain('narrator');
+  it('flips the status to ONLINE during a running run', () => {
+    const state = runningState([log('creator', 'drafting lore chapter 1')]);
+    const out = renderToStaticMarkup(<BrainIndicatorView runState={state} onClick={() => {}} />);
+    expect(out).toContain('ONLINE');
   });
 
-  it('is a native <button type="button"> so Enter + Space activate via the browser default', () => {
+  it('is a native <button type="button"> carrying the "Open brain panel" aria-label', () => {
     const out = renderToStaticMarkup(
-      <BrainIndicatorView runState={IDLE_STATE} modalOpen={false} onOpen={() => {}} />,
+      <BrainIndicatorView runState={IDLE_STATE} onClick={() => {}} />,
     );
     expect(out).toMatch(/<button[^>]*type="button"/);
+    expect(out).toMatch(/aria-label="Open brain panel"/);
   });
 
-  it('exposes an explicit aria-label so assistive tech announces the control', () => {
+  it('renders the mascot at mood=idle when no run is in flight', () => {
     const out = renderToStaticMarkup(
-      <BrainIndicatorView runState={IDLE_STATE} modalOpen={false} onOpen={() => {}} />,
+      <BrainIndicatorView runState={IDLE_STATE} onClick={() => {}} />,
     );
-    expect(out).toMatch(/aria-label="Open Token Brain detail"/);
-  });
-
-  it('binds aria-haspopup="dialog" + aria-expanded to the modal state', () => {
-    const closed = renderToStaticMarkup(
-      <BrainIndicatorView runState={IDLE_STATE} modalOpen={false} onOpen={() => {}} />,
-    );
-    expect(closed).toMatch(/aria-haspopup="dialog"/);
-    expect(closed).toContain('aria-expanded="false"');
-
-    const open = renderToStaticMarkup(
-      <BrainIndicatorView runState={IDLE_STATE} modalOpen={true} onOpen={() => {}} />,
-    );
-    expect(open).toContain('aria-expanded="true"');
-  });
-
-  it('renders the tiny status mascot with mood="sleep" when idle', () => {
-    const out = renderToStaticMarkup(
-      <BrainIndicatorView runState={IDLE_STATE} modalOpen={false} onOpen={() => {}} />,
-    );
-    // The accent-circle SVG that used to live in the button was replaced
-    // by a size=20 PixelHumanGlyph whose mood mirrors BrainStatus. Idle
-    // → sleep (the mascot dozes).
     expect(out).toMatch(/data-testid="brain-indicator-mascot"/);
-    expect(out).toMatch(
-      /data-testid="brain-indicator-mascot"[^]*?data-mood="sleep"/,
-    );
+    expect(out).toMatch(/data-testid="brain-indicator-mascot"[^]*?data-mood="idle"/);
   });
 
-  it('flips the status mascot to mood="work" during a running run', () => {
-    const state = runningState([log('creator', 'deploying token')]);
-    const out = renderToStaticMarkup(
-      <BrainIndicatorView runState={state} modalOpen={false} onOpen={() => {}} />,
+  it('swaps the mascot mood to match the latest active agent during a run', () => {
+    const creatorOut = renderToStaticMarkup(
+      <BrainIndicatorView
+        runState={runningState([log('creator', 'deploying token')])}
+        onClick={() => {}}
+      />,
     );
-    // Online → work mood so the indicator reads as busy.
-    expect(out).toMatch(
-      /data-testid="brain-indicator-mascot"[^]*?data-mood="work"/,
+    expect(creatorOut).toMatch(
+      /data-testid="brain-indicator-mascot"[^]*?data-mood="type-keyboard"/,
     );
+
+    const heartbeatOut = renderToStaticMarkup(
+      <BrainIndicatorView
+        runState={runningState([log('heartbeat', 'ticking')])}
+        onClick={() => {}}
+      />,
+    );
+    expect(heartbeatOut).toMatch(/data-testid="brain-indicator-mascot"[^]*?data-mood="walk-right"/);
+  });
+});
+
+describe('deriveGlyphMood', () => {
+  it('returns `idle` for IDLE_STATE', () => {
+    expect(deriveGlyphMood(IDLE_STATE)).toBe('idle');
+  });
+
+  it('maps the latest log agent to its persona mood', () => {
+    expect(deriveGlyphMood(runningState([log('creator', 'x')]))).toBe('type-keyboard');
+    expect(deriveGlyphMood(runningState([log('narrator', 'x')]))).toBe('think');
+    expect(deriveGlyphMood(runningState([log('market-maker', 'x')]))).toBe('megaphone');
+    expect(deriveGlyphMood(runningState([log('shiller', 'x')]))).toBe('megaphone');
+    expect(deriveGlyphMood(runningState([log('brain', 'x')]))).toBe('think');
+    expect(deriveGlyphMood(runningState([log('heartbeat', 'x')]))).toBe('walk-right');
+  });
+
+  it('falls back to `work` for a running run with no logs yet', () => {
+    expect(deriveGlyphMood(runningState([]))).toBe('work');
   });
 });

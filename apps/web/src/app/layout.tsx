@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
-import { Header } from '@/components/header';
 import { RunStateProvider } from '@/hooks/useRunStateContext';
 import './globals.css';
 
@@ -30,29 +29,25 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body>
         {/*
-         * <RunStateProvider /> hoists the run-state context above both the
-         * <Header /> (which now hosts the <BrainIndicator />) and the routed
+         * <RunStateProvider /> hoists the run-state context above the routed
          * <main> (children). Each page publishes its `useRun()` state via
-         * `usePublishRunState(state)`; the indicator subscribes via
-         * `useRunState()`. Routes without a useRun instance (e.g. /demo/glyph)
-         * leave the context at IDLE_STATE, and the indicator stays `idle`.
+         * `usePublishRunState(state)`; consumers (TopBar <BrainIndicator />
+         * etc.) subscribe via `useRunState()`. Routes without a useRun
+         * instance (e.g. /demo/glyph) leave the context at IDLE_STATE.
          *
-         * The old independent <BrainStatusBar /> strip was retired in
-         * immersive-single-page P1 Task 3 / AC-ISP-6 — the Brain surface
-         * now lives inside the Header alongside the nav.
+         * The <Header /> TopBar mount moved from layout.tsx into page.tsx in
+         * memind-scrollytelling-rebuild AC-MSR-3 — the new TopBar needs live
+         * activeIdx / progress props from the StickyStage engine, which are
+         * only available inside the route component.
+         *
+         * <AsciiBackdrop /> mount was removed by P0 Task 1 — the handoff
+         * explicitly calls for deleting the ASCII atmospheric layer so the
+         * new sticky-viewport radial-gradient carries the background treatment
+         * alone. The component file itself lives on at
+         * apps/web/src/components/ascii-backdrop.tsx for P1 contract deletion;
+         * we only drop the mount here.
          */}
-        {/*
-         * <AsciiBackdrop /> mount was removed by memind-scrollytelling-rebuild
-         * P0 Task 1 — the handoff explicitly calls for deleting the ASCII
-         * atmospheric layer so the new sticky-viewport radial-gradient
-         * carries the background treatment alone. The component file itself
-         * lives on at apps/web/src/components/ascii-backdrop.tsx for P1
-         * contract deletion; we only drop the mount here.
-         */}
-        <RunStateProvider>
-          <Header />
-          {children}
-        </RunStateProvider>
+        <RunStateProvider>{children}</RunStateProvider>
       </body>
     </html>
   );
