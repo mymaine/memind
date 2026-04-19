@@ -264,6 +264,28 @@ describe('<ArtifactsTab />', () => {
     expect(out).toMatch(/text-transform:\s*none/i);
   });
 
+  it('renders an inline thumbnail <img> for successful meme-image rows (UAT 2026-04-20)', () => {
+    // UAT fix #1 parity: the On-chain Artifacts tab in the FooterDrawer must
+    // surface the generated meme image inline too, not only the BrainChat
+    // bubble — users switching between the drawer + chat should see the
+    // same preview everywhere.
+    const artifacts: Artifact[] = [
+      {
+        kind: 'meme-image',
+        status: 'ok',
+        cid: 'bafybeigdymemerow',
+        gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafybeigdymemerow',
+        prompt: 'pixel shiba with BNB helmet',
+      },
+    ];
+    const out = renderToStaticMarkup(<ArtifactsTab artifacts={artifacts} />);
+    expect(out).toMatch(
+      /<img[^>]*src="https:\/\/gateway\.pinata\.cloud\/ipfs\/bafybeigdymemerow"[^>]*alt="pixel shiba with BNB helmet"/,
+    );
+    // Thumbnail carries the artifact-thumb class so globals.css styles it.
+    expect(out).toMatch(/class="artifact-thumb"/);
+  });
+
   it('mapArtifactToFooterRow handles meme-image upload-failed by labelling the hash', () => {
     const row = mapArtifactToFooterRow({
       kind: 'meme-image',

@@ -234,6 +234,58 @@ describe('<BrainChatMessage /> — UAT fixes', () => {
   });
 });
 
+describe('<BrainChatMessage /> — UAT 2026-04-20 fixes', () => {
+  it('renders meme-image artifact as a clickable <img> thumbnail linking to gatewayUrl', () => {
+    // UAT fix #1: successful meme-image artifacts must surface a thumbnail
+    // (not just a text pill) so judges can preview the Creator output inline.
+    const artifact: Artifact = {
+      kind: 'meme-image',
+      status: 'ok',
+      cid: 'bafybeihmemeimage',
+      gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafybeihmemeimage',
+      prompt: 'A cyberpunk cat riding a BNB chain',
+      label: 'HBNB2026-CYBER meme',
+    };
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('', [
+          {
+            kind: 'persona-artifact',
+            agent: 'creator',
+            artifact,
+          },
+        ])}
+      />,
+    );
+    // The <a> wraps the row and targets a new tab with hardened rel.
+    expect(out).toMatch(
+      /<a[^>]*href="https:\/\/gateway\.pinata\.cloud\/ipfs\/bafybeihmemeimage"[^>]*target="_blank"[^>]*rel="noreferrer noopener"/,
+    );
+    // The <img> has the same gatewayUrl as src and an accessible alt.
+    expect(out).toMatch(
+      /<img[^>]*src="https:\/\/gateway\.pinata\.cloud\/ipfs\/bafybeihmemeimage"[^>]*alt="A cyberpunk cat riding a BNB chain"/,
+    );
+    // Helper hint tells the user they can click to enlarge.
+    expect(out).toMatch(/click to enlarge/i);
+  });
+
+  it('renders Markdown URLs with target="_blank" + rel="noopener noreferrer"', () => {
+    // UAT fix #2: links inside the Brain's final Markdown answer must open
+    // in a new tab so clicking a BSCScan / IPFS URL never unloads the demo.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('See [the token](https://bscscan.com/token/0xabc) for details.', [])}
+      />,
+    );
+    // `react-markdown` renders the anchor; our `components.a` override adds
+    // the new-tab hardening. Assert on the combined attribute pair so a
+    // future override drop breaks this test.
+    expect(out).toMatch(
+      /<a[^>]*href="https:\/\/bscscan\.com\/token\/0xabc"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/,
+    );
+  });
+});
+
 describe('<BrainChatMessage /> — ordering', () => {
   it('renders multiple brainEvents in the order they arrived', () => {
     // Not one of the five AC cases but a critical invariant: the UI must

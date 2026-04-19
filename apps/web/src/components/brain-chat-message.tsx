@@ -20,8 +20,8 @@
  * Not a client component: this file ships pure markup (no 'use client'),
  * safe for SSR. Parent BrainChat owns the 'use client' island.
  */
-import type { ReactElement } from 'react';
-import ReactMarkdown from 'react-markdown';
+import type { ComponentPropsWithoutRef, ReactElement } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { AgentId } from '@hack-fourmeme/shared';
 import type { BrainChatTurn } from '@/hooks/useBrainChat-state';
@@ -183,6 +183,47 @@ function PersonaArtifactRow({
 }: {
   group: Extract<BrainChatGroup, { kind: 'persona-artifact' }>;
 }): ReactElement {
+  // UAT fix #1 (2026-04-20): surface generated meme PNGs as clickable
+  // thumbnails inline in the bubble so judges can preview the Creator's
+  // output without opening the FooterDrawer. The pill still links to the
+  // Pinata gateway in a new tab; `target="_blank"` + `rel` hardens the
+  // external navigation against window.opener leaks.
+  if (
+    group.artifact.kind === 'meme-image' &&
+    group.artifact.status === 'ok' &&
+    group.artifact.gatewayUrl !== null
+  ) {
+    const img = group.artifact;
+    const ipfsLabel = 'IPFS';
+    const ipfsColorVar = '--color-chain-ipfs';
+    return (
+      <a
+        href={img.gatewayUrl as string}
+        target="_blank"
+        rel="noreferrer noopener"
+        className={`flex items-center gap-3 rounded-[var(--radius-card)] border bg-bg-surface px-2 py-2 text-[12px] hover:[filter:drop-shadow(0_0_4px_currentColor)] ${AGENT_TONE[group.agent]} border-l-4`}
+        style={{ borderColor: `var(${ipfsColorVar})`, color: `var(${ipfsColorVar})` }}
+      >
+        <img
+          src={img.gatewayUrl as string}
+          alt={img.prompt ?? 'Generated meme'}
+          className="h-20 w-20 shrink-0 rounded-[var(--radius-card)] border border-border-default object-cover"
+          loading="lazy"
+        />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-fg-tertiary">
+            {ipfsLabel} · meme image
+          </span>
+          <span className="[overflow-wrap:anywhere] break-all font-[family-name:var(--font-sans-body)] text-fg-primary">
+            {img.label ?? 'Generated meme'}
+          </span>
+          <span className="font-[family-name:var(--font-mono)] text-[10px] text-fg-tertiary">
+            click to enlarge
+          </span>
+        </div>
+      </a>
+    );
+  }
   if (isPillArtifact(group.artifact)) {
     const d = describeArtifact(group.artifact);
     return (
@@ -247,11 +288,26 @@ function GroupRow({ group }: { group: BrainChatGroup }): ReactElement {
  * We scope the styles under `.brain-chat-markdown` in globals.css so heading
  * sizes, list padding, and code-block borders match the Terminal Cyber
  * theme without leaking to other surfaces.
+ *
+ * UAT fix (2026-04-20): every Markdown-authored link opens in a new tab via
+ * `target="_blank"` + `rel="noopener noreferrer"` so clicking a BSCScan /
+ * Pinata / explorer URL never navigates away from the live demo context.
+ * The override is a react-markdown `components` map keyed on `a`.
  */
+const MARKDOWN_COMPONENTS: Components = {
+  a: ({ children, ...rest }: ComponentPropsWithoutRef<'a'>) => (
+    <a {...rest} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+};
+
 function AssistantMarkdown({ content }: { content: string }): ReactElement {
   return (
     <div className="brain-chat-markdown font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.5] text-fg-primary">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }

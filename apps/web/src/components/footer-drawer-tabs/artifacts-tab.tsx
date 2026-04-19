@@ -197,9 +197,26 @@ export function ArtifactsTab(props: ArtifactsTabProps): ReactElement {
         const row = mapArtifactToFooterRow(a);
         const href = resolveArtifactExplorerUrl(a);
         const rowKey = `${row.chain}-${idx.toString()}`;
+        // UAT fix (2026-04-20): for successful meme-image artifacts, inline a
+        // 24x24 thumbnail before the chain label so judges spot the Creator's
+        // output at a glance. The row still links to the Pinata gateway in a
+        // new tab via the shared <a> wrapper below.
+        const thumbSrc =
+          a.kind === 'meme-image' && a.status === 'ok' && a.gatewayUrl !== null
+            ? a.gatewayUrl
+            : null;
         const children = (
           <>
-            <span className="ev-dot" style={{ background: row.color }} />
+            {thumbSrc !== null ? (
+              <img
+                src={thumbSrc}
+                alt={a.kind === 'meme-image' ? (a.prompt ?? 'Generated meme') : 'thumbnail'}
+                className="artifact-thumb"
+                loading="lazy"
+              />
+            ) : (
+              <span className="ev-dot" style={{ background: row.color }} />
+            )}
             <span className="mono" style={{ color: row.color, width: 60 }}>
               {row.chain}
             </span>
