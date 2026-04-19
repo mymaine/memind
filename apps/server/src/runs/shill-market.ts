@@ -49,6 +49,14 @@ export interface RunShillMarketDemoArgs {
   tokenAddr: string;
   tokenSymbol?: string;
   creatorBrief?: string;
+  /**
+   * Tweet-mode toggle (2026-04-19). When `true`, the shiller appends the
+   * four.meme token URL so readers can click through to the sponsor page.
+   * When undefined (safe-mode default, production path during X's 7-day
+   * post-OAuth cooldown), the orchestrator skips forwarding the flag and
+   * the downstream tool's `?? false` fallback keeps the tweet URL-free.
+   */
+  includeFourMemeUrl?: boolean;
 }
 
 /**
@@ -66,6 +74,12 @@ export type RunShillerPhaseFn = (deps: {
   tokenSymbol?: string;
   loreSnippet: string;
   creatorBrief?: string;
+  /**
+   * Optional tweet-mode toggle threaded from `RunShillMarketDemoArgs`. The
+   * phase implementation forwards this to `post_shill_for` — absent means
+   * safe mode (no URL, the default production path).
+   */
+  includeFourMemeUrl?: boolean;
 }) => Promise<ShillerAgentOutput>;
 
 /**
@@ -235,6 +249,9 @@ const defaultRunShillerImpl: RunShillerPhaseFn = async (deps) => {
     ...(deps.tokenSymbol !== undefined ? { tokenSymbol: deps.tokenSymbol } : {}),
     loreSnippet: deps.loreSnippet,
     ...(deps.creatorBrief !== undefined ? { creatorBrief: deps.creatorBrief } : {}),
+    ...(deps.includeFourMemeUrl !== undefined
+      ? { includeFourMemeUrl: deps.includeFourMemeUrl }
+      : {}),
     onLog: (event) => deps.store.addLog(deps.runId, event),
   });
 };
@@ -374,6 +391,9 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     ...(args.tokenSymbol !== undefined ? { tokenSymbol: args.tokenSymbol } : {}),
     loreSnippet,
     ...(args.creatorBrief !== undefined ? { creatorBrief: args.creatorBrief } : {}),
+    ...(args.includeFourMemeUrl !== undefined
+      ? { includeFourMemeUrl: args.includeFourMemeUrl }
+      : {}),
   });
 
   // ─── Phase 5: Translate agent decision → store state + artifacts ───────

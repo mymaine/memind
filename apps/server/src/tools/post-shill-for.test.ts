@@ -130,6 +130,26 @@ describe('postShillForInputSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts includeFourMemeUrl=true', () => {
+    const result = postShillForInputSchema.safeParse({
+      orderId: 'order_123',
+      tokenAddr: VALID_ADDR,
+      loreSnippet: 'some lore',
+      includeFourMemeUrl: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts includeFourMemeUrl=false (default omitted)', () => {
+    const result = postShillForInputSchema.safeParse({
+      orderId: 'order_123',
+      tokenAddr: VALID_ADDR,
+      loreSnippet: 'some lore',
+      includeFourMemeUrl: false,
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('postShillForOutputSchema', () => {
@@ -387,6 +407,92 @@ describe('createPostShillForTool.execute', () => {
 
       expect(spy).toHaveBeenCalledTimes(2);
       expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(out.tweetText).toBe(clean);
+    });
+  });
+
+  /**
+   * 2026-04-19 X-API 7-day anti-spam cooldown toggle tests.
+   *
+   * Default (`includeFourMemeUrl=false`): tweet must NOT contain any URL or
+   * raw crypto address — X blocks both for the first 7 days after OAuth
+   * token regeneration. Hackathon demo-day falls inside that cooldown so
+   * safe mode is the default.
+   *
+   * Opt-in (`includeFourMemeUrl=true`): the four.meme token URL is allowed
+   * (and required by the prompt) at the tail; other explorer URLs stay
+   * banned. Retained for post-cooldown click-through campaigns.
+   */
+  describe('includeFourMemeUrl toggle', () => {
+    it('includeFourMemeUrl=true: four.meme URL + raw address both pass the guard', async () => {
+      const clean =
+        '$HBNB2026-BAT cavern bats at dusk, lore hits 👁 https://four.meme/token/' + VALID_ADDR;
+      const { client, spy } = mockAnthropicSequence([clean]);
+      const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+      const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+      const out = await tool.execute({
+        orderId: 'order_with_url',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'The bats rose from the cavern.',
+        includeFourMemeUrl: true,
+      });
+
+      // System prompt must steer the LLM to include the four.meme URL.
+      const firstCallArgs = spy.mock.calls[0]?.[0] as { system?: string } | undefined;
+      expect(firstCallArgs?.system ?? '').toMatch(/four\.meme\/token/i);
+      // Guard accepts the URL + address, no retry, posts the tweet verbatim.
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledWith({ text: clean });
+      expect(out.tweetText).toBe(clean);
+    });
+
+    it('includeFourMemeUrl=false (default): URL in first draft triggers retry', async () => {
+      // First draft has a URL (banned in safe mode) → retry produces
+      // a URL-free / address-free body and the tool posts that.
+      const dirty = '$HBNB2026-BAT visit https://four.meme/token/' + VALID_ADDR + ' for more 👁';
+      const clean = '$HBNB2026-BAT cavern bats back at dusk. lore hits different 👁';
+      const { client, spy } = mockAnthropicSequence([dirty, clean]);
+      const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+      const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+      const out = await tool.execute({
+        orderId: 'order_safe_url_retry',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'The bats rose from the cavern.',
+        // includeFourMemeUrl omitted ⇒ default false (safe mode).
+      });
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      // Retry system prompt must surface URL-related violations so the LLM
+      // can self-correct on the second attempt.
+      const secondCallArgs = spy.mock.calls[1]?.[0] as { system?: string } | undefined;
+      expect(secondCallArgs?.system ?? '').toMatch(/violated these rules/i);
+      expect(executeSpy).toHaveBeenCalledWith({ text: clean });
+      expect(out.tweetText).toBe(clean);
+    });
+
+    it('includeFourMemeUrl=false: raw 0x…40-hex address triggers retry', async () => {
+      // Safe mode blocks the raw crypto address too — X's cooldown catches
+      // bare hex addresses regardless of URL wrapping.
+      const dirty = '$HBNB2026-BAT contract ' + VALID_ADDR + ' curious find 👁';
+      const clean = '$HBNB2026-BAT curious cavern find, lore stands on its own 👁';
+      const { client, spy } = mockAnthropicSequence([dirty, clean]);
+      const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+      const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+      const out = await tool.execute({
+        orderId: 'order_safe_addr_retry',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'lore',
+        includeFourMemeUrl: false,
+      });
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(executeSpy).toHaveBeenCalledWith({ text: clean });
       expect(out.tweetText).toBe(clean);
     });
   });

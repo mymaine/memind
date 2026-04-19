@@ -478,6 +478,59 @@ describe('runShillerAgent', () => {
     expect('tokenSymbol' in calledWith).toBe(false);
   });
 
+  it('threads includeFourMemeUrl=true through to the post_shill_for input', async () => {
+    const { tool, executeSpy } = stubPostShillForTool();
+
+    await runShillerAgent({
+      postShillForTool: tool,
+      orderId: 'order-url-on',
+      tokenAddr: SHILL_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore text',
+      includeFourMemeUrl: true,
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const calledWith = executeSpy.mock.calls[0]?.[0] as PostShillForInput;
+    expect(calledWith.includeFourMemeUrl).toBe(true);
+  });
+
+  it('threads includeFourMemeUrl=false explicitly when caller passes false', async () => {
+    const { tool, executeSpy } = stubPostShillForTool();
+
+    await runShillerAgent({
+      postShillForTool: tool,
+      orderId: 'order-url-off',
+      tokenAddr: SHILL_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore text',
+      includeFourMemeUrl: false,
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const calledWith = executeSpy.mock.calls[0]?.[0] as PostShillForInput;
+    expect(calledWith.includeFourMemeUrl).toBe(false);
+  });
+
+  it('omits includeFourMemeUrl from the tool input when the caller does not pass it', async () => {
+    const { tool, executeSpy } = stubPostShillForTool();
+
+    await runShillerAgent({
+      postShillForTool: tool,
+      orderId: 'order-url-default',
+      tokenAddr: SHILL_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore text',
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const calledWith = executeSpy.mock.calls[0]?.[0] as PostShillForInput;
+    // Key must be absent (not present-but-undefined) so the tool's schema
+    // default branch triggers — downstream `?? false` fallback keeps safe
+    // mode as the production default.
+    expect('includeFourMemeUrl' in calledWith).toBe(false);
+  });
+
   it('emits at least two LogEvents with agent="market-maker" across start and completion', async () => {
     const logs: LogEvent[] = [];
     const { tool } = stubPostShillForTool();

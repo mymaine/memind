@@ -218,6 +218,16 @@ export interface RunShillerAgentParams {
    */
   creatorBrief?: string;
   /**
+   * Tweet-mode toggle (2026-04-19). When `true`, the downstream
+   * `post_shill_for` tool appends the four.meme token URL so readers can
+   * click through to the sponsor page. When `false` (default), the tweet
+   * is body-only — required for the first 7 days after X OAuth token
+   * regeneration (X's 2026 anti-spam rail blocks URLs + raw crypto
+   * addresses during that cooldown). The orchestrator threads this flag
+   * from the dashboard OrderPanel radio group.
+   */
+  includeFourMemeUrl?: boolean;
+  /**
    * Log hook — emits with `agent: 'market-maker'`. The shill persona shares
    * the market-maker agent identity for UI/trace simplicity; callers that
    * need to distinguish personas can inspect the `[shill mode]` message
@@ -256,18 +266,30 @@ export interface ShillerAgentOutput {
 }
 
 export async function runShillerAgent(params: RunShillerAgentParams): Promise<ShillerAgentOutput> {
-  const { postShillForTool, orderId, tokenAddr, tokenSymbol, loreSnippet, creatorBrief, onLog } =
-    params;
+  const {
+    postShillForTool,
+    orderId,
+    tokenAddr,
+    tokenSymbol,
+    loreSnippet,
+    creatorBrief,
+    includeFourMemeUrl,
+    onLog,
+  } = params;
 
   // Build the tool input — `tokenSymbol` must be omitted (not set to
   // undefined) when the caller didn't supply it, so the downstream zod
   // schema's `.optional()` branch triggers and the LLM prompt falls back to
-  // "infer the symbol from lore".
+  // "infer the symbol from lore". Same rule for `includeFourMemeUrl`: only
+  // forward when the caller explicitly chose a mode, so the tool's
+  // `?? false` safe-mode default still wins when the dashboard / CLI
+  // omits it.
   const input: PostShillForInput = {
     orderId,
     tokenAddr,
     ...(tokenSymbol !== undefined && tokenSymbol !== '' ? { tokenSymbol } : {}),
     loreSnippet,
+    ...(includeFourMemeUrl !== undefined ? { includeFourMemeUrl } : {}),
   };
 
   onLog?.({

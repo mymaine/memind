@@ -219,6 +219,16 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
       }
       const tokenSymbol = rawSymbol !== '' ? rawSymbol : undefined;
       const creatorBrief = rawBrief !== '' ? rawBrief : undefined;
+      // Tweet-mode toggle (2026-04-19). Dashboard OrderPanel sends a boolean;
+      // absence defaults to safe mode (URL-free tweet) per the 7-day X OAuth
+      // cooldown rail. We collapse absence + non-boolean garbage to `false`
+      // at this boundary so downstream code never sees `undefined` sneaking
+      // through. Orchestrator still threads the explicit bool to every deps
+      // layer so logs / artifacts can distinguish mode later if needed.
+      const includeFourMemeUrl =
+        typeof paramsRecord.includeFourMemeUrl === 'boolean'
+          ? paramsRecord.includeFourMemeUrl
+          : false;
 
       const tryResult = runStore.tryCreate({
         kind: 'shill-market',
@@ -238,6 +248,7 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
         tokenAddr: rawTokenAddr,
         ...(tokenSymbol !== undefined ? { tokenSymbol } : {}),
         ...(creatorBrief !== undefined ? { creatorBrief } : {}),
+        includeFourMemeUrl,
       };
       void shillMarketImpl({
         config,

@@ -309,6 +309,107 @@ describe('runShillMarketDemo', () => {
     expect(entry?.targetTokenAddr).toBe(LOWER);
   });
 
+  it('threads includeFourMemeUrl=true from args through to the shiller phase deps', async () => {
+    loreStore.upsert({
+      tokenAddr: TOKEN_ADDR_LOWER,
+      chapterNumber: 1,
+      chapterText: 'lore body',
+      ipfsHash: 'bafkreiLOREURL',
+      ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkreiLOREURL',
+      publishedAt: '2026-04-18T10:00:00.000Z',
+    });
+
+    const ORDER_ID = 'order_with_url';
+    const creatorPaymentImpl = vi
+      .fn<CreatorPaymentPhaseFn>()
+      .mockImplementation(defaultPayment(ORDER_ID));
+
+    let observedFlag: boolean | undefined;
+    const runShillerImpl = vi
+      .fn<RunShillerPhaseFn>()
+      .mockImplementation(async (deps): Promise<ShillerAgentOutput> => {
+        observedFlag = deps.includeFourMemeUrl;
+        return {
+          orderId: deps.orderId,
+          tokenAddr: deps.tokenAddr,
+          decision: 'shill',
+          tweetId: 'tu',
+          tweetUrl: 'https://x.com/shiller/status/tu',
+          tweetText: '$BAT curious find 👁',
+          postedAt: '2026-04-18T10:05:00.000Z',
+          toolCalls: [],
+        };
+      });
+
+    const record = runStore.create('shill-market');
+
+    await runShillMarketDemo({
+      config: makeConfigStub(),
+      anthropic,
+      store: runStore,
+      runId: record.runId,
+      args: { tokenAddr: TOKEN_ADDR, includeFourMemeUrl: true },
+      shillOrderStore,
+      loreStore,
+      creatorPaymentImpl,
+      runShillerImpl,
+    });
+
+    expect(observedFlag).toBe(true);
+  });
+
+  it('omits includeFourMemeUrl when args do not set it (safe-mode default)', async () => {
+    loreStore.upsert({
+      tokenAddr: TOKEN_ADDR_LOWER,
+      chapterNumber: 1,
+      chapterText: 'lore body',
+      ipfsHash: 'bafkreiLORENOFLAG',
+      ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkreiLORENOFLAG',
+      publishedAt: '2026-04-18T10:00:00.000Z',
+    });
+
+    const ORDER_ID = 'order_default';
+    const creatorPaymentImpl = vi
+      .fn<CreatorPaymentPhaseFn>()
+      .mockImplementation(defaultPayment(ORDER_ID));
+
+    let observedCall: Parameters<RunShillerPhaseFn>[0] | undefined;
+    const runShillerImpl = vi
+      .fn<RunShillerPhaseFn>()
+      .mockImplementation(async (deps): Promise<ShillerAgentOutput> => {
+        observedCall = deps;
+        return {
+          orderId: deps.orderId,
+          tokenAddr: deps.tokenAddr,
+          decision: 'shill',
+          tweetId: 'td',
+          tweetUrl: 'https://x.com/shiller/status/td',
+          tweetText: '$BAT curious find 👁',
+          postedAt: '2026-04-18T10:05:00.000Z',
+          toolCalls: [],
+        };
+      });
+
+    const record = runStore.create('shill-market');
+
+    await runShillMarketDemo({
+      config: makeConfigStub(),
+      anthropic,
+      store: runStore,
+      runId: record.runId,
+      args: { tokenAddr: TOKEN_ADDR },
+      shillOrderStore,
+      loreStore,
+      creatorPaymentImpl,
+      runShillerImpl,
+    });
+
+    expect(observedCall).toBeDefined();
+    // Contract: orchestrator forwards the flag only when the caller picked a
+    // mode. The default-false fallback lives in the leaf tool, not here.
+    expect(observedCall && 'includeFourMemeUrl' in observedCall).toBe(false);
+  });
+
   it('lore-missing fallback: stub snippet is non-empty and URL-free', async () => {
     // LoreStore is empty — orchestrator must synthesise a fallback snippet so
     // the Shiller phase still runs. Fallback content matters: it cannot leak

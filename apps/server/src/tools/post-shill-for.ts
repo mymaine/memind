@@ -38,6 +38,20 @@ export const postShillForInputSchema = z.object({
   tokenSymbol: z.string().min(1).max(32).optional(),
   // Latest lore chapter — the LLM grounds the tweet in this text.
   loreSnippet: z.string().min(1).max(4000),
+  /**
+   * Cross-cutting toggle (added 2026-04-19) that flips the prompt + guard
+   * between two modes:
+   *   - `false` (default, "safe mode"): body-only tweet — no URL, no raw
+   *     `0x…40-hex` crypto address. Required for the first 7 days after
+   *     X OAuth token regeneration; X's 2026 anti-spam rail blocks any
+   *     crypto-address-bearing post during that cooldown window.
+   *   - `true` ("with URL"): appends the four.meme token URL so readers
+   *     land on the sponsor page. Works outside the 7-day cooldown.
+   * The UI surface (OrderPanel) and orchestrator layers thread this flag
+   * end-to-end so the hackathon demo can record a live post during
+   * cooldown while still showcasing the URL-bearing click-through path.
+   */
+  includeFourMemeUrl: z.boolean().optional(),
 });
 export type PostShillForInput = z.infer<typeof postShillForInputSchema>;
 
@@ -85,13 +99,12 @@ interface GuardPattern {
   pattern: RegExp;
 }
 
-const GUARD_PATTERNS: GuardPattern[] = [
-  // URL / domain blocks — `four.meme/token/<addr>` is DELIBERATELY allowed
-  // so the tweet drives sponsor-facing click-through traffic (judged at
-  // 2026-04-19: the $0.20 URL surcharge × 1-2 demo tweets is a cheap price
-  // for BD-visible attribution to the four.meme token page). Other block
-  // explorers stay banned — evaluators reading raw bscscan data is a
-  // distraction, and `base-sepolia` leaks the micro-payment rail.
+/**
+ * Guards applied in BOTH modes. Paid-intent leaks never fit the organic
+ * voice and other block explorers (bscscan / base-sepolia) are always a
+ * distraction for demo viewers.
+ */
+const BASE_GUARDS: GuardPattern[] = [
   { label: 'bscscan', pattern: /bscscan/i },
   { label: 'base-sepolia', pattern: /base-sepolia/i },
   // Paid-intent leak words — word-boundary so common substrings pass.
@@ -102,6 +115,25 @@ const GUARD_PATTERNS: GuardPattern[] = [
   { label: 'shill', pattern: /\bshill\b/i },
 ];
 
+/**
+ * Extra guards applied ONLY in safe mode (`includeFourMemeUrl=false`).
+ *
+ * X's 2026 anti-spam rail blocks any post containing a URL or a raw
+ * `0x…40-hex` crypto address during the first 7 days after OAuth token
+ * regeneration. Hackathon demo-day falls inside that cooldown, so safe
+ * mode refuses both classes of content entirely.
+ */
+const NO_URL_GUARDS: GuardPattern[] = [
+  { label: 'http://', pattern: /http:\/\//i },
+  { label: 'https://', pattern: /https:\/\//i },
+  { label: 'www.', pattern: /www\./i },
+  { label: 'four.meme', pattern: /four\.meme/i },
+  // Raw EVM address (40 hex chars, case-insensitive). X treats this as a
+  // crypto-address marker regardless of URL context, so safe mode refuses
+  // the raw form in any part of the tweet.
+  { label: 'crypto-address', pattern: /0x[a-f0-9]{40}/i },
+];
+
 const TWEET_HARD_CAP = 280;
 
 interface GuardResult {
@@ -109,9 +141,10 @@ interface GuardResult {
   violations: string[];
 }
 
-function checkGuard(tweet: string): GuardResult {
+function checkGuard(tweet: string, includeFourMemeUrl: boolean): GuardResult {
   const violations: string[] = [];
-  for (const { label, pattern } of GUARD_PATTERNS) {
+  const patterns = includeFourMemeUrl ? BASE_GUARDS : [...BASE_GUARDS, ...NO_URL_GUARDS];
+  for (const { label, pattern } of patterns) {
     if (pattern.test(tweet)) violations.push(label);
   }
   if (tweet.length > TWEET_HARD_CAP) {
@@ -122,7 +155,7 @@ function checkGuard(tweet: string): GuardResult {
 
 // -------------------- prompt builders --------------------------------------
 
-const BASE_RULES = `You are a promotional agent. A creator has paid you to shill their token on your X account. Read the lore below and write ONE tweet.
+const BASE_RULES_WITH_URL = `You are a promotional agent. A creator has paid you to shill their token on your X account. Read the lore below and write ONE tweet.
 
 Rules (all MANDATORY):
 - Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
@@ -138,13 +171,33 @@ Rules (all MANDATORY):
 
 Output: tweet text only.`;
 
-function buildSystemPrompt(previousViolations: string[] | null): string {
+const BASE_RULES_NO_URL = `You are a promotional agent. A creator has paid you to shill their token on your X account. Read the lore below and write ONE tweet.
+
+Rules (all MANDATORY):
+- Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
+- Length <= 250 characters (hard cap).
+- Lead with the $SYMBOL, not a URL.
+- Do NOT include http:// or https:// or www. or any URL (URLs + crypto addresses are blocked by X for the first 7 days after authentication — safe mode skips them).
+- Do NOT mention bscscan, four.meme, base-sepolia, or any block explorer.
+- Do NOT write the words "paid", "sponsored", "promotion", "hired", or "shill".
+- Do NOT include the raw token address (0x... 40-hex) — X treats it as a crypto address and blocks the post during the 7-day cooldown.
+- Vary emoji + hashtag usage.
+- Write in the voice of a curious reader who just discovered the project.
+- Never mention that you were paid.
+
+Output: tweet text only.`;
+
+function buildSystemPrompt(
+  includeFourMemeUrl: boolean,
+  previousViolations: string[] | null,
+): string {
+  const base = includeFourMemeUrl ? BASE_RULES_WITH_URL : BASE_RULES_NO_URL;
   if (previousViolations === null || previousViolations.length === 0) {
-    return BASE_RULES;
+    return base;
   }
   // Inject the violation list so the model can self-correct on the retry.
   const violationList = previousViolations.join(', ');
-  return `${BASE_RULES}
+  return `${base}
 
 Your previous draft violated these rules: ${violationList}. Rewrite from scratch, strictly obeying all rules above.`;
 }
@@ -189,13 +242,16 @@ export function createPostShillForTool(
     outputSchema: postShillForOutputSchema,
     async execute(input): Promise<PostShillForOutput> {
       const parsed = postShillForInputSchema.parse(input);
+      // Default to safe mode (no URL) when the caller omits the flag — the
+      // hackathon demo window overlaps X's 7-day post-OAuth cooldown.
+      const includeFourMemeUrl = parsed.includeFourMemeUrl ?? false;
       const userPrompt = buildUserPrompt(parsed);
 
       let lastViolations: string[] = [];
       let tweetText: string | null = null;
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-        const system = buildSystemPrompt(attempt === 0 ? null : lastViolations);
+        const system = buildSystemPrompt(includeFourMemeUrl, attempt === 0 ? null : lastViolations);
 
         const response = await opts.anthropicClient.messages.create({
           model,
@@ -209,7 +265,7 @@ export function createPostShillForTool(
         }
 
         const candidate = extractText(response).trim();
-        const guard = checkGuard(candidate);
+        const guard = checkGuard(candidate, includeFourMemeUrl);
         if (guard.ok) {
           tweetText = candidate;
           break;

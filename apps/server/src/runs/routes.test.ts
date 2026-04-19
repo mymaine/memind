@@ -463,6 +463,59 @@ describe('registerRunRoutes', () => {
       expect(observedRunId).toBe(body.runId);
     });
 
+    it('forwards params.includeFourMemeUrl=true to runShillMarketDemoImpl args', async () => {
+      let observedFlag: boolean | undefined;
+      const shillOrderStore = new ShillOrderStore();
+      const fakeShillMarket: RunShillMarketDemoFn = async (deps) => {
+        observedFlag = deps.args.includeFourMemeUrl;
+      };
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, {
+        shillMarketImpl: fakeShillMarket,
+        shillOrderStore,
+      });
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'shill-market',
+          params: { tokenAddr, includeFourMemeUrl: true },
+        }),
+      });
+      expect(response.status).toBe(201);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(observedFlag).toBe(true);
+    });
+
+    it('defaults includeFourMemeUrl to false when params omits it (safe mode)', async () => {
+      let observedFlag: boolean | undefined;
+      const shillOrderStore = new ShillOrderStore();
+      const fakeShillMarket: RunShillMarketDemoFn = async (deps) => {
+        observedFlag = deps.args.includeFourMemeUrl;
+      };
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, {
+        shillMarketImpl: fakeShillMarket,
+        shillOrderStore,
+      });
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'shill-market',
+          params: { tokenAddr },
+        }),
+      });
+      expect(response.status).toBe(201);
+      await new Promise((r) => setTimeout(r, 20));
+      // Route layer normalises missing flag to explicit `false` so downstream
+      // logs / artifacts can distinguish "safe mode by default" from "caller
+      // picked safe explicitly". Both map to the same prompt / guard.
+      expect(observedFlag).toBe(false);
+    });
+
     it('returns 400 for kind=shill-market with invalid tokenAddr', async () => {
       const shillOrderStore = new ShillOrderStore();
       const fakeShillMarket: RunShillMarketDemoFn = async () => {};
