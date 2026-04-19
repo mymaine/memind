@@ -46,7 +46,6 @@ import { ScanlinesOverlay } from '@/components/scanlines-overlay';
 import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
 import { TweaksPanel, TWEAK_DEFAULTS, type TweaksState } from '@/components/tweaks-panel';
-import { Watermark } from '@/components/watermark';
 import { useActiveChapter } from '@/hooks/useActiveChapter';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useRun } from '@/hooks/useRun';
@@ -229,8 +228,6 @@ export default function HomePage(): ReactElement {
     };
   }, []);
 
-  const currentTitle = CHAPTERS[activeIdx]?.title ?? '';
-
   return (
     <div style={accentStyle}>
       <Header
@@ -258,7 +255,6 @@ export default function HomePage(): ReactElement {
           activeIdx={activeIdx}
         />
       </div>
-      <Watermark activeIdx={activeIdx} total={CHAPTERS.length} title={currentTitle} />
       <BrainPanel
         open={brainOpen}
         onClose={closeBrain}

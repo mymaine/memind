@@ -59,14 +59,14 @@ describe('HomePage StickyStage shell', () => {
     expect(items.length).toBe(EXPECTED_CHAPTER_COUNT);
   });
 
-  it('mounts the bottom-right Watermark reflecting the current chapter', () => {
+  it('does not mount the bottom-right Watermark (retired 2026-04-20 for demo cleanliness)', () => {
+    // Per user UAT feedback, the chapter-counter watermark adds visual
+    // clutter during the demo. The TopBar progress bar + N/11 counter
+    // already communicates position; the watermark is unmounted from the
+    // home surface. Component file + tests are kept so the piece can be
+    // re-mounted later without rebuild work.
     const html = renderHome();
-    expect(html).toMatch(/class="watermark mono"/);
-    // SSR scroll position is 0 → activeIdx=0 → watermark shows 01 / 11 +
-    // the first chapter title from CHAPTER_META.
-    expect(html).toContain('01');
-    expect(html).toContain('/ 11');
-    expect(html).toContain('PAY USDC. GET TWEETS.');
+    expect(html).not.toMatch(/class="watermark mono"/);
   });
 
   it('reserves scroll height via a CSS calc(... * 100vh) string so SSR and client agree', () => {
