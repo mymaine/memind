@@ -6,12 +6,18 @@
  *
  * Ported from
  * `docs/design/memind-handoff/project/components/chapters.jsx` lines 163-250,
- * with one FACT CORRECTION:
+ * with two FACT CORRECTIONS:
  *
  *   - `brain-core-sub` reads "claude-sonnet-4.5 · 5s tick" to match what
  *     `apps/server` actually calls via OpenRouter
  *     (`anthropic/claude-sonnet-4-5`). The design handoff still says
  *     `gpt-4o · 5s tick`; the ch4-brain.test.tsx regression guards this.
+ *   - UAT issue #7 — X (Twitter) ships as a live delivery channel from
+ *     Phase 3 onward (see `docs/decisions/2026-04-19-x-posting-agent.md`),
+ *     so the port ring now declares 4 channels: `X (live)` + 3 soon
+ *     channels (TELEGRAM / DISCORD / ON-CHAIN MSG). The sub-caption above
+ *     the stage clarifies persona = content voice vs. channel = delivery
+ *     surface — the UAT reported confusion about what the 4+3 labels meant.
  *
  * Interior progress `p ∈ [0, 1]` drives:
  *
@@ -19,8 +25,10 @@
  *
  * The pulse fades in 4 radial rings (r = 80 / 160 / 240 / 320) and 4
  * persona ports (GLITCHY / CULTIST / DEGEN / SHILLER) around a radius-220
- * circle. Once pulse passes 0.55, 3 future ports (TELEGRAM / DISCORD /
- * ONCHAIN) appear as dashed "soon" labels at radius 310-330.
+ * circle. Once pulse passes 0.55, 4 channel ports appear at radius 310-330:
+ * X (shipped, solid accent), TELEGRAM / DISCORD / ON-CHAIN MSG (soon,
+ * dashed). Channels sit at angles -135 / -45 / 45 / 135 so they interleave
+ * with the persona spokes instead of stacking on top.
  *
  * Circle-coord convention: angle `a` in degrees, `a=0` points up. Converted
  * via `(a - 90) * PI/180` so trig reads natural (cos=x, sin=y).
@@ -39,25 +47,41 @@ interface PersonaPort {
   readonly label: string;
   readonly mood: ShillingMood;
   readonly color: string;
+  /** Short voice descriptor rendered under the label (UAT issue #7). */
+  readonly voice: string;
 }
 
-interface FuturePort {
+type ChannelStatus = 'live' | 'soon';
+
+interface ChannelPort {
   readonly a: number;
   readonly r: number;
   readonly label: string;
+  readonly status: ChannelStatus;
 }
 
 const PERSONAS: readonly PersonaPort[] = [
-  { a: -140, label: 'GLITCHY', mood: 'glitch', color: 'var(--accent)' },
-  { a: -40, label: 'CULTIST', mood: 'clap', color: 'var(--chain-bnb)' },
-  { a: 40, label: 'DEGEN', mood: 'surprise', color: 'var(--chain-base)' },
-  { a: 140, label: 'SHILLER', mood: 'megaphone', color: 'var(--chain-ipfs)' },
+  { a: -140, label: 'GLITCHY', mood: 'glitch', color: 'var(--accent)', voice: 'glitch voice' },
+  { a: -40, label: 'CULTIST', mood: 'clap', color: 'var(--chain-bnb)', voice: 'cult voice' },
+  { a: 40, label: 'DEGEN', mood: 'surprise', color: 'var(--chain-base)', voice: 'degen voice' },
+  {
+    a: 140,
+    label: 'SHILLER',
+    mood: 'megaphone',
+    color: 'var(--chain-ipfs)',
+    voice: 'shill voice',
+  },
 ];
 
-const FUTURES: readonly FuturePort[] = [
-  { a: -90, r: 310, label: 'TELEGRAM' },
-  { a: 0, r: 330, label: 'DISCORD' },
-  { a: 90, r: 310, label: 'ONCHAIN' },
+// Cross layout: X top, TELEGRAM left, DISCORD right, ON-CHAIN MSG bottom.
+// Sits outside the persona ring (radius 310-330 vs persona 220) so the
+// labels never occlude the 4 persona port glyphs. X is the only port with
+// status 'live' — from Phase 3 our SHILLER persona actually tweets.
+const CHANNELS: readonly ChannelPort[] = [
+  { a: 0, r: 310, label: 'X', status: 'live' },
+  { a: -90, r: 330, label: 'TELEGRAM', status: 'soon' },
+  { a: 90, r: 330, label: 'DISCORD', status: 'soon' },
+  { a: 180, r: 310, label: 'ON-CHAIN MSG', status: 'soon' },
 ];
 
 const RING_RADII = [80, 160, 240, 320] as const;
@@ -73,7 +97,34 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
 
   return (
     <div className="ch ch-brain">
-      <Label n={4}>1 brain · 4 personas · 3 ports</Label>
+      <Label n={4}>1 brain · 4 personas · 4 channels</Label>
+      {/* UAT issue #7 — explicit legend above the brain stage so viewers
+       * don't have to guess which ring is which. Persona = content voice
+       * (how the brain speaks), channel = delivery surface (where the
+       * brain speaks). X is live today; the rest ship next. */}
+      <div className="brain-legend">
+        <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+          persona = content voice
+        </span>
+        <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+          {'\u00b7'}
+        </span>
+        <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+          channel = delivery surface
+        </span>
+        <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+          {'\u00b7'}
+        </span>
+        <span className="mono" style={{ color: 'var(--accent)' }}>
+          X live
+        </span>
+        <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+          {'\u00b7'}
+        </span>
+        <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+          others shipping
+        </span>
+      </div>
       <div className="brain-stage">
         <svg className="brain-lines" viewBox="-400 -280 800 560">
           {/* Radial rings — grow stroke opacity as the pulse rolls out. */}
@@ -106,21 +157,24 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
               />
             );
           })}
-          {/* Future spokes — dashed, appear after persona pulse settles. */}
-          {FUTURES.map((f, i) => {
-            const { x, y } = polar(f.a, f.r);
+          {/* Channel spokes — dashed for soon channels, solid accent for
+           * the live X channel (UAT issue #7). Appear after persona pulse
+           * settles. */}
+          {CHANNELS.map((c, i) => {
+            const { x, y } = polar(c.a, c.r);
             const len = clamp((pulse - 0.4) * 2 - i * 0.1);
+            const live = c.status === 'live';
             return (
               <line
-                key={f.label}
+                key={c.label}
                 x1="0"
                 y1="0"
                 x2={x * len}
                 y2={y * len}
-                stroke="var(--fg-tertiary)"
-                strokeWidth="1"
-                strokeDasharray="3 5"
-                strokeOpacity={0.4}
+                stroke={live ? 'var(--accent)' : 'var(--fg-tertiary)'}
+                strokeWidth={live ? '1.4' : '1'}
+                strokeDasharray={live ? undefined : '3 5'}
+                strokeOpacity={live ? 0.8 : 0.4}
               />
             );
           })}
@@ -136,7 +190,9 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
           <div className="brain-core-label">TOKEN BRAIN</div>
           <div className="brain-core-sub">claude-sonnet-4.5 · 5s tick</div>
         </div>
-        {/* Persona ports — absolute-positioned around the brain core. */}
+        {/* Persona ports — absolute-positioned around the brain core.
+         * `persona-voice` sub-label spells out the content voice for each
+         * persona (UAT issue #7 clarification). */}
         {PERSONAS.map((pp, i) => {
           const { x, y } = polar(pp.a, PERSONA_RADIUS);
           const appear = clamp(pulse * 1.4 - i * 0.08 - 0.5);
@@ -153,21 +209,27 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
                 accentColor="var(--chain-bnb)"
               />
               <div className="persona-label">{pp.label}</div>
+              <div className="persona-voice">{pp.voice}</div>
             </div>
           );
         })}
-        {/* Future ports — dashed labels with the "soon" tag. */}
-        {FUTURES.map((f, i) => {
-          const { x, y } = polar(f.a, f.r);
+        {/* Channel ports — 4 delivery surfaces. `X` is live (solid accent
+         * label + `live` tag); the rest are dashed with a `soon` tag. */}
+        {CHANNELS.map((c, i) => {
+          const { x, y } = polar(c.a, c.r);
           const appear = clamp((pulse - 0.55) * 3 - i * 0.1);
+          const live = c.status === 'live';
           return (
             <div
-              key={f.label}
-              className="future-port"
-              style={{ transform: `translate(${x}px, ${y}px)`, opacity: appear * 0.6 }}
+              key={c.label}
+              className={live ? 'future-port future-port--live' : 'future-port'}
+              style={{
+                transform: `translate(${x}px, ${y}px)`,
+                opacity: appear * (live ? 0.95 : 0.6),
+              }}
             >
-              <div className="future-label">{f.label}</div>
-              <div className="future-sub">soon</div>
+              <div className="future-label">{c.label}</div>
+              <div className="future-sub">{live ? 'live' : 'soon'}</div>
             </div>
           );
         })}

@@ -689,7 +689,8 @@ code,
 /* ---------- CH 4 BRAIN ---------- */
 .ch-brain {
   display: grid;
-  grid-template-rows: auto 1fr;
+  /* UAT issue #7 — label, legend, brain-stage (3 rows instead of 2). */
+  grid-template-rows: auto auto 1fr;
   width: 100%;
   height: 100%;
 }
@@ -751,6 +752,15 @@ code,
   letter-spacing: 2px;
   color: var(--fg-secondary);
 }
+/* UAT issue #7 — sub-voice descriptor so viewers can tell at a glance
+ * whether a persona is a "glitch" or "shill" voice etc. */
+.persona-voice {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--fg-tertiary);
+  text-transform: lowercase;
+}
 .future-port {
   margin-top: -18px;
 }
@@ -762,12 +772,34 @@ code,
   padding: 4px 10px;
   border: 1px dashed var(--fg-tertiary);
 }
+/* UAT issue #7 — the X channel ships today, so its port reads as a solid
+ * accent chip instead of a dashed "soon" tag. */
+.future-port--live .future-label {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  background: rgba(0, 217, 146, 0.08);
+}
+.future-port--live .future-sub {
+  color: var(--accent);
+}
 .future-sub {
   font-family: var(--font-mono);
   font-size: 9px;
   color: var(--fg-tertiary);
   letter-spacing: 2px;
   margin-top: 2px;
+}
+/* UAT issue #7 — legend line above the brain stage explaining the
+ * persona-vs-channel distinction. */
+.brain-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+  font-size: 11px;
+  letter-spacing: 1.2px;
 }
 
 /* ---------- CH 5 / 6 DEMO ---------- */

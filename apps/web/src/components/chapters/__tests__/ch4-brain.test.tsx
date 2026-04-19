@@ -4,16 +4,20 @@
  *
  * Ports the interior-progress contract from
  * `docs/design/memind-handoff/project/components/chapters.jsx` Ch4Brain
- * (lines 163-250), with one FACT CORRECTION: the brain-core-sub reads
- * `claude-sonnet-4.5 · 5s tick` (matches what `apps/server` actually calls
- * via OpenRouter), NOT the design-stub `gpt-4o · 5s tick`.
+ * (lines 163-250), with two FACT CORRECTIONS:
+ *   - brain-core-sub reads `claude-sonnet-4.5 · 5s tick` (matches what
+ *     `apps/server` actually calls via OpenRouter), NOT the design-stub
+ *     `gpt-4o · 5s tick`.
+ *   - UAT issue #7: X ships as a live channel from Phase 3 onward, so the
+ *     port ring now shows 4 channels total (X live + 3 soon). A legend
+ *     above the stage spells out persona-vs-channel semantics.
  *
  * Interior progress `p ∈ [0, 1]` drives:
  *
  *   - 4 persona ports (GLITCHY / CULTIST / DEGEN / SHILLER) at angles
- *     -140 / -40 / 40 / 140, radius 220.
- *   - 3 future ports (TELEGRAM / DISCORD / ONCHAIN) at radius 310-330 with
- *     dashed "soon" tags.
+ *     -140 / -40 / 40 / 140, radius 220. Each renders a voice sub-label.
+ *   - 4 channel ports (X live, TELEGRAM / DISCORD / ON-CHAIN MSG soon) in
+ *     a cross layout (angles 0 / -90 / 90 / 180) at radius 310-330.
  *   - Central brain core with think-mood mascot + TOKEN BRAIN label +
  *     model-tick footer.
  */
@@ -22,7 +26,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Ch4Brain } from '../ch4-brain.js';
 
 const PERSONAS = ['GLITCHY', 'CULTIST', 'DEGEN', 'SHILLER'] as const;
-const FUTURES = ['TELEGRAM', 'DISCORD', 'ONCHAIN'] as const;
+const PERSONA_VOICES = ['glitch voice', 'cult voice', 'degen voice', 'shill voice'] as const;
+const SOON_CHANNELS = ['TELEGRAM', 'DISCORD', 'ON-CHAIN MSG'] as const;
 
 describe('<Ch4Brain>', () => {
   it('renders all four persona labels', () => {
@@ -32,14 +37,44 @@ describe('<Ch4Brain>', () => {
     }
   });
 
-  it('renders all three future-port labels with a soon tag', () => {
+  it('renders the persona voice sub-labels (UAT issue #7)', () => {
     const html = renderToStaticMarkup(<Ch4Brain p={1} />);
-    for (const label of FUTURES) {
+    for (const voice of PERSONA_VOICES) {
+      expect(html).toContain(voice);
+    }
+  });
+
+  it('renders all three soon channel labels + the live X channel (UAT issue #7)', () => {
+    const html = renderToStaticMarkup(<Ch4Brain p={1} />);
+    for (const label of SOON_CHANNELS) {
       expect(html).toContain(label);
     }
-    // Each future-port carries a "soon" tag — 3 total.
-    const soons = html.match(/class="future-sub"/g) ?? [];
-    expect(soons.length).toBe(3);
+    // X ships as a live port — label present and tagged "live".
+    expect(html).toMatch(/class="future-label"[^>]*>X<\/div>/);
+    // 4 channel ports total (X + 3 soon), 3 of them carry "soon" sub tags
+    // and 1 carries "live".
+    const allSubs = html.match(/class="future-sub">(?:soon|live)<\/div>/g) ?? [];
+    expect(allSubs).toHaveLength(4);
+    const soonCount = (html.match(/class="future-sub">soon<\/div>/g) ?? []).length;
+    const liveCount = (html.match(/class="future-sub">live<\/div>/g) ?? []).length;
+    expect(soonCount).toBe(3);
+    expect(liveCount).toBe(1);
+  });
+
+  it('renders the persona-vs-channel legend above the stage (UAT issue #7)', () => {
+    const html = renderToStaticMarkup(<Ch4Brain p={0.5} />);
+    expect(html).toMatch(/class="brain-legend"/);
+    expect(html).toContain('persona = content voice');
+    expect(html).toContain('channel = delivery surface');
+    expect(html).toContain('X live');
+  });
+
+  it('X channel port gets the live modifier class (UAT issue #7)', () => {
+    const html = renderToStaticMarkup(<Ch4Brain p={1} />);
+    // Solid accent treatment sits on `.future-port--live` — one and only
+    // one channel carries the modifier.
+    const liveMatches = html.match(/class="future-port future-port--live"/g) ?? [];
+    expect(liveMatches).toHaveLength(1);
   });
 
   it('brain-core-label reads "TOKEN BRAIN"', () => {
@@ -57,21 +92,24 @@ describe('<Ch4Brain>', () => {
     expect(html).not.toContain('gpt-4o');
   });
 
-  it('at p=0 future ports render with opacity 0 (pulse below threshold)', () => {
+  it('at p=0 channel ports render with opacity 0 (pulse below threshold)', () => {
     const html = renderToStaticMarkup(<Ch4Brain p={0} />);
-    // Every future-port should have opacity:0 inline.
-    const futurePorts = html.match(/class="future-port"[^>]*style="([^"]*)"/g) ?? [];
-    expect(futurePorts.length).toBe(3);
-    for (const port of futurePorts) {
+    // Every channel port should have opacity:0 inline. Match both the
+    // base `future-port` and the `future-port--live` modifier classes.
+    const ports =
+      html.match(/class="future-port(?: future-port--live)?"[^>]*style="([^"]*)"/g) ?? [];
+    expect(ports.length).toBe(4);
+    for (const port of ports) {
       expect(port).toMatch(/opacity:0\b/);
     }
   });
 
-  it('at p=1 future ports are visible (non-zero opacity)', () => {
+  it('at p=1 channel ports are visible (non-zero opacity)', () => {
     const html = renderToStaticMarkup(<Ch4Brain p={1} />);
-    const futurePorts = html.match(/class="future-port"[^>]*style="([^"]*)"/g) ?? [];
-    expect(futurePorts.length).toBe(3);
-    for (const port of futurePorts) {
+    const ports =
+      html.match(/class="future-port(?: future-port--live)?"[^>]*style="([^"]*)"/g) ?? [];
+    expect(ports.length).toBe(4);
+    for (const port of ports) {
       // Match opacity followed by a non-zero digit (handles inline float).
       expect(port).toMatch(/opacity:0?\.[1-9]/);
     }
