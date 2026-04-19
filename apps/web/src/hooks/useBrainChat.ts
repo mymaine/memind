@@ -51,6 +51,7 @@ import {
   type BrainChatStatus,
   type BrainChatTurn,
 } from './useBrainChat-state';
+import { useRunStateMirror } from './useRunStateContext';
 
 // Same SSE origin rule as useRun: the Next.js dev rewrite proxy buffers SSE,
 // so EventSource hits the server origin directly. POST goes through the
@@ -102,6 +103,12 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
   void scope;
 
   const [state, setState] = useState<BrainChatState>(EMPTY_BRAIN_CHAT_STATE);
+  // UAT bug fix (Memind demo): mirror SSE logs + artifacts into the
+  // shared RunStateContext so the FooterDrawer tabs (Logs / Artifacts /
+  // Brain Console) reflect brain-chat activity. useBrainChat runs a
+  // dedicated run that useRun never sees; without this bridge the demo
+  // footer stays empty while the panel is busy streaming.
+  const mirror = useRunStateMirror();
   const esRef = useRef<EventSource | null>(null);
   // Tracks the assistant-turn id the live SSE stream is writing into. We
   // identify the target turn by id (not "last element") so races between a
@@ -250,9 +257,15 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
         es.addEventListener('log', (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data as string) as LogEvent;
-            // Only nest persona logs (agent != brain). Brain-own logs are
-            // opaque (its own thinking output) and we prefer the user sees
-            // tool_use pills + assistant:delta content instead.
+            // Mirror EVERY log (including brain-own) into the shared
+            // RunStateContext so the FooterDrawer Logs tab shows the full
+            // brain-chat activity stream — the user explicitly wants to
+            // see what the brain is thinking mid-run.
+            mirror.pushLog(data);
+            // Only nest persona logs (agent != brain) in the BrainChat
+            // transcript. Brain-own logs are opaque (its own thinking
+            // output) and we prefer the user sees tool_use pills +
+            // assistant:delta content instead of duplicating the reply.
             if (data.agent === 'brain') return;
             updateActiveTurn((turn) => applyPersonaLog(turn, data));
           } catch {
@@ -263,6 +276,10 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
         es.addEventListener('artifact', (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data as string) as Artifact;
+            // Mirror every artifact into the shared RunStateContext so the
+            // FooterDrawer Artifacts tab renders brain-chat pills alongside
+            // useRun-sourced ones.
+            mirror.pushArtifact(data);
             // Artifacts come without an agent tag on the envelope; we use the
             // most recent persona the ActiveRunStore observed (approximated by
             // the `toolAgentByIdRef` map). Fallback to 'brain' if we never
@@ -309,7 +326,7 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
         sendingRef.current = false;
       }
     },
-    [updateActiveTurn],
+    [updateActiveTurn, mirror],
   );
 
   const appendLocalAssistant = useCallback((content: string): void => {

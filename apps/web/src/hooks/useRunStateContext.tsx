@@ -182,10 +182,15 @@ const NO_OP_MIRROR: RunStateMirror = {
 
 export function useRunStateMirror(): RunStateMirror {
   const ctx = useContext(RunStateContext);
-  if (!ctx) return NO_OP_MIRROR;
-  return {
-    pushLog: ctx.pushLog,
-    pushArtifact: ctx.pushArtifact,
-    resetMirror: ctx.resetMirror,
-  };
+  // Memoise the returned surface so callers that put the mirror in a
+  // useCallback dep array (e.g. useBrainChat.send) do not have their
+  // callback identity churn on every provider render.
+  return useMemo<RunStateMirror>(() => {
+    if (!ctx) return NO_OP_MIRROR;
+    return {
+      pushLog: ctx.pushLog,
+      pushArtifact: ctx.pushArtifact,
+      resetMirror: ctx.resetMirror,
+    };
+  }, [ctx]);
 }
