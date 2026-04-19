@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
-import type { AgentTool, AnyAgentTool, AnyPersona, LogEvent } from '@hack-fourmeme/shared';
+import type {
+  AgentTool,
+  AnyAgentTool,
+  AnyPersona,
+  Artifact,
+  LogEvent,
+} from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
 import { LoreStore } from '../state/lore-store.js';
 import { creatorPersona } from './creator.js';
@@ -114,12 +120,37 @@ function makeCreatorRegistry(): ToolRegistry {
     outputSchema: z.object({ name: z.string(), symbol: z.string(), description: z.string() }),
     execute: async () => ({ name: 'HBNB2026-Alpha', symbol: 'HBNB2026-ALP', description: 'test' }),
   };
-  const imageTool: AgentTool<{ prompt: string }, { imageLocalPath: string }> = {
+  // Return the real ImageOutput shape (status + cid + gatewayUrl + prompt)
+  // so creatorPersona.run can derive a `meme-image` artifact from the tool
+  // trace. The agent loop still reads `imageLocalPath` for the downstream
+  // onchain_deployer step; the extra fields are inert for the runner.
+  const imageTool: AgentTool<
+    { prompt: string },
+    {
+      imageLocalPath: string;
+      status: 'ok';
+      cid: string;
+      gatewayUrl: string;
+      prompt: string;
+    }
+  > = {
     name: 'meme_image_creator',
     description: 'stub meme_image_creator',
     inputSchema: z.object({ prompt: z.string() }),
-    outputSchema: z.object({ imageLocalPath: z.string() }),
-    execute: async () => ({ imageLocalPath: '/tmp/meme.png' }),
+    outputSchema: z.object({
+      imageLocalPath: z.string(),
+      status: z.literal('ok'),
+      cid: z.string(),
+      gatewayUrl: z.string().url(),
+      prompt: z.string(),
+    }),
+    execute: async (input) => ({
+      imageLocalPath: '/tmp/meme.png',
+      status: 'ok' as const,
+      cid: 'bafkreimemeimagecid123',
+      gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafkreimemeimagecid123',
+      prompt: input.prompt,
+    }),
   };
   const deployerTool: AgentTool<
     { name: string; symbol: string; description: string; imageLocalPath: string },
@@ -210,6 +241,71 @@ describe('creatorPersona.run delegation', () => {
     expect(output.tokenAddr).toBe(CREATOR_TOKEN_ADDR);
     expect(output.loreIpfsCid).toBe('bafkrei-lore');
     expect(output.metadata.symbol).toBe('HBNB2026-ALP');
+  });
+
+  it('emits a meme-image artifact via ctx.onArtifact from the meme_image_creator tool trace', async () => {
+    // UAT fix (2026-04-20): the Brain-driven invoke_creator path was only
+    // emitting 3 of the 4 expected artifacts (bsc-token + token-deploy-tx +
+    // lore-cid) because the meme_image_creator tool output never reached the
+    // artifact stream. `creatorPersona.run` is the correct seam — it has
+    // access to `loop.toolCalls` from runCreatorAgent. This lock-in test
+    // asserts that when the persona receives `onArtifact` on its context, a
+    // `meme-image` artifact is emitted carrying the CID / gatewayUrl / prompt
+    // from the most recent successful meme_image_creator call.
+    const registry = makeCreatorRegistry();
+    const finalJson = JSON.stringify({
+      tokenAddr: CREATOR_TOKEN_ADDR,
+      tokenDeployTx: '0x' + 'de'.repeat(32),
+      loreIpfsCid: 'bafkrei-lore',
+      metadata: {
+        name: 'HBNB2026-Alpha',
+        symbol: 'HBNB2026-ALP',
+        description: 'test',
+        imageLocalPath: '/tmp/meme.png',
+      },
+    });
+    const { client } = fakeClient([
+      toolUseResponse('c1', [
+        { id: 'tu_narr', name: 'narrative_generator', input: { theme: 'alpha' } },
+      ]),
+      toolUseResponse('c2', [
+        { id: 'tu_img', name: 'meme_image_creator', input: { prompt: 'alpha meme' } },
+      ]),
+      toolUseResponse('c3', [
+        {
+          id: 'tu_dep',
+          name: 'onchain_deployer',
+          input: {
+            name: 'HBNB2026-Alpha',
+            symbol: 'HBNB2026-ALP',
+            description: 'test',
+            imageLocalPath: '/tmp/meme.png',
+          },
+        },
+      ]),
+      toolUseResponse('c4', [
+        {
+          id: 'tu_lore',
+          name: 'lore_writer',
+          input: { tokenAddr: CREATOR_TOKEN_ADDR, chapterText: 'ch1' },
+        },
+      ]),
+      textResponse(finalJson),
+    ]);
+
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    await creatorPersona.run({ theme: 'alpha' }, { client, registry, onArtifact });
+
+    const memeImageCalls = onArtifact.mock.calls.filter((c) => c[0].kind === 'meme-image');
+    expect(memeImageCalls).toHaveLength(1);
+    const artifact = memeImageCalls[0]![0];
+    expect(artifact).toMatchObject({
+      kind: 'meme-image',
+      status: 'ok',
+      cid: 'bafkreimemeimagecid123',
+      gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafkreimemeimagecid123',
+      prompt: 'alpha meme',
+    });
   });
 });
 

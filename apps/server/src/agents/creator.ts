@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import {
   creatorResultSchema,
+  type Artifact,
   type AssistantDeltaEventPayload,
   type CreatorResult,
   type LogEvent,
@@ -111,6 +112,75 @@ export const creatorPersonaInputSchema = z.object({
 });
 export type CreatorPersonaInput = z.infer<typeof creatorPersonaInputSchema>;
 
+/**
+ * Shape of a `meme_image_creator` tool call's output. Mirrors the ImageOutput
+ * schema in `apps/server/src/tools/image.ts` but is declared locally here so
+ * this module does not need a direct import of the tool implementation just
+ * to narrow a tool-trace payload. Only the fields actually consumed by the
+ * meme-image artifact emitter are listed.
+ */
+interface MemeImageToolOutput {
+  status: 'ok' | 'upload-failed';
+  cid: string | null;
+  gatewayUrl: string | null;
+  prompt: string;
+  errorMessage?: string;
+}
+
+/**
+ * Narrow an arbitrary tool-trace `output` value to the subset of
+ * MemeImageToolOutput fields we need to emit the artifact. Returns undefined
+ * when the trace shape does not match, which lets the caller skip emission
+ * without crashing the run.
+ */
+function asMemeImageToolOutput(output: unknown): MemeImageToolOutput | undefined {
+  if (typeof output !== 'object' || output === null) return undefined;
+  const o = output as Record<string, unknown>;
+  if (o.status !== 'ok' && o.status !== 'upload-failed') return undefined;
+  if (typeof o.prompt !== 'string') return undefined;
+  const cid = typeof o.cid === 'string' ? o.cid : o.cid === null ? null : undefined;
+  const gatewayUrl =
+    typeof o.gatewayUrl === 'string' ? o.gatewayUrl : o.gatewayUrl === null ? null : undefined;
+  if (cid === undefined || gatewayUrl === undefined) return undefined;
+  const base: MemeImageToolOutput = {
+    status: o.status,
+    cid,
+    gatewayUrl,
+    prompt: o.prompt,
+  };
+  if (typeof o.errorMessage === 'string') base.errorMessage = o.errorMessage;
+  return base;
+}
+
+/**
+ * Translate a `meme_image_creator` tool-trace into a `meme-image` artifact.
+ * Matches the emission logic already used by `runs/creator-phase.ts` so the
+ * Brain-driven persona path produces the same artifact shape as the direct
+ * `/runs?kind=creator` phase path.
+ */
+function memeImageArtifactFromToolOutput(out: MemeImageToolOutput): Artifact | undefined {
+  if (out.status === 'ok' && out.cid !== null && out.gatewayUrl !== null) {
+    return {
+      kind: 'meme-image',
+      status: 'ok',
+      cid: out.cid,
+      gatewayUrl: out.gatewayUrl,
+      prompt: out.prompt,
+    };
+  }
+  if (out.status === 'upload-failed') {
+    return {
+      kind: 'meme-image',
+      status: 'upload-failed',
+      cid: null,
+      gatewayUrl: null,
+      prompt: out.prompt,
+      errorMessage: out.errorMessage ?? 'unknown pinata error',
+    };
+  }
+  return undefined;
+}
+
 export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
   id: 'creator',
   description:
@@ -125,6 +195,7 @@ export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
     // that don't care (standalone `/runs?kind=creator` phase) simply omit the
     // callbacks and pay nothing.
     const onLog = ctx.onLog as ((event: LogEvent) => void) | undefined;
+    const onArtifact = ctx.onArtifact as ((artifact: Artifact) => void) | undefined;
     const onToolUseStart = ctx.onToolUseStart as
       | ((event: ToolUseStartEventPayload) => void)
       | undefined;
@@ -132,7 +203,7 @@ export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
     const onAssistantDelta = ctx.onAssistantDelta as
       | ((event: AssistantDeltaEventPayload) => void)
       | undefined;
-    const { result } = await runCreatorAgent({
+    const { result, loop } = await runCreatorAgent({
       client: ctx.client as Anthropic,
       registry: ctx.registry as ToolRegistry,
       theme: parsed.theme,
@@ -143,6 +214,23 @@ export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
       ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
       ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
     });
+    // Emit the meme-image artifact derived from the `meme_image_creator`
+    // tool trace. Mirrors `runs/creator-phase.ts` so both entry points —
+    // direct `/runs?kind=creator` phase and Brain-driven `invoke_creator` —
+    // produce the same 4-artifact set (bsc-token + token-deploy-tx +
+    // lore-cid + meme-image). Walk from the most-recent successful call so
+    // a retried run only emits the winning image.
+    if (onArtifact) {
+      for (let i = loop.toolCalls.length - 1; i >= 0; i -= 1) {
+        const call = loop.toolCalls[i];
+        if (!call || call.name !== 'meme_image_creator' || call.isError) continue;
+        const out = asMemeImageToolOutput(call.output);
+        if (out === undefined) break;
+        const artifact = memeImageArtifactFromToolOutput(out);
+        if (artifact !== undefined) onArtifact(artifact);
+        break;
+      }
+    }
     return result;
   },
 };

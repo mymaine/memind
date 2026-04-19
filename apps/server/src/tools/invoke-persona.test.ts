@@ -251,6 +251,66 @@ describe('createInvokeCreatorTool', () => {
     });
   });
 
+  it('forwards meme-image artifacts the persona emits through ctx.onArtifact (UAT 2026-04-20)', async () => {
+    // UAT fix: the meme-image artifact is emitted from inside
+    // creatorPersona.run (which has access to `loop.toolCalls`), not from
+    // the invoke_creator wrapper. This test locks in that ctx.onArtifact is
+    // threaded through so persona-side emissions land on the Brain run's
+    // artifact stream alongside the three result-derived pills. Combined
+    // with the existing bsc-token + token-deploy-tx + lore-cid assertions,
+    // this proves the 4-artifact contract end to end.
+    const run = async (
+      _input: CreatorPersonaInput,
+      ctx: PersonaRunContext,
+    ): Promise<CreatorResult> => {
+      const onArtifact = ctx.onArtifact as ((a: Artifact) => void) | undefined;
+      onArtifact?.({
+        kind: 'meme-image',
+        status: 'ok',
+        cid: 'bafkreimemeimagecid999',
+        gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafkreimemeimagecid999',
+        prompt: 'stub meme prompt',
+      });
+      return {
+        tokenAddr: FAKE_TOKEN_ADDR,
+        tokenDeployTx: FAKE_TX,
+        loreIpfsCid: 'bafkrei-mem',
+        metadata: {
+          name: 'HBNB2026-M',
+          symbol: 'HBNB2026-M',
+          description: 'mem',
+          imageLocalPath: '/tmp/m.png',
+        },
+      };
+    };
+    const persona = makeCreatorPersona(run);
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      onArtifact,
+    });
+
+    await tool.execute({ theme: 'any theme' });
+
+    const kinds = onArtifact.mock.calls.map((c) => c[0].kind);
+    // 4 artifacts total: the three invoke_creator derives from the result +
+    // the one creatorPersona emits from the meme_image_creator tool trace.
+    expect(onArtifact).toHaveBeenCalledTimes(4);
+    expect(kinds).toContain('bsc-token');
+    expect(kinds).toContain('token-deploy-tx');
+    expect(kinds).toContain('lore-cid');
+    expect(kinds).toContain('meme-image');
+    const memeImage = onArtifact.mock.calls.find((c) => c[0].kind === 'meme-image')?.[0];
+    expect(memeImage).toMatchObject({
+      kind: 'meme-image',
+      status: 'ok',
+      cid: 'bafkreimemeimagecid999',
+      prompt: 'stub meme prompt',
+    });
+  });
+
   it('emits an error log and rethrows when the persona run fails', async () => {
     const persona = makeCreatorPersona(async () => {
       throw new Error('boom');
