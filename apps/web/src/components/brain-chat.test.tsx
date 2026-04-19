@@ -35,6 +35,7 @@ function makeController(overrides: {
     errorMessage: overrides.errorMessage ?? null,
     send: noopAsync,
     reset: noop,
+    appendLocalAssistant: noop,
   };
 }
 

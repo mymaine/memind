@@ -68,6 +68,13 @@ export interface UseBrainChatResult {
   readonly errorMessage: string | null;
   send(content: string): Promise<void>;
   reset(): void;
+  /**
+   * Append a synthesised assistant message WITHOUT contacting the server.
+   * Used by client-side slash commands (`/status`, `/help`) to echo a reply
+   * into the transcript. The resulting turn carries `brainEvents: []` so it
+   * renders as a plain-text Memind reply (no pills, no nested blocks).
+   */
+  appendLocalAssistant(content: string): void;
 }
 
 /**
@@ -305,11 +312,25 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
     [updateActiveTurn],
   );
 
+  const appendLocalAssistant = useCallback((content: string): void => {
+    // A local assistant echo is fully owned by the client — no SSE run, no
+    // server touch. We synthesise a fresh turn id and freeze content so the
+    // message renderer treats it like any other finished assistant turn.
+    const synthetic: BrainChatTurn = {
+      id: makeTurnId(),
+      role: 'assistant',
+      content,
+      brainEvents: [],
+    };
+    setState((prev) => ({ ...prev, turns: [...prev.turns, synthetic] }));
+  }, []);
+
   return {
     turns: state.turns,
     status: state.status,
     errorMessage: state.errorMessage,
     send,
     reset,
+    appendLocalAssistant,
   };
 }

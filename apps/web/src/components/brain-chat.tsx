@@ -1,23 +1,29 @@
 'use client';
 
 /**
- * BrainChat — main conversational surface component (BRAIN-P4 Task 3).
+ * BrainChat — main conversational surface component (BRAIN-P4 Task 3 +
+ * BRAIN-P6 Task 4 slash integration).
  *
  * Composes:
- *   - `useBrainChat(scope)` for state + send/reset (injectable via the
- *     optional `controller` prop for deterministic tests, same pattern
- *     LaunchPanel / OrderPanel use).
+ *   - `useBrainChat(scope)` for state + send/reset + appendLocalAssistant.
+ *   - `useSlashPalette(draft, scope)` for the slash command palette.
  *   - `<BrainChatSuggestions />` when the transcript is empty (AC-BRAIN-9).
- *   - `<BrainChatMessage />` per turn (user + assistant bubbles + nested
- *     persona events).
- *   - Bottom input row: textarea + Send button; textarea is disabled while
- *     the hook is in `sending` or `streaming` status to prevent double-send
- *     while SSE is still open.
+ *   - `<BrainChatSlashPalette />` floating above the textarea when the draft
+ *     begins with `/` (AC-BRAIN-13).
+ *   - `<BrainChatMessage />` per turn.
+ *   - Bottom input row: textarea + Send button; both disabled while the hook
+ *     is `sending` or `streaming`.
+ *   - Inline red error line when the last slash submission failed validation.
  *   - Error banner with `role="alert"` when `status === 'error'`.
  *
- * This component owns its own input-value state (local `useState`), not the
- * hook. The hook's transcript is the source of truth for the conversation;
- * the textarea is an ephemeral draft.
+ * Slash dispatch path on submit:
+ *   - Delegate to the pure `dispatchSlashSubmission` helper.
+ *     - `ignore` → do nothing.
+ *     - `client-handled` → helper already pushed the local reply via
+ *       appendLocalAssistant / reset. Clear draft.
+ *     - `invalid` → surface the error inline; keep draft so the user fixes.
+ *     - `server-send` → controller.send(raw) (the Brain's server-side slash
+ *       rule in BRAIN_SYSTEM_PROMPT handles the actual tool dispatch).
  */
 import {
   useCallback,
@@ -29,7 +35,10 @@ import {
 } from 'react';
 import { BrainChatMessage } from './brain-chat-message';
 import { BrainChatSuggestions } from './brain-chat-suggestions';
+import { BrainChatSlashPalette } from './brain-chat-slash-palette';
+import { dispatchSlashSubmission } from './brain-chat-slash-dispatch';
 import { useBrainChat, type BrainChatScope, type UseBrainChatResult } from '@/hooks/useBrainChat';
+import { useSlashPalette } from '@/hooks/useSlashPalette';
 
 export interface BrainChatProps {
   readonly scope: BrainChatScope;
@@ -58,28 +67,108 @@ export function BrainChat({ scope, controller, className }: BrainChatProps): Rea
   const active = controller ?? fallback;
 
   const [draft, setDraft] = useState<string>('');
+  const [slashError, setSlashError] = useState<string | null>(null);
+
+  const palette = useSlashPalette(draft, scope);
 
   const canSubmit =
     draft.trim() !== '' && active.status !== 'sending' && active.status !== 'streaming';
+
+  const runSubmission = useCallback(
+    (raw: string): void => {
+      const result = dispatchSlashSubmission({
+        raw,
+        scope,
+        turns: active.turns,
+        reset: active.reset,
+        appendLocalAssistant: active.appendLocalAssistant,
+      });
+      switch (result.kind) {
+        case 'ignore':
+          return;
+        case 'invalid':
+          setSlashError(result.error);
+          return;
+        case 'client-handled':
+          setSlashError(null);
+          setDraft('');
+          return;
+        case 'server-send':
+          setSlashError(null);
+          setDraft('');
+          void active.send(raw);
+          return;
+      }
+    },
+    [active, scope],
+  );
 
   const onSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (!canSubmit) return;
-      const value = draft;
-      setDraft('');
-      void active.send(value);
+      runSubmission(draft);
     },
-    [active, canSubmit, draft],
+    [canSubmit, draft, runSubmission],
   );
 
   const onChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    // Any edit clears a stale inline slash error so the user is not stuck
+    // with an error row after fixing their input.
+    setSlashError(null);
     setDraft(e.target.value);
   }, []);
 
-  // Enter submits; Shift+Enter inserts a newline (standard Slack / Linear).
+  // Keyboard handler:
+  //   - Enter (no Shift) while palette open AND candidates present → pick
+  //     the highlighted command and rewrite the draft to `/<name> ` (space
+  //     suffix so the user can immediately type args). Do NOT submit.
+  //   - Tab while palette open → same as Enter (Slack-style autocomplete).
+  //   - ↑ / ↓ while palette open → navigate candidates.
+  //   - Escape while palette open → close palette (we clear the rawActiveIndex
+  //     by resetting it through the hook; the easiest way is to set the
+  //     draft's leading slash out — but we'd eat content. Instead, we do a
+  //     lightweight close: set an overrideClosed flag via state). Simpler:
+  //     we let the palette re-render closed by letting the user delete the
+  //     slash or submit. Escape here simply blurs (browser default).
+  //   - Enter (no Shift) while palette closed → submit form.
   const onKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // Palette-driven shortcuts take priority over submit semantics when
+      // the palette is open.
+      if (palette.open) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          palette.moveDown();
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          palette.moveUp();
+          return;
+        }
+        if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+          // If candidates is empty the Enter still submits the raw line
+          // (user typed `/xyz` — the dispatcher will surface an unknown
+          // error inline).
+          if (palette.candidates.length > 0) {
+            e.preventDefault();
+            const picked = palette.pick();
+            if (picked) {
+              setDraft(`/${picked.name} `);
+              palette.close();
+            }
+            return;
+          }
+        }
+        if (e.key === 'Escape') {
+          // Drop the leading slash to close the palette.
+          e.preventDefault();
+          setDraft('');
+          palette.close();
+          return;
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (canSubmit) {
@@ -88,11 +177,23 @@ export function BrainChat({ scope, controller, className }: BrainChatProps): Rea
         }
       }
     },
-    [canSubmit],
+    [canSubmit, palette],
   );
 
   const isStreaming = active.status === 'sending' || active.status === 'streaming';
   const isEmpty = active.turns.length === 0;
+
+  const onPickFromPalette = useCallback(
+    (picked: { name: string }) => {
+      setDraft(`/${picked.name} `);
+      palette.close();
+    },
+    [palette],
+  );
+
+  const onHintClick = useCallback(() => {
+    setDraft('/');
+  }, []);
 
   return (
     <section
@@ -111,6 +212,13 @@ export function BrainChat({ scope, controller, className }: BrainChatProps): Rea
               Ask the Memind
             </p>
             <BrainChatSuggestions scope={scope} onPick={(text) => setDraft(text)} />
+            <button
+              type="button"
+              onClick={onHintClick}
+              className="self-start font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-fg-tertiary hover:text-accent-text"
+            >
+              Type / for commands
+            </button>
           </div>
         ) : (
           active.turns.map((turn) => <BrainChatMessage key={turn.id} turn={turn} />)
@@ -127,8 +235,25 @@ export function BrainChat({ scope, controller, className }: BrainChatProps): Rea
         </div>
       ) : null}
 
-      {/* Input row */}
-      <form onSubmit={onSubmit} className="flex items-end gap-2">
+      {/* Inline slash validation error */}
+      {slashError !== null ? (
+        <div
+          role="alert"
+          data-testid="brain-chat-slash-error"
+          className="rounded-[var(--radius-card)] border border-[color:var(--color-danger)] bg-[color-mix(in_oklab,var(--color-danger)_8%,transparent)] px-3 py-1.5 font-[family-name:var(--font-mono)] text-[11px] text-[color:var(--color-danger)]"
+        >
+          {slashError}
+        </div>
+      ) : null}
+
+      {/* Input row with floating palette */}
+      <form onSubmit={onSubmit} className="relative flex items-end gap-2">
+        <BrainChatSlashPalette
+          open={palette.open}
+          candidates={palette.candidates}
+          activeIndex={palette.activeIndex}
+          onPick={onPickFromPalette}
+        />
         <textarea
           name="brain-chat-draft"
           aria-label="Message the Memind"
