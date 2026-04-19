@@ -153,6 +153,19 @@ export default function HomePage(): ReactElement {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // UAT 2026-04-20: Ch11 Evidence's `open the demo` CTA dispatches a
+  // `memind:open-brain` CustomEvent on window; listen here so the closing
+  // chapter can slide the BrainPanel open without threading a callback
+  // through the <StickyStage /> → chapter prop chain.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onOpenBrain = (): void => {
+      openBrain();
+    };
+    window.addEventListener('memind:open-brain', onOpenBrain);
+    return () => window.removeEventListener('memind:open-brain', onOpenBrain);
+  }, [openBrain]);
+
   const scrollY = useScrollY();
   const { activeIdx, progress } = useActiveChapter(scrollY, vh, CHAPTERS.length);
   // System-level `prefers-reduced-motion: reduce` (AC-MSR-14). Merged

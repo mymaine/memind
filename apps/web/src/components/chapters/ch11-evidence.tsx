@@ -294,11 +294,14 @@ export function Ch11Evidence({ p }: Ch11EvidenceProps): ReactElement {
                   type="button"
                   className="cta cta-primary"
                   onClick={() => {
-                    // Loop back to Ch1 Hero so the judge can re-watch or try
-                    // the live run themselves. Browser smooth-scroll provides
-                    // the easing; StickyStage re-routes activeIdx automatically.
+                    // UAT 2026-04-20: the closing CTA now slides open the
+                    // BrainPanel so judges can try the live flow in-place.
+                    // Ch11 has no access to page.tsx's `openBrain` state
+                    // setter, so we dispatch a CustomEvent on `window` and
+                    // let the page listen. Fails silently in non-browser
+                    // environments (SSR, jsdom-less vitest).
                     if (typeof window !== 'undefined') {
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                      window.dispatchEvent(new CustomEvent('memind:open-brain'));
                     }
                   }}
                 >
