@@ -1,30 +1,30 @@
 ---
-summary: '1 Brain with 4 pluggable personas. Implementation substrate = agent runtime + x402 + shared memory. Pitch surface = Brain. Code directory still calls them agents for historical continuity.'
+summary: '1 Memind per memecoin (each Memind is internally a Brain runtime hosting 4 pluggable personas). Implementation substrate = agent runtime + x402 + shared memory. Pitch surface = Memind. Code directory still calls them agents for historical continuity.'
 read_when:
   - Before making cross-persona changes
   - Before adjusting x402 endpoints or the payment flow
   - Before adding a new persona (new SKU) or a tool to the registry
-  - When a reviewer asks "is the Brain framing a rename or a real architecture"
+  - When a reviewer asks "is the Memind framing a rename or a real architecture"
 status: active
 ---
 
 # Architecture
 
-## Brain-Persona Model
+## Memind / Brain-Persona Model
 
-The product is framed as **one Token Brain per memecoin**, hosting **four pluggable personas**. This is a naming layer over a real, already-shipped runtime — not a rename. Every claim below is anchored in code:
+The product is framed as **one Memind per memecoin**, with each Memind being internally a **Brain runtime** hosting **four pluggable personas**. This is a naming layer over a real, already-shipped runtime — not a rename. Every claim below is anchored in code:
 
-| Brain claim                   | Implementation fact                                                                                                                | File                                                                  |
+| Memind claim                  | Implementation fact                                                                                                                | File                                                                  |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| One Brain per Node process    | Single `Anthropic` client, single `ToolRegistry`, single event-emitter fan-out                                                     | `apps/server/src/agents/runtime.ts`                                   |
+| One Memind per Node process   | Single `Anthropic` client, single `ToolRegistry`, single event-emitter fan-out                                                     | `apps/server/src/agents/runtime.ts`                                   |
 | Shared memory across personas | `LoreStore` + `AnchorLedger` + `ShillOrderStore` all live in one `apps/server/src/state/` namespace, read/written by every persona | `apps/server/src/state/*.ts`                                          |
 | Each persona is pluggable     | Every existing agent file is a thin `runAgentLoop` wrapper (`systemPrompt` + selected tool subset) — no persona-specific runtime   | `apps/server/src/agents/{creator,narrator,market-maker,heartbeat}.ts` |
 | Explicit pluggable contract   | `Persona<TInput, TOutput>` interface in shared package mirrors the existing `AgentTool<TInput, TOutput>` shape                     | `packages/shared/src/persona.ts`                                      |
 | Autonomous tick               | Heartbeat persona drives a `setInterval` loop that picks the next action (post / extend_lore / idle) every tick                    | `apps/server/src/agents/heartbeat.ts`                                 |
 
-**Why the code directory still says `agents/`**: renaming buys zero runtime behaviour and churns imports across 40+ files mid-hackathon. Pitch surface (README / narrative-copy / Vision scene / demo script / BrainStatusBar) uses persona vocabulary; code keeps `agent` for continuity. The `Persona` interface explicitly documents the mapping.
+**Why the code directory still says `agents/`**: renaming buys zero runtime behaviour and churns imports across 40+ files mid-hackathon. Pitch surface (README / narrative-copy / Vision scene / demo script / Memind Status Bar) uses Memind / persona vocabulary; code keeps `agent` for continuity. The `Persona` interface explicitly documents the mapping. The architectural primitive **Brain** is preserved as the runtime concept inside each Memind — i.e. _Memind = product brand; Brain = runtime substrate_.
 
-**Adding a new SKU = adding a new persona**: Launch Boost, Community Ops, Alpha Feed each ship as ~50 lines — a new `systemPrompt`, a subset of existing tools (with at most one new `AgentTool`), and an adapter that satisfies `Persona<TInput, TOutput>`. No new x402 infrastructure, no new runtime, no new memory layer. The pluggability is the product.
+**Adding a new SKU = adding a new persona to the Memind**: Memind Launch (Launch Boost), Memind Ops (Community Ops), Memind Alpha (Alpha Feed) each ship as ~50 lines — a new `systemPrompt`, a subset of existing tools (with at most one new `AgentTool`), and an adapter that satisfies `Persona<TInput, TOutput>`. No new x402 infrastructure, no new runtime, no new memory layer. The pluggability is the product.
 
 Decision record: `docs/decisions/2026-04-19-brain-agent-positioning.md` (team-internal).
 
@@ -46,10 +46,10 @@ hack-bnb-fourmeme-agent-creator/
 │   │       └── lib/      # narrative-copy (single-source marketing strings) / artifact-view
 │   └── server/           # Express + x402 server + agent runtime
 │       └── src/
-│           ├── agents/   # Creator / Narrator / Market-maker (dual persona: a2a + Shiller) / Heartbeat
+│           ├── agents/   # Creator / Narrator / Market-maker (dual persona: a2a + Pitch) / Heartbeat
 │           ├── tools/    # narrative / image / deployer / lore / lore-extend /
 │           │             # token-status / x-post / post-shill-for / x-fetch-lore
-│           ├── state/    # in-memory LoreStore + AnchorLedger (AC3) + ShillOrderStore (Phase 4.6)
+│           ├── state/    # in-memory LoreStore + AnchorLedger (AC3) + ShillOrderStore (Phase 4.6 Memind Pitch — class name unchanged)
 │           ├── chain/    # viem client + TokenManager2 partial ABI
 │           │             # + anchor-tx (AC3 layer 2, env-gated BSC memo tx)
 │           ├── x402/     # payment middleware + 4 paid route handlers (lore/alpha/metadata/shill)
@@ -81,7 +81,8 @@ hack-bnb-fourmeme-agent-creator/
                  │ │                                              │ │
                  │ │ ┌──────┐ ┌──────┐ ┌────────┐ ┌────────────┐ │ │
                  │ │ │Creat-│ │Narra-│ │Market- │ │ Heartbeat  │ │ │
-                 │ │ │or    │ │tor   │ │maker   │ │ (tick loop)│ │ │
+                 │ │ │or    │ │tor   │ │maker / │ │ (tick loop)│ │ │
+                 │ │ │      │ │      │ │ Pitch  │ │            │ │ │
                  │ │ └──┬───┘ └──┬───┘ └────┬───┘ └─────┬──────┘ │ │
                  │ └────┼────────┼──────────┼───────────┼────────┘ │
                  │      │        │          │           │          │
@@ -109,8 +110,9 @@ hack-bnb-fourmeme-agent-creator/
                  │ │ /lore/:addr  (0.01 USDC, store-backed)       │ │
                  │ │ /alpha/:addr (0.01 USDC, mock)               │ │
                  │ │ /metadata/:addr (0.005 USDC, mock)           │ │
-                 │ │ /shill/:tokenAddr (0.01 USDC, P4.6 creator-  │ │
-                 │ │   paid; handler enqueues ShillOrderStore)    │ │
+                 │ │ /shill/:tokenAddr (0.01 USDC, P4.6 Memind     │ │
+                 │ │   Pitch creator-paid; handler enqueues        │ │
+                 │ │   ShillOrderStore — paths/class names kept)   │ │
                  │ └──────────────────────────────────────────────┘ │
                  │ ┌──────────────────────────────────────────────┐ │
                  │ │ Runs API (Phase 4, dashboard-facing)         │ │
@@ -211,10 +213,10 @@ HeartbeatAgent (triggered by pnpm demo:heartbeat)
 | Module                | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                         | Out of scope                              |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | `apps/web`            | 6-scene narrative surface (Hero / Problem / Solution / Product / Vision / Evidence) on `/` (Launch) + `/market` (Order) via `<ProductScene>` shell; shared sticky `<Header>`; `<DevLogsDrawer>` hosts the legacy engineering panels (logs / tx / architecture / heartbeat / shill-orders / ledger) behind a `D`-to-open UX; `useRun` hook owns the run lifecycle; pure `derive-{launch,order}-state` reducers map SSE into panel state | Agent logic, on-chain calls, server state |
-| `apps/server/agents/` | Creator / Narrator / Market-maker (dual persona: a2a lore buyer or Shiller) / Heartbeat plan/execute logic plus the shared `_json.ts` JSON parser                                                                                                                                                                                                                                                                                      | HTTP routing, direct shell calls          |
-| `apps/server/tools/`  | Nine tools: narrative / image / deployer / lore / lore-extend / token-status / x-post / post_shill_for / x-fetch-lore                                                                                                                                                                                                                                                                                                                  | Agent decision logic                      |
-| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key) + AnchorLedger (AC3 keccak256 commitment log, upsert by anchorId) + ShillOrderStore (Phase 4.6 queue shared between `/shill/:tokenAddr` producer and Shiller consumer)                                                                                                                                                                                        | Persistence, multi-instance sync          |
-| `apps/server/x402/`   | paymentMiddleware plus four paid-endpoint handlers — `/lore/:addr` (store-backed), `/alpha/:addr` (mock), `/metadata/:addr` (mock), `/shill/:tokenAddr` (creator-paid, enqueues ShillOrderStore)                                                                                                                                                                                                                                       | Agent runtime, wallet signing             |
+| `apps/server/agents/` | Creator / Narrator / Market-maker (dual persona: a2a lore buyer or Memind Pitch persona) / Heartbeat plan/execute logic plus the shared `_json.ts` JSON parser                                                                                                                                                                                                                                                                         | HTTP routing, direct shell calls          |
+| `apps/server/tools/`  | Nine tools: narrative / image / deployer / lore / lore-extend / token-status / x-post / post_shill_for / x-fetch-lore (tool name `post_shill_for` retained at code level)                                                                                                                                                                                                                                                              | Agent decision logic                      |
+| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key) + AnchorLedger (AC3 keccak256 commitment log, upsert by anchorId) + ShillOrderStore (Phase 4.6 Memind Pitch queue shared between `/shill/:tokenAddr` producer and Pitch persona consumer; class name unchanged)                                                                                                                                               | Persistence, multi-instance sync          |
+| `apps/server/x402/`   | paymentMiddleware plus four paid-endpoint handlers — `/lore/:addr` (store-backed), `/alpha/:addr` (mock), `/metadata/:addr` (mock), `/shill/:tokenAddr` (creator-paid Memind Pitch order, enqueues ShillOrderStore — endpoint path retained)                                                                                                                                                                                           | Agent runtime, wallet signing             |
 | `apps/server/chain/`  | viem client and the TokenManager2 partial ABI (both proxy and implementation are unverified on-chain, so the subset is hand-authored)                                                                                                                                                                                                                                                                                                  | Agent business logic                      |
 | `apps/server/runs/`   | `RunStore` (Map + per-run EventEmitter); `runA2ADemo` as a pure function; POST/GET/SSE route handlers; CLI and HTTP share the same orchestration code path                                                                                                                                                                                                                                                                             | Agent business logic, persistence         |
 | `apps/server/demos/`  | Runnable end-to-end scripts: demo-creator-run / demo-a2a-run / demo-heartbeat-run                                                                                                                                                                                                                                                                                                                                                      | Unit tests, framework dependencies        |
