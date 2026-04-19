@@ -79,8 +79,20 @@ describe('<LogsDrawer />', () => {
 
   it('shows the runState.logs count chip on the Developer Logs tab', () => {
     const logs: LogEvent[] = [
-      { ts: '2026-04-20T12:00:00.000Z', level: 'info', agent: 'brain', message: 'a' },
-      { ts: '2026-04-20T12:00:01.000Z', level: 'info', agent: 'brain', message: 'b' },
+      {
+        ts: '2026-04-20T12:00:00.000Z',
+        level: 'info',
+        agent: 'brain',
+        tool: 'think',
+        message: 'a',
+      },
+      {
+        ts: '2026-04-20T12:00:01.000Z',
+        level: 'info',
+        agent: 'brain',
+        tool: 'think',
+        message: 'b',
+      },
     ];
     const out = renderToStaticMarkup(
       <LogsDrawer runState={runningState(logs)} initialOpen defaultTab="logs" />,

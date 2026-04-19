@@ -369,7 +369,7 @@ body:has(.logs-drawer.open) .toc {
 .sticky-viewport {
   position: sticky;
   top: 56px;
-  height: calc(100vh - 56px - 52px); /* minus topbar + footer rail */
+  height: calc(100vh - 56px - 52px); /* minus topbar + 52px reserved rail at bottom */
   width: 100%;
   overflow: hidden;
   background: radial-gradient(ellipse at center, #0a0a0d 0%, var(--bg-primary) 60%);
@@ -1302,59 +1302,14 @@ body:has(.logs-drawer.open) .toc {
   align-items: center;
 }
 
-/* ---------- FOOTER (logs/tabs drawer) ---------- */
-.footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 280;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border-default);
-  transition: height 300ms cubic-bezier(0.2, 0.7, 0.3, 1);
-  height: 44px;
-  overflow: hidden;
-}
-.footer.open {
-  height: 320px;
-}
-.footer-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 44px;
-  padding: 0 16px 0 24px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-elevated);
-}
-.footer-bar-left {
-  display: flex;
-  gap: 6px;
-  align-items: stretch;
-  height: 100%;
-}
-.footer-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 1.5px;
-  color: var(--fg-tertiary);
-  border-bottom: 2px solid transparent;
-  transition:
-    color 200ms,
-    border-color 200ms;
-}
-.footer-tab:hover {
-  color: var(--fg-secondary);
-}
-.footer-tab.active {
-  color: var(--fg-emphasis);
-  border-bottom-color: var(--accent);
-}
+/* ---------- DRAWER SHARED BITS ---------- */
+/*
+ * Tab-indicator dots reused across LogsDrawer and future drawer surfaces
+ * (Developer Logs = green, Artifacts = amber, Brain Console = purple).
+ * Kept here — not scoped under `.logs-drawer` — because the same dot
+ * classes previously lived on the legacy `.footer-tab` markup and may
+ * be reused by future drawers.
+ */
 .dot {
   width: 6px;
   height: 6px;
@@ -1370,39 +1325,7 @@ body:has(.logs-drawer.open) .toc {
 .dot-purple {
   background: var(--chain-ipfs);
 }
-.footer-bar-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-tertiary);
-}
-.brain-pulse {
-  color: var(--accent);
-  animation: pulse 1.6s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-.footer-caret {
-  color: var(--fg-secondary);
-  font-size: 12px;
-  width: 24px;
-  text-align: center;
-}
 
-.footer-body {
-  height: calc(320px - 44px);
-  overflow: auto;
-  padding: 14px 24px;
-}
 .logs-head {
   display: flex;
   gap: 14px;
