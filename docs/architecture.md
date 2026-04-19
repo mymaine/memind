@@ -16,23 +16,26 @@ pnpm workspace monorepo with three packages:
 ```
 hack-bnb-fourmeme-agent-creator/
 ├── apps/
-│   ├── web/              # Next.js 15 App Router dashboard (Phase 4 AC4 MVP)
+│   ├── web/              # Next.js 15 App Router — 6-scene product dashboard (Phase 4.7)
 │   │   └── src/
-│   │       ├── app/      # layout + page (client component, useRun driven)
-│   │       ├── components/ # theme-input / agent-status-bar / log-panel / tx-list
-│   │       ├── hooks/    # useRun — POST /api/runs + EventSource lifecycle
-│   │       └── lib/      # artifact-view (Artifact → pill display)
+│   │       ├── app/      # layout / page / market/page (client components, useRun driven)
+│   │       ├── components/ # scenes/ (Hero/Problem/Solution/Product/Vision/Evidence)
+│   │       │             # + product/ (LaunchPanel/OrderPanel/derive-state/pills)
+│   │       │             # + animations/ (usdc-particle-flow/tweet-typewriter)
+│   │       │             # + dev-logs-drawer + header + shilling-glyph
+│   │       ├── hooks/    # useRun / useScrollReveal / useScrollProgress / useDevLogsDrawer
+│   │       └── lib/      # narrative-copy (single-source marketing strings) / artifact-view
 │   └── server/           # Express + x402 server + agent runtime
 │       └── src/
-│           ├── agents/   # Creator / Narrator / Market-maker / Heartbeat
+│           ├── agents/   # Creator / Narrator / Market-maker (dual persona: a2a + Shiller) / Heartbeat
 │           ├── tools/    # narrative / image / deployer / lore / lore-extend /
-│           │             # token-status / x-post / x-fetch-lore
-│           ├── state/    # in-memory LoreStore + AnchorLedger (AC3 layer 1)
+│           │             # token-status / x-post / post-shill-for / x-fetch-lore
+│           ├── state/    # in-memory LoreStore + AnchorLedger (AC3) + ShillOrderStore (Phase 4.6)
 │           ├── chain/    # viem client + TokenManager2 partial ABI
 │           │             # + anchor-tx (AC3 layer 2, env-gated BSC memo tx)
-│           ├── x402/     # payment middleware + paid route handlers
-│           ├── runs/     # RunStore + runA2ADemo + REST/SSE route handlers
-│           └── demos/    # demo:creator / demo:a2a / demo:heartbeat
+│           ├── x402/     # payment middleware + 4 paid route handlers (lore/alpha/metadata/shill)
+│           ├── runs/     # RunStore + runA2ADemo / runShillMarketDemo + REST/SSE route handlers
+│           └── demos/    # demo:creator / demo:a2a / demo:heartbeat / demo:shill
 ├── packages/
 │   └── shared/           # shared types, zod schemas, and agent tool interface
 ├── docs/
@@ -83,10 +86,12 @@ hack-bnb-fourmeme-agent-creator/
                  │ └────────────────┘   └─────────────────────────┘ │
                  │                                                  │
                  │ ┌──────────────────────────────────────────────┐ │
-                 │ │ x402 Server (express)                        │ │
-                 │ │ /lore/:addr (paid, store-backed when hot)    │ │
-                 │ │ /alpha/:addr (paid, mock until Phase 4)      │ │
-                 │ │ /metadata/:addr (paid, mock)                 │ │
+                 │ │ x402 Server (express) — 4 paid endpoints     │ │
+                 │ │ /lore/:addr  (0.01 USDC, store-backed)       │ │
+                 │ │ /alpha/:addr (0.01 USDC, mock)               │ │
+                 │ │ /metadata/:addr (0.005 USDC, mock)           │ │
+                 │ │ /shill/:tokenAddr (0.01 USDC, P4.6 creator-  │ │
+                 │ │   paid; handler enqueues ShillOrderStore)    │ │
                  │ └──────────────────────────────────────────────┘ │
                  │ ┌──────────────────────────────────────────────┐ │
                  │ │ Runs API (Phase 4, dashboard-facing)         │ │
