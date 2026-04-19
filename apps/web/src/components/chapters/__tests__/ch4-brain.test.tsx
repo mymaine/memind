@@ -27,15 +27,15 @@ import { Ch4Brain } from '../ch4-brain.js';
 
 const PERSONAS = ['GLITCHY', 'CULTIST', 'DEGEN', 'SHILLER'] as const;
 const PERSONA_VOICES = ['glitch voice', 'cult voice', 'degen voice', 'shill voice'] as const;
-// UAT 2026-04-20 (round 3): channels switched from wordmarks to icon
-// glyphs. The aria-label carries the human name (e.g. "Telegram (coming
-// soon)") and the visible glyph is in the `.future-icon` span.
+// UAT round 4 (2026-04-20): channel ports render inline brand SVGs. The
+// aria-label keeps the human name, `data-icon` on the port is the stable
+// brand slug we assert against here (unicode glyph tests were removed).
 const SOON_CHANNEL_ARIA = [
   'Telegram (coming soon)',
   'Discord (coming soon)',
   'On-chain message (coming soon)',
 ] as const;
-const LIVE_X_ICON = '\u{1D54F}';
+const CHANNEL_ICON_IDS = ['x', 'telegram', 'discord', 'onchain'] as const;
 
 describe('<Ch4Brain>', () => {
   it('renders all four persona labels', () => {
@@ -59,9 +59,15 @@ describe('<Ch4Brain>', () => {
     for (const aria of SOON_CHANNEL_ARIA) {
       expect(html).toContain(`aria-label="${aria}"`);
     }
-    // X ships as a live port — aria is live, icon is double-struck X.
+    // X ships as a live port — aria tag marks it live.
     expect(html).toContain('aria-label="X (live)"');
-    expect(html).toContain(LIVE_X_ICON);
+    // Every channel port carries its brand slug via `data-icon` and
+    // renders an inline <svg> inside `.future-icon`.
+    for (const iconId of CHANNEL_ICON_IDS) {
+      expect(html).toContain(`data-icon="${iconId}"`);
+    }
+    const svgCount = (html.match(/class="future-icon"[^>]*><svg/g) ?? []).length;
+    expect(svgCount).toBe(4);
     // 4 channel ports total; 3 soon, 1 live.
     const allSubs = html.match(/class="future-sub">(?:soon|live)<\/div>/g) ?? [];
     expect(allSubs).toHaveLength(4);

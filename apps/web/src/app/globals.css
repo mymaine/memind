@@ -813,16 +813,13 @@ body:has(.logs-drawer.open) .toc {
   margin-top: -18px;
 }
 /*
- * UAT 2026-04-20 (round 3): channel ports now show an icon glyph, not a
- * wordmark. Use a larger monospace-agnostic font-size; fall back to the
- * sans-display stack so emoji / symbol glyphs render cleanly on macOS
- * + Windows + Linux. Soon channels stay dim, the live X channel gets an
- * accent circle outline.
+ * UAT round 4 (2026-04-20): channel ports render inline-SVG brand icons.
+ * The wrapper keeps a subtle dashed chip so soon channels still read as
+ * pending; the live X channel loses the dash and glows accent. SVG size
+ * is 28×28 inside a 52×52 chip, `currentColor` flows from the wrapper so
+ * we only need to set colour in one place.
  */
 .future-icon {
-  font-family: var(--font-sans-display);
-  font-size: 32px;
-  line-height: 1;
   color: var(--fg-tertiary);
   width: 52px;
   height: 52px;
@@ -832,6 +829,11 @@ body:has(.logs-drawer.open) .toc {
   border: 1px dashed var(--fg-tertiary);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
+}
+.future-icon svg {
+  width: 28px;
+  height: 28px;
+  display: block;
 }
 .future-port--live .future-icon {
   color: var(--accent);

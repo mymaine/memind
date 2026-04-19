@@ -33,9 +33,49 @@
  * Circle-coord convention: angle `a` in degrees, `a=0` points up. Converted
  * via `(a - 90) * PI/180` so trig reads natural (cos=x, sin=y).
  */
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { PixelHumanGlyph, type ShillingMood } from '@/components/pixel-human-glyph';
 import { Label, clamp, lerp } from './chapter-primitives';
+
+/*
+ * Channel brand icons — inline SVG so `currentColor` picks up the accent
+ * green when the port is live (X) and the dim fg-tertiary when soon
+ * (Telegram / Discord / on-chain). Paths are the widely-published
+ * simple-icons.org brand marks, rendered at viewBox 24×24.
+ */
+const IconX = (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden xmlns="http://www.w3.org/2000/svg">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-6.61-8.638L1.99 21.75H-1.32l7.73-8.835L-1.79 2.25H5.27l5.977 7.901L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77z" />
+  </svg>
+);
+
+const IconTelegram = (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden xmlns="http://www.w3.org/2000/svg">
+    <path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212-.07-.062-.174-.041-.249-.024-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.245-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+  </svg>
+);
+
+const IconDiscord = (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden xmlns="http://www.w3.org/2000/svg">
+    <path d="M20.317 4.37a19.79 19.79 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.865-.608 1.249a18.27 18.27 0 00-5.487 0 12.76 12.76 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.1 13.1 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 01.079.009c.12.099.246.198.373.292a.077.077 0 01-.007.128 12.3 12.3 0 01-1.873.891.077.077 0 00-.04.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.84 19.84 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.955 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z" />
+  </svg>
+);
+
+const IconOnChain = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);
 
 interface Ch4BrainProps {
   /** Interior progress 0..1 emitted by <StickyStage /> for this chapter. */
@@ -57,8 +97,10 @@ interface ChannelPort {
   readonly a: number;
   readonly r: number;
   readonly label: string;
-  /** Unicode / emoji glyph rendered instead of the text label (UAT #2). */
-  readonly icon: string;
+  /** Inline SVG brand-mark rendered inside the port (UAT round 4). */
+  readonly icon: ReactNode;
+  /** Stable test hook (matches the brand slug). */
+  readonly iconId: string;
   readonly status: ChannelStatus;
 }
 
@@ -80,18 +122,28 @@ const PERSONAS: readonly PersonaPort[] = [
 // inside a typical 900-1000px viewport without spilling into the legend
 // row above or the closing CTA below. Persona ring stays outside the
 // brain-core badge but well inside the channel cross.
-// UAT 2026-04-20 (round 3): channel identifiers are icons rather than
-// text so the diagram reads as a symbolic map of delivery surfaces, not a
-// list of wordmarks. `label` stays as an aria label + tooltip surface.
-//   X   → 𝕏  (Unicode Math Double-Struck Capital X, U+1D54F)
-//   TG  → ✈  (paper plane, U+2708)
-//   DC  → ◉  (circled dot, lightweight discord stand-in)
-//   MSG → ⛓  (chain, U+26D3)
+// UAT round 4 (2026-04-20): swap Unicode glyphs for real brand SVGs. The
+// `label` keeps the human name (used for aria-label + tooltip), `iconId`
+// is a stable test hook, `icon` is the inline SVG rendered in the port.
 const CHANNELS: readonly ChannelPort[] = [
-  { a: 0, r: 240, label: 'X', icon: '\u{1D54F}', status: 'live' },
-  { a: -90, r: 260, label: 'Telegram', icon: '\u2708', status: 'soon' },
-  { a: 90, r: 260, label: 'Discord', icon: '\u25C9', status: 'soon' },
-  { a: 180, r: 240, label: 'On-chain message', icon: '\u26D3', status: 'soon' },
+  { a: 0, r: 240, label: 'X', iconId: 'x', icon: IconX, status: 'live' },
+  {
+    a: -90,
+    r: 260,
+    label: 'Telegram',
+    iconId: 'telegram',
+    icon: IconTelegram,
+    status: 'soon',
+  },
+  { a: 90, r: 260, label: 'Discord', iconId: 'discord', icon: IconDiscord, status: 'soon' },
+  {
+    a: 180,
+    r: 240,
+    label: 'On-chain message',
+    iconId: 'onchain',
+    icon: IconOnChain,
+    status: 'soon',
+  },
 ];
 
 const RING_RADII = [60, 120, 180, 240] as const;
@@ -243,6 +295,7 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
               }}
               aria-label={`${c.label} (${live ? 'live' : 'coming soon'})`}
               title={c.label}
+              data-icon={c.iconId}
             >
               <div className="future-icon" aria-hidden>
                 {c.icon}
