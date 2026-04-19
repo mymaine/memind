@@ -1,44 +1,60 @@
 'use client';
 
 /**
- * Home page — immersive single-page surface (immersive-single-page P1 Task 1 /
- * AC-ISP-1 + AC-ISP-2).
+ * Home page — sticky-pinned scrollytelling surface.
  *
- * The pre-pivot structure shipped `/` and `/market` as two parallel
- * 6-scene pages (Hero → Problem → Solution → ProductScene → Vision →
- * Evidence). The pivot collapses both into a single scroll-driven surface
- * whose sections are ordered as narrative → live operation → business →
- * on-chain evidence:
+ * The pre-pivot layout stacked 11 content sections vertically and relied on
+ * `useScrollReveal` + `.scene` CSS to fade each one in as it entered the
+ * viewport. Evaluator feedback was that the effect still read as "the page
+ * is scrolling up" rather than "the camera is fixed and scenes are swapping
+ * into focus". This revision rebuilds the surface as a sticky-pinned
+ * scrollytelling layout:
  *
- *   #hero               → reuses <HeroScene />           (narrative)
- *   #problem            → reuses <ProblemScene />        (narrative)
- *   #solution           → reuses <SolutionScene />       (narrative)
- *   #brain-architecture → placeholder (T4 mounts scene)  (narrative)
- *   #launch-demo        → mounts <LiveLaunchScene />      (operation)
- *   #order-shill        → mounts <LiveOrderScene />       (operation)
- *   #heartbeat-demo     → mounts <LiveHeartbeatScene />   (operation)
- *   #take-rate          → currently hosts <VisionScene />(business)
- *   #sku-matrix         → placeholder (T4 splits scene)  (business)
- *   #phase-map          → placeholder (T4 splits scene)  (business)
- *   #evidence           → reuses <EvidenceScene />       (trust)
+ *   ┌─ main                                                          ┐
+ *   │   <Chapter ref=slotA>  h-screen, relative                      │
+ *   │     <div className="sticky top-[56px] h-[calc(100vh-56px)]">   │
+ *   │       <motion.div style={{opacity, scale, filter}}>            │
+ *   │         <HeroScene />  (or <section id="hero"> wrapper)        │
+ *   │       </motion.div>                                            │
+ *   │     </div>                                                     │
+ *   │   </Chapter>                                                   │
+ *   │   <Chapter ref=slotB>  ...Problem...                           │
+ *   │   ...                                                          │
+ *   └──────────────────────────────────────────────────────────────── ┘
  *
- * Each section is a wrapping `<section id className="scene ...">` in this
- * file. Nested <section> (wrapper + inner scene's own <section>) is valid
- * HTML; the wrapper exists only to expose the stable section id without
- * mutating the scene internals (forbidden by the P1 Task 1 brief). The
- * wrapper carries `.scene scene--revealed` so the page-level `.scene`
- * reveal CSS does not leave the wrapper permanently invisible — the inner
- * scene continues to run its own `useScrollReveal` latch independently.
+ * Each chapter reserves one viewport of scroll distance (`h-screen` on the
+ * slot) and pins the scene inside it (`sticky top-[56px]`, offset by the
+ * Header height). As the viewer scrolls, the next chapter's sticky pin
+ * takes over while the current chapter's pin releases — the effect is a
+ * cross-fading stack of scenes at a fixed camera. All motion happens
+ * in-place via opacity + scale + filter (NO translateY, AC-ISP-7).
  *
- * The T5 live-demo scenes are intentionally skeleton-only (intro copy +
- * brain-chat-slot placeholder). BRAIN-P5 swaps each `brain-chat-slot-*`
- * for `<BrainChat scope="launch|order|heartbeat" />`. The page still owns
- * a single `useRun()` instance so the shared DevLogsDrawer and the
- * Header's <BrainIndicator /> (via RunStateContext) keep reflecting the
- * live run state — BRAIN-P5 decides whether the chat embeds need the
- * controller threaded in as a prop.
+ * Scroll progress mapping (per-chapter):
+ *   p < 0.25          → fade/scale/blur IN   (0 → 1, 0.92 → 1, 20px → 0)
+ *   0.25 ≤ p ≤ 0.75   → fully resolved       (1, 1, 0)
+ *   p > 0.75          → fade/scale/blur OUT  (1 → 0, 1 → 1.05, 0 → 20px)
+ *
+ * This produces the "focus in → hold → focus out" beat user feedback asked
+ * for. The legacy `.scene` + `.scene--revealed` CSS still ships in
+ * globals.css and is applied by the scene components themselves as a
+ * reduced-motion fallback (under `prefers-reduced-motion: reduce`, the
+ * motion MotionValues are effectively pinned to 0 progress by the user
+ * agent's zero-animation-duration CSS override, but the scene components
+ * independently latch to `.scene--revealed` via `useScrollReveal` so the
+ * viewer still sees the final composed frame).
+ *
+ * The 11-section id contract (hero / problem / solution / brain-architecture
+ * / launch-demo / order-shill / heartbeat-demo / take-rate / sku-matrix /
+ * phase-map / evidence) is preserved unchanged — the scroll anchors, TOC,
+ * and `/market#order-shill` redirect all still resolve correctly.
+ *
+ * Parallel agent note: scene component internals are being edited
+ * concurrently (PixelHumanGlyph mount etc). We touch ONLY the wrappers in
+ * this file — scene JSX is untouched.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactElement, ReactNode, RefObject } from 'react';
+import { motion, useScroll, useTransform } from 'motion/react';
 import { HeroScene } from '@/components/scenes/hero-scene';
 import { ProblemScene } from '@/components/scenes/problem-scene';
 import { SolutionScene } from '@/components/scenes/solution-scene';
@@ -55,7 +71,92 @@ import { useRun } from '@/hooks/useRun';
 import { usePublishRunState } from '@/hooks/useRunStateContext';
 import { FOOTER_TAGLINE } from '@/lib/narrative-copy';
 
-export default function HomePage(): React.ReactElement {
+/**
+ * Single chapter of the scrollytelling surface. Reserves one viewport of
+ * vertical scroll distance so the sticky child can pin the scene long enough
+ * for the progress-linked motion to read as "focus in → hold → focus out".
+ *
+ * `useScroll({ target, offset: ['start end', 'end start'] })` returns a
+ * MotionValue `p ∈ [0, 1]` where:
+ *   p = 0    when the chapter's top edge sits at the viewport bottom
+ *   p = 0.5  when the chapter is centred in the viewport
+ *   p = 1    when the chapter's bottom edge sits at the viewport top
+ *
+ * We bracket the curve so the middle 50% (0.25–0.75) is the "resolved"
+ * stage where the scene is fully visible. This matches the spec's
+ * "focus-in → hold → focus-out" beat.
+ *
+ * Motion primitives are opacity + scale + filter only — no translateY
+ * (AC-ISP-7 explicitly forbids vertical translation to avoid reviving the
+ * "page is scrolling" read).
+ */
+interface ScrollChapterProps {
+  readonly children: ReactNode;
+  /**
+   * Optional outer element tag. For chapters whose scene already owns a
+   * `<section id="...">` (brain-architecture / launch-demo / order-shill
+   * / heartbeat-demo / evidence), we render the slot as a plain `<div>` so
+   * we do not duplicate the id. For chapters that need a wrapper section,
+   * the caller wraps `children` in `<section id>` directly — the slot
+   * itself stays `<div>` either way.
+   */
+  readonly slotClassName?: string;
+}
+
+function ScrollChapter({ children, slotClassName }: ScrollChapterProps): ReactElement {
+  const slotRef = useRef<HTMLDivElement | null>(null);
+
+  // `useScroll` with a `target` ref ties the progress MotionValue to this
+  // chapter's scroll position. `offset: ['start end', 'end start']` means
+  // progress 0 = slot's top at viewport's bottom, progress 1 = slot's
+  // bottom at viewport's top (a full "scene traverses viewport" pass).
+  const { scrollYProgress } = useScroll({
+    target: slotRef as RefObject<HTMLElement>,
+    offset: ['start end', 'end start'],
+  });
+
+  // Opacity curve — invisible → resolved → invisible.
+  // Breakpoints 0 / 0.25 / 0.75 / 1 mirror the spec's focus-in / hold /
+  // focus-out beat. The 0.25–0.75 "hold" window is wide enough that even a
+  // scroll-happy viewer lingers in full opacity before the next chapter
+  // starts fading in.
+  const opacity = useTransform(scrollYProgress, [0, 0.25, 0.75, 1], [0, 1, 1, 0]);
+  // Scale curve — compress in on entry, neutral during hold, slight
+  // expand-past on exit so the scene feels like the camera is pulling
+  // forward after the viewer moves on. Amplitude (0.92 → 1 → 1.05) matches
+  // the globals.css `.scene` fallback so both paths "feel" the same.
+  const scale = useTransform(scrollYProgress, [0, 0.25, 0.75, 1], [0.92, 1, 1, 1.05]);
+  // Blur curve — defocus → sharp → defocus. 20px is aggressive enough that
+  // the entering/leaving frames read as "out of focus" rather than "small
+  // noise". Declared as a template literal so the string interpolation
+  // flows through motion's style prop without extra wrapping.
+  const blur = useTransform(scrollYProgress, [0, 0.25, 0.75, 1], [20, 0, 0, 20]);
+  const filter = useTransform(blur, (b) => `blur(${b}px)`);
+
+  return (
+    <div ref={slotRef} className="relative h-screen">
+      {/* Sticky pin — offset by the 56px sticky Header so the scene never
+          slides under it. h-[calc(100vh-56px)] fills the remaining
+          viewport; flex centring ensures the scene is vertically centred
+          inside the pin. */}
+      <div
+        className={`sticky top-[56px] flex h-[calc(100vh-56px)] items-center justify-center ${slotClassName ?? ''}`.trim()}
+      >
+        <motion.div
+          // `will-change` is a hint to the compositor that this element's
+          // opacity/transform/filter are animated, so it gets its own
+          // layer and the animations stay on the GPU fast-path.
+          style={{ opacity, scale, filter, willChange: 'opacity, transform, filter' }}
+          className="w-full"
+        >
+          {children}
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+export default function HomePage(): ReactElement {
   const hookResult = useRun();
   const { state } = hookResult;
   // Publish into the layout-level RunStateContext so the Header's
@@ -77,19 +178,6 @@ export default function HomePage(): React.ReactElement {
     setToastMessage(null);
   }, []);
 
-  // Wrapper shell class — `scene--revealed` is applied up-front so the
-  // page-level `.scene` reveal CSS does not hide the wrapper before the
-  // inner scene's own reveal latch fires. `min-h-[85vh]` makes each section
-  // occupy roughly one viewport so scrolling becomes section-by-section
-  // rather than a continuous content stack — the "鏡頭固定、內容浮現"
-  // experience the immersive spec §User Story calls for, plus the per-
-  // section ASCII palette swap registers as the viewer crosses boundaries.
-  const wrapperClass = 'scene scene--revealed flex min-h-[85vh] flex-col justify-center';
-  // Placeholder class — `.scene` only; no reveal latch. Placeholders are
-  // empty until T4/T5 mount their scenes, so their opacity:0 default is
-  // invisible-either-way.
-  const placeholderClass = 'scene';
-
   return (
     <>
       <div className="mx-auto flex w-full max-w-[1400px] gap-8 px-6">
@@ -97,60 +185,85 @@ export default function HomePage(): React.ReactElement {
             Hidden on sub-md viewports; the slim Header nav is the fallback. */}
         <SectionToc />
 
-        <main className="flex min-h-[calc(100vh-56px)] flex-1 flex-col gap-12 py-4 pb-20">
+        {/* The scrollytelling column. `relative` anchors the sticky
+            children to this element so each chapter's pin is bounded by
+            its own slot, not by the overall page. `pb-20` preserves the
+            original tail gap above the footer. */}
+        <main className="relative flex-1 pb-20">
           {/* Shared <Header /> is mounted at the layout level (V4.7-P1 Task 4). */}
 
-          {/* ─── Narrative: Hero → Problem → Solution → Brain architecture ──── */}
-          <section id="hero" className={wrapperClass}>
-            <HeroScene />
-          </section>
-          <section id="problem" className={wrapperClass}>
-            <ProblemScene />
-          </section>
-          <section id="solution" className={wrapperClass}>
-            <SolutionScene />
-          </section>
-          {/* <BrainArchitectureScene /> owns its own `<section
-            id="brain-architecture">` so we mount it directly — wrapping it
-            would emit two DOM elements with `id="brain-architecture"` and
-            break the TOC anchor. The inner scene runs its own
-            useScrollReveal latch. (immersive-single-page P1 Task 4, done) */}
-          <BrainArchitectureScene />
+          {/* ─── Narrative: Hero → Problem → Solution → Brain architecture ────
+              HeroScene / ProblemScene / SolutionScene do NOT emit their own
+              `<section id>`, so we wrap them in one here. BrainArchitectureScene
+              owns its own `<section id="brain-architecture">` so we mount it
+              directly inside the slot (wrapping it would duplicate the id and
+              break the TOC anchor). */}
+          <ScrollChapter>
+            <section id="hero">
+              <HeroScene />
+            </section>
+          </ScrollChapter>
+          <ScrollChapter>
+            <section id="problem">
+              <ProblemScene />
+            </section>
+          </ScrollChapter>
+          <ScrollChapter>
+            <section id="solution">
+              <SolutionScene />
+            </section>
+          </ScrollChapter>
+          <ScrollChapter>
+            <BrainArchitectureScene />
+          </ScrollChapter>
 
           {/* ─── Operation: Launch / Order Shill / Heartbeat live demos ───────
-            Each live-demo scene owns its own `<section id>` so they mount
-            directly — wrapping them would duplicate the id. Skeletons carry
-            a `brain-chat-slot-*` placeholder that BRAIN-P5 will swap for
-            `<BrainChat scope="launch|order|heartbeat" />`. `hookResult` is
-            intentionally NOT threaded in this revision: the shared
-            `useRun()` instance is retained in this file so the DevLogsDrawer
-            + BrainIndicator keep reflecting the live run; BRAIN-P5 decides
-            whether the BrainChat embeds need the controller prop once they
-            land. (immersive-single-page P1 Task 5) */}
-          <LiveLaunchScene />
-          <LiveOrderScene />
-          <LiveHeartbeatScene />
+              Each live-demo scene owns its own `<section id>` so they mount
+              directly inside the slot. Skeletons carry a `brain-chat-slot-*`
+              placeholder that BRAIN-P5 will swap for
+              `<BrainChat scope="launch|order|heartbeat" />`. `hookResult` is
+              intentionally NOT threaded in: the shared `useRun()` instance is
+              retained on this page so the DevLogsDrawer + BrainIndicator keep
+              reflecting the live run; BRAIN-P5 decides whether the BrainChat
+              embeds need the controller prop once they land. */}
+          <ScrollChapter>
+            <LiveLaunchScene />
+          </ScrollChapter>
+          <ScrollChapter>
+            <LiveOrderScene />
+          </ScrollChapter>
+          <ScrollChapter>
+            <LiveHeartbeatScene />
+          </ScrollChapter>
 
           {/* ─── Business: take-rate → SKU matrix → phase map ────────────────
-            T4 will split <VisionScene /> into three stand-alone scenes
-            (take-rate / sku-matrix / phase-map). For now the whole VisionScene
-            lives under #take-rate so its take-rate cards, SKU matrix and
-            phase map all remain on the page; #sku-matrix and #phase-map are
-            empty placeholder anchors that T4 will populate. */}
-          <section id="take-rate" className={wrapperClass}>
-            <VisionScene />
-          </section>
+              T4 will split <VisionScene /> into three stand-alone scenes
+              (take-rate / sku-matrix / phase-map). For now the whole
+              VisionScene lives under #take-rate; #sku-matrix and #phase-map
+              are empty placeholder anchors that T4 will populate. We still
+              reserve a scroll chapter for each so the TOC anchor jumps land
+              on a pinned frame instead of a zero-height gap. */}
+          <ScrollChapter>
+            <section id="take-rate">
+              <VisionScene />
+            </section>
+          </ScrollChapter>
           {/* TODO(immersive-T4): mount <SkuMatrixScene /> once split from <VisionScene />. */}
-          <section id="sku-matrix" className={placeholderClass} aria-hidden="true" />
+          <ScrollChapter>
+            <section id="sku-matrix" aria-hidden="true" />
+          </ScrollChapter>
           {/* TODO(immersive-T4): mount <PhaseMapScene /> once split from <VisionScene />. */}
-          <section id="phase-map" className={placeholderClass} aria-hidden="true" />
+          <ScrollChapter>
+            <section id="phase-map" aria-hidden="true" />
+          </ScrollChapter>
 
           {/* ─── Trust: on-chain + engineering evidence ───────────────────────
-            <EvidenceScene /> already renders its own `<section id="evidence"
-            className="scene ...">`, so we mount it directly instead of
-            wrapping it — wrapping would emit two DOM elements with
-            `id="evidence"` (invalid HTML + duplicate TOC target). */}
-          <EvidenceScene />
+              <EvidenceScene /> already renders its own
+              `<section id="evidence">`, so we mount it directly inside the
+              slot — wrapping would duplicate the id. */}
+          <ScrollChapter>
+            <EvidenceScene />
+          </ScrollChapter>
 
           <footer className="border-t border-border-default pt-2 text-[11px] text-fg-tertiary">
             <span className="font-[family-name:var(--font-mono)]">{FOOTER_TAGLINE}</span>
@@ -160,7 +273,10 @@ export default function HomePage(): React.ReactElement {
       {/* Drawer is fixed bottom (position:fixed in its own styles), so it
           lives outside <main> and does not participate in the scroll flow.
           BRAIN-P5 Task 4 threads the shared useRun() controller through so
-          the Panels fallback tab can drive LaunchPanel + OrderPanel directly. */}
+          the Panels fallback tab can drive LaunchPanel + OrderPanel directly.
+          Note: the drawer's collapsed form is a thin strip (~40px) and the
+          sticky scenes reserve their own pin height, so the drawer does
+          not occlude scene content unless the user explicitly expands it. */}
       <DevLogsDrawer runState={state} host="home" runController={hookResult} />
       <Toast message={toastMessage} onDismiss={clearToast} />
     </>

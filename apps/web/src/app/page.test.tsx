@@ -107,11 +107,13 @@ describe('HomePage sticky-pinned scrollytelling layout', () => {
     expect(countStickyChapterWrappers(html)).toBeGreaterThanOrEqual(11);
   });
 
-  it('includes at least one h-screen sticky chapter wrapper', () => {
+  it('sticky chapter wrappers fill the viewport vertically', () => {
     const html = renderHome();
-    // The sticky chapter wrappers also carry `h-screen` so they fill the
-    // viewport vertically — this is what makes the "camera fixed" effect
-    // register during scroll. Guard against a refactor that drops the class.
-    expect(html).toMatch(/class(?:Name)?="[^"]*\bsticky\b[^"]*\bh-screen\b[^"]*"/);
+    // The sticky pins each carry a viewport-sized height (`h-screen` or the
+    // equivalent `h-[calc(100vh-<header>)]` expression when offset below a
+    // sticky header). Match either form — both produce the "camera fixed"
+    // effect; the calc form just reserves the Header strip so the scene
+    // never slides under it.
+    expect(html).toMatch(/class(?:Name)?="[^"]*\bsticky\b[^"]*(?:\bh-screen\b|\bh-\[calc\(100vh)/);
   });
 });
