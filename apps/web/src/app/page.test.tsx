@@ -114,6 +114,29 @@ describe('HomePage StickyStage shell', () => {
     });
   });
 
+  it('mounts the right slide-in BrainPanel in the closed state by default', () => {
+    // SSR entrypoint renders the panel with open=false so `aria-hidden="true"`
+    // is the canonical marker. The panel's close button + meta labels must
+    // both surface in the DOM (always-mounted so the slide-in transform has
+    // a target) but assistive tech skips the subtree until the user opens it.
+    const html = renderHome();
+    expect(html).toMatch(/<aside[^>]*class="brain-panel\s*"/);
+    expect(html).toMatch(/<aside[^>]*aria-hidden="true"/);
+    expect(html).toMatch(/aria-label="Close brain panel"/);
+  });
+
+  it('exposes the TopBar brain indicator as the trigger for opening the BrainPanel', () => {
+    // AC-MSR-7: clicking the TopBar <BrainIndicator /> opens the BrainPanel.
+    // SSR-only assertion: the indicator's `aria-label="Open brain panel"`
+    // button exists and the page has exactly one BrainPanel rendered as
+    // the receiver (aside). Runtime wiring of the click is delegated to
+    // React's synthetic event system.
+    const html = renderHome();
+    expect(html).toMatch(/<button[^>]*aria-label="Open brain panel"/);
+    const panelMatches = html.match(/<aside[^>]*class="brain-panel/g) ?? [];
+    expect(panelMatches.length).toBe(1);
+  });
+
   it('still declares the 11 spec-mandated chapter ids in order via StickyStage props', () => {
     // The chapter ids drive anchor-jump + TOC highlighting (P0 Task 16 /
     // `/market` redirect). They are not visible in the rendered HTML at

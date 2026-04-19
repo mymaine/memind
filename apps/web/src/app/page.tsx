@@ -39,6 +39,7 @@ import { Ch8TakeRate } from '@/components/chapters/ch8-take-rate';
 import { Ch9SKU } from '@/components/chapters/ch9-sku';
 import { Ch10Phase } from '@/components/chapters/ch10-phase';
 import { Ch11Evidence } from '@/components/chapters/ch11-evidence';
+import { BrainPanel } from '@/components/brain-panel';
 import { FooterDrawer } from '@/components/footer-drawer';
 import { Header } from '@/components/header';
 import { SectionToc } from '@/components/section-toc';
@@ -119,6 +120,20 @@ export default function HomePage(): ReactElement {
   // ONLINE/IDLE + active persona through RunStateContext.
   usePublishRunState(hookResult.state);
 
+  // BrainPanel open-state (AC-MSR-7). Clicking the TopBar brain indicator
+  // flips `brainOpen` and optionally seeds the composer via `brainDraft`
+  // so Hero CTAs (`/launch `, `/order `) can pre-fill the textarea. The
+  // draft is nullable so an explicit-null open resets the composer.
+  const [brainOpen, setBrainOpen] = useState<boolean>(false);
+  const [brainDraft, setBrainDraft] = useState<string | undefined>(undefined);
+  const openBrain = useCallback((draft?: string): void => {
+    setBrainDraft(draft);
+    setBrainOpen(true);
+  }, []);
+  const closeBrain = useCallback((): void => {
+    setBrainOpen(false);
+  }, []);
+
   // Viewport height state. SSR initialises to a sane 800 so the first paint
   // reserves a plausible scroll height; a post-mount effect syncs with the
   // real window and listens for resize.
@@ -156,15 +171,19 @@ export default function HomePage(): ReactElement {
         total={CHAPTERS.length}
         progress={progress}
         runState={hookResult.state}
-        // BrainPanel open-state handler lands in P0-15; wire a no-op for now
-        // so the button still mounts and the TOKEN BRAIN pill renders.
-        onBrainClick={() => {}}
+        onBrainClick={() => openBrain()}
       />
       <SectionToc activeIdx={activeIdx} onJump={onJump} />
       <div className="scroll-slot" style={{ height: totalScrollH }}>
         <StickyStage chapters={CHAPTERS} scrollY={scrollY} vh={vh} />
       </div>
       <Watermark activeIdx={activeIdx} total={CHAPTERS.length} title={currentTitle} />
+      <BrainPanel
+        open={brainOpen}
+        onClose={closeBrain}
+        runState={hookResult.state}
+        initialDraft={brainDraft}
+      />
       <FooterDrawer runState={hookResult.state} />
     </>
   );
