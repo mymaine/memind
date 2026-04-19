@@ -59,4 +59,25 @@ describe('deriveSlashPaletteView — closed state', () => {
     expect(view.open).toBe(false);
     expect(view.candidates).toEqual([]);
   });
+
+  it('closes as soon as any whitespace follows the command token', () => {
+    // Trailing space alone is enough — user has moved past the pick phase
+    // even before typing arguments, so Enter should submit.
+    const spaceOnly = deriveSlashPaletteView({
+      input: '/launch ',
+      scope: 'launch',
+      rawActiveIndex: 0,
+    });
+    expect(spaceOnly.open).toBe(false);
+    expect(spaceOnly.candidates).toEqual([]);
+
+    // Space + partial argument keeps it closed.
+    const withArgs = deriveSlashPaletteView({
+      input: '/launch cyber',
+      scope: 'launch',
+      rawActiveIndex: 0,
+    });
+    expect(withArgs.open).toBe(false);
+    expect(withArgs.candidates).toEqual([]);
+  });
 });
