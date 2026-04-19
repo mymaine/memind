@@ -419,8 +419,14 @@ body:has(.logs-drawer.open) .toc {
   max-width: 1280px;
   margin: 0 auto;
 }
+/*
+ * UAT 2026-04-20: per-chapter "CH.NN · the fix" labels are redundant with
+ * the TopBar NN/11 progress counter + SectionToc entries. Hide the label
+ * chrome but keep the DOM + component so regression tests stay stable and
+ * the label can be reinstated by flipping a single CSS rule.
+ */
 .ch-label {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 14px;
   font-family: var(--font-mono);
