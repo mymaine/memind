@@ -68,4 +68,13 @@ describe('<Ch6Shill>', () => {
     expect(html).toMatch(/data-mood="megaphone"/);
     expect(html).toContain('broadcasting');
   });
+
+  it('renders the broadcasting label with the animated dots span (UAT issue #8)', () => {
+    // UAT: "broadcasting..." was a static string; the new AnimatedLabel
+    // cycles dots on the client so the label visibly "works" during hold.
+    const html = renderToStaticMarkup(<Ch6Shill p={0.3} />);
+    expect(html).toMatch(
+      /class="demo-side-label">broadcasting<span class="demo-side-dots"[^>]*><\/span>/,
+    );
+  });
 });

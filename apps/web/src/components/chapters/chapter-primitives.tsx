@@ -12,11 +12,17 @@
  *   - `<BigHeadline>`   → `.ch-headline`
  *   - `<Mono dim?>`     → `.mono` (+ `color: var(--fg-tertiary)` when dim)
  *   - `<Pill color>`    → `.pill` / `.pill-dot`
+ *   - `<AnimatedLabel>` → `.demo-side-label` + auto-cycling `.`/`..`/`...`
+ *                         suffix (UAT issue #8). Client-only; SSR emits
+ *                         the base string with an empty dot span.
  *   - `clamp` / `lerp` / `fmt` — pure math helpers used by several chapters
  *
  * Kept free of `PixelHumanGlyph` and chapter-specific state so every ch*
  * module can import from one place without pulling in unrelated deps.
  */
+'use client';
+
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
 export function Label({ n, children }: { n: number; children: ReactNode }) {
@@ -78,3 +84,32 @@ export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
 
 /** Format a number to fixed decimals (default 2). */
 export const fmt = (n: number, d = 2): string => Number(n).toFixed(d);
+
+/**
+ * <AnimatedLabel> — `.demo-side-label` with a client-side looping dot
+ * suffix. Used by Ch5 ("brain is typing") and Ch6 ("broadcasting") to
+ * telegraph that the brain is doing work even when the scroll is paused
+ * on a hold tick (UAT issue #8).
+ *
+ * SSR renders the base string + an empty `.demo-side-dots` span so the
+ * initial HTML is deterministic and hydration-safe. On mount, setInterval
+ * cycles the dot count 0 → 1 → 2 → 3 → 0 every 350ms. Cleanup is handled
+ * so the interval does not leak if the parent unmounts.
+ */
+export function AnimatedLabel({ base }: { base: string }) {
+  const [dotCount, setDotCount] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setDotCount((d) => (d + 1) % 4);
+    }, 350);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="demo-side-label">
+      {base}
+      <span className="demo-side-dots" aria-hidden>
+        {'.'.repeat(dotCount)}
+      </span>
+    </div>
+  );
+}

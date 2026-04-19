@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Label, BigHeadline, Mono, Pill } from '../chapter-primitives.js';
+import { AnimatedLabel, Label, BigHeadline, Mono, Pill } from '../chapter-primitives.js';
 
 describe('<Label>', () => {
   it('zero-pads single-digit chapter numbers to CH.0N', () => {
@@ -71,5 +71,24 @@ describe('<Pill>', () => {
     );
     expect(html).toMatch(/class="pill"/);
     expect(html).not.toMatch(/class="pill-dot"/);
+  });
+});
+
+describe('<AnimatedLabel>', () => {
+  it('SSR emits the base string + empty .demo-side-dots span (UAT issue #8)', () => {
+    // Initial render happens before useEffect fires, so the dot span is
+    // empty. Hydration-safe because both server and client agree on the
+    // initial dot count = 0.
+    const html = renderToStaticMarkup(<AnimatedLabel base="brain is typing" />);
+    expect(html).toMatch(/class="demo-side-label"/);
+    expect(html).toContain('brain is typing');
+    expect(html).toMatch(/class="demo-side-dots"[^>]*><\/span>/);
+  });
+
+  it('base text and dots span sit in the same .demo-side-label container', () => {
+    const html = renderToStaticMarkup(<AnimatedLabel base="broadcasting" />);
+    expect(html).toMatch(
+      /class="demo-side-label">broadcasting<span class="demo-side-dots"[^>]*><\/span><\/div>/,
+    );
   });
 });

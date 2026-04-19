@@ -891,6 +891,14 @@ code,
   letter-spacing: 2px;
   color: var(--accent);
 }
+/* UAT issue #8 — dots span is driven by React state on the client. Reserve
+ * a fixed inline-block width so the '.' / '..' / '...' cycle never shifts
+ * the label position and the glyph to its left stays stable. */
+.demo-side-dots {
+  display: inline-block;
+  width: 1.6em;
+  text-align: left;
+}
 .demo-side-spec {
   width: 100%;
   display: flex;

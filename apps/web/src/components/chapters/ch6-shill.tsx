@@ -23,7 +23,7 @@
  */
 import type { ReactElement } from 'react';
 import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
-import { Label, Mono, clamp } from './chapter-primitives';
+import { AnimatedLabel, Label, Mono, clamp } from './chapter-primitives';
 
 interface Ch6ShillProps {
   /** Interior progress 0..1 emitted by <StickyStage /> for this chapter. */
@@ -119,7 +119,7 @@ export function Ch6Shill({ p }: Ch6ShillProps): ReactElement {
             primaryColor="var(--accent)"
             accentColor="var(--chain-bnb)"
           />
-          <div className="demo-side-label">broadcasting...</div>
+          <AnimatedLabel base="broadcasting" />
           <div className="demo-side-spec">
             <div className="spec-row">
               <Mono dim>tweets</Mono>

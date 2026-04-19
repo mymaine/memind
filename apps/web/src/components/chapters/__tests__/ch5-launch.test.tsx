@@ -70,4 +70,15 @@ describe('<Ch5Launch>', () => {
     expect(html).toMatch(/data-mood="type-keyboard"/);
     expect(html).toContain('brain is typing');
   });
+
+  it('renders the brain-typing label with the animated dots span (UAT issue #8)', () => {
+    // UAT: "brain is typing..." was a static string; viewers on a hold
+    // window assumed the brain was frozen. The new AnimatedLabel ships
+    // a demo-side-dots span that the client cycles via setInterval. SSR
+    // emits it empty; the regression guard checks the shape is present.
+    const html = renderToStaticMarkup(<Ch5Launch p={0.3} />);
+    expect(html).toMatch(
+      /class="demo-side-label">brain is typing<span class="demo-side-dots"[^>]*><\/span>/,
+    );
+  });
 });
