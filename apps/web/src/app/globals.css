@@ -422,6 +422,64 @@ body {
   border-top: 1px dashed var(--color-border-default);
 }
 
+/*
+ * ASCII backdrop (immersive-single-page P2 Task 1 / AC-ISP-8).
+ *
+ * `.ascii-backdrop` is a full-viewport fixed layer mounted once by
+ * <AsciiBackdrop /> from the root layout. It sits at `z-index: -1` so
+ * nothing in the UI tree (Header, Toast, Drawer, modals) is ever occluded;
+ * `pointer-events: none` guarantees clicks still reach foreground layers.
+ *
+ * The character grid is drawn entirely in a `::before` pseudo — no extra
+ * DOM nodes — using a pre-wrap string with `\A` hard line breaks. Parallax
+ * is driven by a CSS variable `--scroll-y` written from a rAF-throttled
+ * scroll listener inside <AsciiBackdrop />; the translate divisor keeps the
+ * drift very slow so the layer reads as atmospheric rather than loud.
+ *
+ * `prefers-reduced-motion` zeroes the transform (both via the component
+ * skipping the listener and via the explicit media query below) so the
+ * backdrop renders as a static frame for users who request reduced motion.
+ */
+.ascii-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  color: var(--color-fg-tertiary);
+  opacity: 0.08;
+}
+
+.ascii-backdrop::before {
+  content: '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
+    '  : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
+    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
+    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
+    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +\A'
+    '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦\A'
+    ': + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
+    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
+    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
+    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +\A'
+    '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦\A'
+    ': + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
+    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
+    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
+    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +\A'
+    '· : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦\A'
+    ': + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ *\A'
+    '+ ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * ·\A'
+    '◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · :\A'
+    '* · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : + ◦ * · : +';
+  white-space: pre;
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  transform: translate3d(0, calc(var(--scroll-y, 0) * -0.05px), 0);
+  will-change: transform;
+}
+
 /* ---------- Dev Logs Drawer (AC-P4.7-5a) ---------- */
 /* Slide-up entry animation played on first expand. The drawer itself is
    always sticky-bottom; only the content region animates so we do not have
@@ -528,5 +586,15 @@ body {
   .sku-card--shipped {
     animation: none !important;
     box-shadow: 0 0 12px rgba(0, 217, 146, 0.3) !important;
+  }
+
+  /* ASCII backdrop — AC-ISP-8 mandates a fully static frame under reduced
+     motion. The React component also skips the scroll listener so `--scroll-y`
+     is never updated, but we override the transform explicitly here to
+     neutralise any stale value that may have been written before the user
+     toggled the OS preference. */
+  .ascii-backdrop::before {
+    transform: none !important;
+    will-change: auto !important;
   }
 }
