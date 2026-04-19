@@ -27,8 +27,8 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from 'react';
-import { BrainChatMessage } from './brain-chat-message.js';
-import { BrainChatSuggestions } from './brain-chat-suggestions.js';
+import { BrainChatMessage } from './brain-chat-message';
+import { BrainChatSuggestions } from './brain-chat-suggestions';
 import { useBrainChat, type BrainChatScope, type UseBrainChatResult } from '@/hooks/useBrainChat';
 
 export interface BrainChatProps {
