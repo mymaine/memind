@@ -1,5 +1,5 @@
 /**
- * Red tests for <VisionScene /> (V4.7-P5 Task 1 / AC-P4.7-6).
+ * Tests for <VisionScene /> (V4.7-P5 Task 1 / AC-P4.7-6).
  *
  * Vision is the "why this is a primitive, not a feature" scene. Three
  * sub-blocks share a single 80vh `<section>`:
@@ -16,6 +16,11 @@
  *      3). Phase 2 (this project) is highlighted with the `signal-pulse`
  *      animation; Phase 1 / 3 render in the default, non-highlighted variant.
  *
+ * The Brain architecture sub-block that used to lead this scene was
+ * extracted into its own `<BrainArchitectureScene />` during immersive-
+ * single-page P1 Task 4; its assertions now live in
+ * `brain-architecture-scene.test.tsx`.
+ *
  * Testing strategy mirrors hero / problem / solution scenes: node-env vitest
  * with renderToStaticMarkup. Client effects (useScrollReveal) do not fire under
  * renderToStaticMarkup, so every assertion is purely structural. The `freeze`
@@ -24,12 +29,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { VisionScene } from './vision-scene.js';
-import {
-  BRAIN_ARCHITECTURE,
-  PHASE_MAP,
-  VISION_SKUS,
-  VISION_TAKERATE,
-} from '../../lib/narrative-copy.js';
+import { PHASE_MAP, VISION_SKUS, VISION_TAKERATE } from '../../lib/narrative-copy.js';
 
 function render(props: Parameters<typeof VisionScene>[0] = {}): string {
   return renderToStaticMarkup(<VisionScene {...props} />);
@@ -163,91 +163,8 @@ describe('<VisionScene /> structural contract', () => {
     expect(out).toMatch(/<section[^>]+class="[^"]*\bscene--revealed\b/);
   });
 
-  // ─── Brain architecture sub-block (AC-P4.7-brain-arch) ────────────────────
-  //
-  // Renders as the FIRST sub-block inside VisionScene — the conceptual
-  // umbrella over the SKU / take-rate / phase sub-blocks below it. The
-  // section is landmarked via `aria-labelledby` pointing at the sub-block
-  // heading so screen readers can jump to it. Data source is the static
-  // BRAIN_ARCHITECTURE constant in narrative-copy (pitch-layer lock per
-  // docs/decisions/2026-04-19-brain-agent-positioning.md).
-  describe('Brain architecture sub-block', () => {
-    it('renders a Brain architecture landmark heading with the constant-derived label', () => {
-      const out = render();
-      // Landmark: we assert both the visible label text and the presence of
-      // an aria-labelledby wiring on the sub-block region.
-      expect(out).toContain(BRAIN_ARCHITECTURE.brainLabel);
-      expect(out).toContain(BRAIN_ARCHITECTURE.brainSubtitle);
-      expect(out).toMatch(/aria-labelledby="[^"]*brain-architecture[^"]*"/);
-    });
-
-    it('renders every shipped persona from BRAIN_ARCHITECTURE.shippedPersonas with a visible name', () => {
-      const out = render();
-      for (const persona of BRAIN_ARCHITECTURE.shippedPersonas) {
-        expect(out).toContain(persona.name);
-        expect(out).toContain(persona.role);
-      }
-    });
-
-    it('renders every future slot with its name and an UPPERCASE status pill', () => {
-      const out = render();
-      for (const slot of BRAIN_ARCHITECTURE.futureSlots) {
-        expect(out).toContain(slot.name);
-        // Status pill text is uppercase for "next" / "roadmap". We assert the
-        // uppercased form appears somewhere after the slot name in the markup.
-        expect(out).toContain(slot.status.toUpperCase());
-      }
-    });
-
-    it('marks every future slot card with the `brain-port--future` variant class', () => {
-      const out = render();
-      // The future-slot cards carry a concrete marker class (documented in the
-      // VisionScene docblock). We extract each card's class attribute via its
-      // data-testid and assert the variant marker is present. This is how
-      // reviewers (and reduced-motion CSS, should it grow a rule) can target
-      // "not-yet" ports without relying on inline styles.
-      for (const slot of BRAIN_ARCHITECTURE.futureSlots) {
-        const cls = classForTestid(out, `brain-port-${slot.name}`);
-        expect(cls).toBeDefined();
-        expect(cls).toMatch(/\bbrain-port--future\b/);
-      }
-    });
-
-    it('marks every shipped port with accent border and does NOT mark it as future', () => {
-      const out = render();
-      for (const persona of BRAIN_ARCHITECTURE.shippedPersonas) {
-        const cls = classForTestid(out, `brain-port-${persona.name}`);
-        expect(cls).toBeDefined();
-        expect(cls).toMatch(/\bborder-accent\b/);
-        expect(cls).not.toMatch(/\bbrain-port--future\b/);
-      }
-    });
-
-    it('does not embed any <canvas> or external chart root (no chart library)', () => {
-      const out = render({ freeze: true });
-      // Pitch-surface rule: no chart/viz library. <canvas> never appears; no
-      // recognised chart-library root class attaches to the sub-block. This
-      // complements the existing "no <svg>" assertion above — together they
-      // cover every common chart-library escape hatch.
-      expect(out).not.toMatch(/<canvas\b/);
-      expect(out).not.toMatch(/class="[^"]*\brecharts\b/);
-      expect(out).not.toMatch(/class="[^"]*\bchartjs\b/);
-      expect(out).not.toMatch(/class="[^"]*\bplotly\b/);
-    });
-
-    it('renders the Brain architecture sub-block BEFORE the SKU expansion sub-block', () => {
-      const out = render();
-      // Brain architecture is the conceptual umbrella; SKU cards are the
-      // personas plugged into it. Ordering is load-bearing — the Brain block
-      // MUST appear earlier in the markup than the first SKU card. We pin on
-      // `brainSubtitle` because it is unique to the new sub-block (the string
-      // `Token Brain` already appears in the Phase-map overline below and
-      // would give a false earlier hit).
-      const brainIdx = out.indexOf(BRAIN_ARCHITECTURE.brainSubtitle);
-      const firstSkuIdx = out.indexOf('data-testid="sku-card-Shill"');
-      expect(brainIdx).toBeGreaterThanOrEqual(0);
-      expect(firstSkuIdx).toBeGreaterThanOrEqual(0);
-      expect(brainIdx).toBeLessThan(firstSkuIdx);
-    });
-  });
+  // Brain architecture assertions moved to `brain-architecture-scene.test.tsx`
+  // when the sub-block was extracted into its own scene during immersive-
+  // single-page P1 Task 4. The extraction is behaviour-preserving; no Brain
+  // coverage is lost — it simply travels with the component.
 });

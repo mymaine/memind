@@ -3,24 +3,11 @@
 /**
  * VisionScene — "why this is a primitive, not a feature" (AC-P4.7-6).
  *
- * Four sub-blocks stacked vertically inside an 80vh `<section>`:
- *
- *   0. Brain architecture (AC-P4.7-brain-arch)
- *      Central `Token Brain` hub radiating to four shipped persona ports
- *      (Creator / Narrator / Market-maker-Shiller / Heartbeat) and three
- *      greyed-out future persona slots (Launch Boost / Community Ops /
- *      Alpha Feed). Every label, role and status is read from
- *      `BRAIN_ARCHITECTURE` in narrative-copy — no hardcoded persona
- *      strings. Shipped ports carry `border-accent` at full opacity;
- *      future slots carry the concrete marker class `brain-port--future`
- *      plus `border-dashed` and 60% opacity. The sub-block is landmarked
- *      via `aria-labelledby` pointing at the visible heading so screen
- *      readers can jump to it. Connectors are pure Tailwind bordered
- *      divs (no `<svg>`, no `<canvas>`, no chart library) — pitch-layer
- *      lock per docs/decisions/2026-04-19-brain-agent-positioning.md.
- *      On viewports below `md` the radial collapses to a vertical stack
- *      (central Brain header → shipped list → future list) rather than
- *      forcing the hub-and-spoke at phone width.
+ * Three sub-blocks stacked vertically inside an 80vh `<section>`. The Brain
+ * architecture sub-block that previously led this scene was extracted into
+ * its own stand-alone `<BrainArchitectureScene />` during immersive-single-
+ * page P1 Task 4 so the single-page home surface can mount it under its
+ * own TOC anchor (`#brain-architecture`). The remaining sub-blocks are:
  *
  *   1. SKU expansion matrix
  *      Four cards (Shill / Launch Boost / Community Ops / Alpha Feed) read
@@ -70,11 +57,9 @@
 import { useRef } from 'react';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
 import {
-  BRAIN_ARCHITECTURE,
   PHASE_MAP,
   VISION_SKUS,
   VISION_TAKERATE,
-  type BrainPersonaPort,
   type PhaseNode,
   type VisionSku,
 } from '@/lib/narrative-copy';
@@ -92,58 +77,6 @@ export interface VisionSceneProps {
  *  icon lib) so the 4 glyphs render identically on all platforms. */
 function statusGlyph(status: VisionSku['status']): string {
   return status === 'shipped' ? '✅' : '🔒';
-}
-
-/**
- * BrainPortCard — one persona "port" around the Brain hub. Two visual
- * variants fan out from the `status` field:
- *
- *   - `shipped`: solid accent border (`border-accent`), full opacity,
- *     shipped role text emphasised. Used for the four already-live
- *     personas (Creator / Narrator / Market-maker / Heartbeat).
- *   - `next` / `roadmap`: dashed border (`border-dashed`), 60% opacity,
- *     muted text, plus the concrete marker class `brain-port--future` so
- *     tests and future reduced-motion CSS can target the "not yet" cards
- *     without relying on inline styles.
- *
- * Every string rendered here is passed in from `BRAIN_ARCHITECTURE` — no
- * hardcoded persona names (pitch-layer lock per
- * docs/decisions/2026-04-19-brain-agent-positioning.md).
- */
-function BrainPortCard({ port }: { readonly port: BrainPersonaPort }): React.ReactElement {
-  const isShipped = port.status === 'shipped';
-  const cardClass = [
-    'brain-port relative flex flex-col gap-1 rounded-[var(--radius-card)] bg-bg-surface p-4',
-    'border',
-    isShipped
-      ? 'border-accent'
-      : 'brain-port--future border-dashed border-border-default opacity-60',
-  ].join(' ');
-
-  return (
-    <article className={cardClass} data-testid={`brain-port-${port.name}`}>
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="font-[family-name:var(--font-sans-display)] text-[14px] font-semibold leading-[1.2] text-fg-primary">
-          {port.name}
-        </h4>
-        {isShipped ? null : (
-          <span
-            className="inline-flex items-center rounded-full border border-border-default bg-bg-elevated px-2 py-[1px] font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.6px] text-fg-tertiary"
-            data-testid={`brain-port-pill-${port.name}`}
-          >
-            {port.status.toUpperCase()}
-          </span>
-        )}
-      </div>
-      <p
-        className={`font-[family-name:var(--font-sans-body)] text-[12px] leading-[1.4] ${
-          isShipped ? 'text-fg-secondary' : 'text-fg-tertiary'
-        }`}
-      >
-        {port.role}
-      </p>
-    </article>
-  );
 }
 
 /**
@@ -255,90 +188,6 @@ export function VisionScene({ freeze = false, className }: VisionSceneProps): Re
           </h2>
           <span aria-hidden="true" className="block h-[2px] w-20 rounded-full bg-accent" />
         </div>
-
-        {/* ─── Sub-block 0 · Brain architecture ─────────────────────────── */}
-        {/*
-         * Pitch-layer data source: `BRAIN_ARCHITECTURE` in narrative-copy.
-         * One `Token Brain` hub + four shipped persona ports + three future
-         * slots. Landmarked via `aria-labelledby` so screen readers can jump
-         * to the region; the visible heading carries the matching `id`.
-         *
-         * Layout strategy:
-         *   - `< md`  : vertical stack (heading → shipped list → future list).
-         *     Radial does not read at phone width; the stack degrades
-         *     gracefully and keeps every persona reachable.
-         *   - `≥ md`  : centred Brain hub card flanked top by a 4-column
-         *     shipped-port row and bottom by a 3-column future-slot row.
-         *     Pure Tailwind bordered divs connect hub → port (no `<svg>`,
-         *     no `<canvas>`, no chart library).
-         */}
-        <section
-          aria-labelledby="brain-architecture-heading"
-          className="flex flex-col gap-5"
-          data-testid="vision-brain-architecture"
-        >
-          <div className="flex flex-col gap-1">
-            <h3
-              id="brain-architecture-heading"
-              className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary"
-            >
-              Brain architecture
-            </h3>
-            <p className="font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.4] text-fg-secondary">
-              {BRAIN_ARCHITECTURE.brainSubtitle}
-            </p>
-          </div>
-
-          {/* Brain hub — centred on md+, static full-width on mobile. */}
-          <div className="flex flex-col items-center gap-4">
-            <div
-              className="brain-hub flex flex-col items-center gap-1 rounded-[var(--radius-card)] border-2 border-accent bg-bg-elevated px-5 py-3 text-center"
-              data-testid="brain-hub"
-            >
-              <span
-                aria-hidden="true"
-                className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.6px] text-fg-tertiary"
-              >
-                {/* small overline above the hub label keeps the card dense
-                    without introducing a second typographic scale */}
-                runtime
-              </span>
-              <span className="font-[family-name:var(--font-sans-display)] text-[18px] font-semibold leading-[1.1] text-accent-text">
-                {BRAIN_ARCHITECTURE.brainLabel}
-              </span>
-            </div>
-
-            {/* Vertical trunk connector — only visible on md+ where the
-                radial-ish hub-and-spoke reads. Mobile drops it because the
-                columns stack and a dangling line adds noise. */}
-            <span aria-hidden="true" className="hidden h-4 w-[1px] bg-border-default md:block" />
-          </div>
-
-          {/* Shipped persona row — 1 column on mobile, 4 columns on md+. */}
-          <div className="flex flex-col gap-3">
-            <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.6px] text-fg-tertiary">
-              Shipped personas
-            </span>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
-              {BRAIN_ARCHITECTURE.shippedPersonas.map((port) => (
-                <BrainPortCard key={port.name} port={port} />
-              ))}
-            </div>
-          </div>
-
-          {/* Future slot row — same grid semantics; each card carries the
-              dashed/muted variant and an uppercase status pill. */}
-          <div className="flex flex-col gap-3">
-            <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.6px] text-fg-tertiary">
-              Plugs in next
-            </span>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-              {BRAIN_ARCHITECTURE.futureSlots.map((port) => (
-                <BrainPortCard key={port.name} port={port} />
-              ))}
-            </div>
-          </div>
-        </section>
 
         {/* ─── Sub-block 1 · SKU expansion matrix ───────────────────────── */}
         <div className="flex flex-col gap-4">
