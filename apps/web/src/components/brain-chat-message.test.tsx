@@ -137,6 +137,103 @@ describe('<BrainChatMessage /> — persona-artifact (case 5)', () => {
   });
 });
 
+describe('<BrainChatMessage /> — UAT fixes', () => {
+  it('renders final assistant content BELOW the nested events (content-last)', () => {
+    // Fix #3: the final markdown answer is the last thing the reader sees in
+    // the bubble. Events come first, then the Brain-authored reply.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('Token deployed at 0xabc.', [
+          {
+            kind: 'tool-use-start',
+            agent: 'brain',
+            toolName: 'invoke_creator',
+            toolUseId: 'tu-1',
+            input: {},
+          },
+          {
+            kind: 'tool-use-end',
+            agent: 'brain',
+            toolName: 'invoke_creator',
+            toolUseId: 'tu-1',
+            output: {},
+            isError: false,
+          },
+        ])}
+      />,
+    );
+    const idxTool = out.indexOf('Creator');
+    const idxAnswer = out.indexOf('Token deployed at 0xabc');
+    expect(idxTool).toBeGreaterThanOrEqual(0);
+    expect(idxAnswer).toBeGreaterThanOrEqual(0);
+    expect(idxTool).toBeLessThan(idxAnswer);
+  });
+
+  it('renders **bold** markdown as <strong> via react-markdown', () => {
+    // Fix #4: raw `**HBNB2026-CHAIN**` used to surface literally. With the
+    // react-markdown mount the bold marker becomes a real <strong> tag.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage turn={assistantTurn('**HBNB2026-CHAIN** is live.', [])} />,
+    );
+    expect(out).toContain('<strong>HBNB2026-CHAIN</strong>');
+    expect(out).not.toContain('**HBNB2026-CHAIN**');
+  });
+
+  it('renders markdown list items as <li> entries', () => {
+    const out = renderToStaticMarkup(
+      <BrainChatMessage turn={assistantTurn('- chain: BSC\n- token: HBNB2026', [])} />,
+    );
+    expect(out).toContain('<li>chain: BSC</li>');
+    expect(out).toContain('<li>token: HBNB2026</li>');
+  });
+
+  it('compresses consecutive brain thinking deltas into a single bubble', () => {
+    // Fix #1: 15 delta events must not spawn 15 "thinking" blocks.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('', [
+          { kind: 'assistant-delta', agent: 'creator', delta: 'ana' },
+          { kind: 'assistant-delta', agent: 'creator', delta: 'lysing ' },
+          { kind: 'assistant-delta', agent: 'creator', delta: 'theme' },
+        ])}
+      />,
+    );
+    // The merged label is the concatenated delta text.
+    expect(out).toContain('analysing theme');
+    // Only one "creator · thinking" heading — count occurrences.
+    const heading = 'creator · thinking';
+    const occurrences = out.split(heading).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it('drops runtime-noise brain logs from the bubble', () => {
+    // Fix #2: `brain · runtime` logs ("loop start", "turn N requesting
+    // completion") must never appear in the visual transcript.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('done.', [
+          {
+            kind: 'persona-log',
+            agent: 'brain',
+            tool: 'runtime',
+            message: 'loop start',
+            level: 'info',
+          },
+          {
+            kind: 'persona-log',
+            agent: 'brain',
+            tool: 'runtime',
+            message: 'turn 1 stop_reason=tool_use',
+            level: 'info',
+          },
+        ])}
+      />,
+    );
+    expect(out).not.toContain('loop start');
+    expect(out).not.toContain('stop_reason');
+  });
+});
+
 describe('<BrainChatMessage /> — ordering', () => {
   it('renders multiple brainEvents in the order they arrived', () => {
     // Not one of the five AC cases but a critical invariant: the UI must

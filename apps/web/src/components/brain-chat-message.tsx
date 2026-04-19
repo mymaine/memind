@@ -1,27 +1,32 @@
 /**
- * BrainChatMessage — per-turn renderer for the BrainChat transcript
- * (BRAIN-P4 Task 2 / AC-BRAIN-5).
+ * BrainChatMessage — per-turn renderer for the BrainChat transcript.
  *
- * Visual model (spec §AC-BRAIN-5):
- *   - User turn  → right-aligned bubble, accent tone, plain text only.
- *   - Assistant  → left-aligned bubble containing:
- *       1. Brain-authored content (typewriter-rendered `content` string).
- *       2. Inline `brainEvents` sequence in wire order:
- *          - tool-use-start (agent=brain) → "🔧 invoking <PersonaName>..." pill
- *          - tool-use-end   (agent=brain) → "ok" / "error" status pill
- *          - tool-use-*     (agent=persona) → persona sub-block header
- *          - persona-log     → indent + agent name + tool + message
- *          - persona-artifact → pill via describeArtifact (reuses the existing
- *            chain-colour pill style from TimelineView)
- *       3. If content is empty AND brainEvents is empty → a "thinking" pulse
- *          placeholder so the bubble is never visually absent.
+ * Visual model after the UAT fixes (see docs/decisions):
+ *   - User turn → right-aligned bubble, accent tone, plain text only.
+ *   - Assistant turn:
+ *       1. Grouped nested events (tool-use scopes, merged thinking rows,
+ *          deduped persona logs, artifact pills) — drawn FIRST, in wire
+ *          order, so the Memind's "work log" lives above the final reply.
+ *       2. Final Brain-authored content at the BOTTOM of the bubble, rendered
+ *          as markdown (react-markdown + remark-gfm).
+ *       3. If both content and events are empty → a single "thinking" pulse
+ *          so the bubble is never visually absent.
+ *
+ * The grouping pass is pure (`brain-chat-message-group.ts`) and collapses
+ * runtime-noise logs, merges consecutive thinking deltas into a single
+ * streaming row, and nests persona events under the enclosing brain
+ * tool-use scope for compact rendering.
  *
  * Not a client component: this file ships pure markup (no 'use client'),
  * safe for SSR. Parent BrainChat owns the 'use client' island.
  */
 import type { ReactElement } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { AgentId } from '@hack-fourmeme/shared';
-import type { BrainChatEvent, BrainChatTurn } from '@/hooks/useBrainChat-state';
+import type { BrainChatTurn } from '@/hooks/useBrainChat-state';
+import type { BrainChatGroup } from './brain-chat-message-group';
+import { groupBrainChatEvents } from './brain-chat-message-group';
 import { describeArtifact, isPillArtifact } from '@/lib/artifact-view';
 
 export interface BrainChatMessageProps {
@@ -68,113 +73,122 @@ function UserBubble({ turn }: { turn: BrainChatTurn }): ReactElement {
   );
 }
 
-function ToolUseStartPill({
-  event,
+function BrainToolUseGroup({
+  group,
 }: {
-  event: Extract<BrainChatEvent, { kind: 'tool-use-start' }>;
+  group: Extract<BrainChatGroup, { kind: 'tool-use' }>;
 }): ReactElement {
-  const isBrain = event.agent === 'brain';
-  const persona = friendlyPersonaName(event.toolName);
-  if (isBrain) {
-    return (
-      <div className="inline-flex items-center gap-1.5 self-start rounded-[var(--radius-card)] border border-accent bg-[color-mix(in_oklab,var(--color-accent)_8%,transparent)] px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-accent-text">
+  const persona = friendlyPersonaName(group.toolName);
+  const running = group.end === null;
+  const err = !running && (group.end?.isError ?? false);
+  // Footer status word is chosen to read well in plain text AND match the
+  // legacy regex `/\bok\b|\bdone\b|completed/` that component tests use to
+  // assert a tool-use-end pill was drawn. Keep the word as a standalone
+  // token so `\b` boundaries fire.
+  const statusLabel = running ? 'running…' : err ? 'error' : 'ok';
+  const statusColor = running
+    ? 'text-accent-text'
+    : err
+      ? 'text-[color:var(--color-danger)]'
+      : 'text-accent-text';
+  const icon = running ? '🔧' : err ? '⚠' : '✓';
+  return (
+    <div className="flex flex-col gap-1.5 self-start rounded-[var(--radius-card)] border border-accent bg-[color-mix(in_oklab,var(--color-accent)_8%,transparent)] px-2 py-1.5">
+      <div className="inline-flex items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11px] text-accent-text">
         <span aria-hidden>🔧</span>
         <span>invoking {persona} persona…</span>
       </div>
-    );
-  }
-  // Persona-level tool use (nested) — shown as a muted sub-label.
-  return (
-    <div
-      className={`flex items-center gap-2 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-1.5 font-[family-name:var(--font-mono)] text-[11px] ${AGENT_TONE[event.agent]}`}
-    >
-      <span className="text-fg-tertiary">{event.agent}</span>
-      <span className="text-accent-text">{event.toolName}</span>
-      <span className="text-fg-tertiary">starting…</span>
-    </div>
-  );
-}
-
-function ToolUseEndPill({
-  event,
-}: {
-  event: Extract<BrainChatEvent, { kind: 'tool-use-end' }>;
-}): ReactElement {
-  const isBrain = event.agent === 'brain';
-  const persona = friendlyPersonaName(event.toolName);
-  const label = event.isError ? 'error' : 'ok';
-  if (isBrain) {
-    return (
+      {group.children.length > 0 ? (
+        <div className="ml-4 flex flex-col gap-1">
+          {group.children.map((child, i) => (
+            <GroupRow key={`${group.toolUseId}-child-${i.toString()}`} group={child} />
+          ))}
+        </div>
+      ) : null}
       <div
-        className={`inline-flex items-center gap-1.5 self-start rounded-[var(--radius-card)] border px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] ${
-          event.isError
-            ? 'border-[color:var(--color-danger)] text-[color:var(--color-danger)]'
-            : 'border-accent bg-[color-mix(in_oklab,var(--color-accent)_8%,transparent)] text-accent-text'
-        }`}
+        className={`inline-flex items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11px] ${statusColor}`}
       >
-        <span aria-hidden>{event.isError ? '⚠' : '✓'}</span>
+        <span aria-hidden>{icon}</span>
         <span>
-          {persona} · {label}
+          {persona} · {statusLabel}
         </span>
       </div>
-    );
-  }
-  return (
-    <div
-      className={`flex items-center gap-2 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-1.5 font-[family-name:var(--font-mono)] text-[11px] ${AGENT_TONE[event.agent]}`}
-    >
-      <span className="text-fg-tertiary">{event.agent}</span>
-      <span className="text-accent-text">{event.toolName}</span>
-      <span className={event.isError ? 'text-[color:var(--color-danger)]' : 'text-accent-text'}>
-        {label}
-      </span>
     </div>
   );
 }
 
-function PersonaLogBlock({
-  event,
+function PersonaToolUseRow({
+  group,
 }: {
-  event: Extract<BrainChatEvent, { kind: 'persona-log' }>;
+  group: Extract<BrainChatGroup, { kind: 'tool-use' }>;
+}): ReactElement {
+  // Compressed single-line view for persona sub-tools (narrative_generator,
+  // meme_image_creator, onchain_deployer, lore_writer). Shows only name +
+  // final status so the bubble stays legible. While running we show a dim
+  // "…" marker instead of verbose progress logs (runtime logs are filtered
+  // upstream by `groupBrainChatEvents`).
+  const label = group.toolName;
+  const running = group.end === null;
+  const ok = !running && !(group.end?.isError ?? false);
+  const err = !running && (group.end?.isError ?? false);
+  const marker = running ? '…' : ok ? '✓' : '✗';
+  const tone = err
+    ? 'text-[color:var(--color-danger)]'
+    : running
+      ? 'text-fg-tertiary'
+      : 'text-accent-text';
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-1 font-[family-name:var(--font-mono)] text-[11px] ${AGENT_TONE[group.agent]}`}
+    >
+      <span className="text-fg-tertiary">{group.agent}</span>
+      <span className="text-fg-secondary">·</span>
+      <span className="text-fg-primary">{label}</span>
+      <span className={`ml-auto ${tone}`}>{marker}</span>
+    </div>
+  );
+}
+
+function PersonaLogRow({
+  group,
+}: {
+  group: Extract<BrainChatGroup, { kind: 'persona-log' }>;
 }): ReactElement {
   const levelClass =
-    event.level === 'warn'
+    group.level === 'warn'
       ? 'text-[color:var(--color-warning)]'
-      : event.level === 'error'
+      : group.level === 'error'
         ? 'text-[color:var(--color-danger)]'
         : 'text-fg-primary';
   return (
     <div
-      className={`ml-4 flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 text-[12px] ${AGENT_TONE[event.agent]}`}
+      className={`flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 text-[12px] ${AGENT_TONE[group.agent]}`}
     >
       <div className="flex items-center gap-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-fg-tertiary">
-        <span>{event.agent}</span>
+        <span>{group.agent}</span>
         <span>·</span>
-        <span>{event.tool}</span>
+        <span>{group.tool}</span>
       </div>
       <p className={`break-words font-[family-name:var(--font-sans-body)] ${levelClass}`}>
-        {event.message}
+        {group.message}
       </p>
     </div>
   );
 }
 
-function PersonaArtifactBlock({
-  event,
+function PersonaArtifactRow({
+  group,
 }: {
-  event: Extract<BrainChatEvent, { kind: 'persona-artifact' }>;
+  group: Extract<BrainChatGroup, { kind: 'persona-artifact' }>;
 }): ReactElement {
-  // The shared pill artifacts (bsc-token / token-deploy-tx / lore-cid /
-  // x402-tx / tweet-url / meme-image) go through `describeArtifact`. Non-pill
-  // kinds get a terse generic row — same fallback the timeline view uses.
-  if (isPillArtifact(event.artifact)) {
-    const d = describeArtifact(event.artifact);
+  if (isPillArtifact(group.artifact)) {
+    const d = describeArtifact(group.artifact);
     return (
       <a
         href={d.href}
         target="_blank"
         rel="noreferrer noopener"
-        className={`ml-4 flex items-center justify-between gap-3 rounded-[var(--radius-card)] border bg-bg-surface px-3 py-2 text-[12px] hover:[filter:drop-shadow(0_0_4px_currentColor)] ${AGENT_TONE[event.agent]} border-l-4`}
+        className={`flex items-center justify-between gap-3 rounded-[var(--radius-card)] border bg-bg-surface px-3 py-2 text-[12px] hover:[filter:drop-shadow(0_0_4px_currentColor)] ${AGENT_TONE[group.agent]} border-l-4`}
         style={{ borderColor: `var(${d.chainColorVar})`, color: `var(${d.chainColorVar})` }}
       >
         <span className="font-[family-name:var(--font-mono)]">{d.primaryText}</span>
@@ -182,51 +196,66 @@ function PersonaArtifactBlock({
       </a>
     );
   }
-  // Non-pill artifact kinds — keep a tiny descriptor so nothing is lost.
   return (
     <div
-      className={`ml-4 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 font-[family-name:var(--font-mono)] text-[11px] text-fg-secondary ${AGENT_TONE[event.agent]}`}
+      className={`rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 font-[family-name:var(--font-mono)] text-[11px] text-fg-secondary ${AGENT_TONE[group.agent]}`}
     >
-      {event.agent} · {event.artifact.kind}
+      {group.agent} · {group.artifact.kind}
     </div>
   );
 }
 
-function PersonaDeltaBlock({
-  event,
+function ThinkingRow({
+  group,
 }: {
-  event: Extract<BrainChatEvent, { kind: 'assistant-delta' }>;
+  group: Extract<BrainChatGroup, { kind: 'assistant-delta' }>;
 }): ReactElement {
   return (
     <div
-      className={`ml-4 flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 text-[12px] italic ${AGENT_TONE[event.agent]}`}
+      className={`flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 text-[12px] italic ${AGENT_TONE[group.agent]}`}
     >
       <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-fg-tertiary">
-        {event.agent} · thinking
+        {group.agent} · thinking
       </span>
-      <p className="break-words text-fg-secondary">{event.delta}</p>
+      <p className="break-words text-fg-secondary">{group.text}</p>
     </div>
   );
 }
 
-function BrainEventRow({ event }: { event: BrainChatEvent }): ReactElement {
-  switch (event.kind) {
-    case 'tool-use-start':
-      return <ToolUseStartPill event={event} />;
-    case 'tool-use-end':
-      return <ToolUseEndPill event={event} />;
-    case 'persona-log':
-      return <PersonaLogBlock event={event} />;
-    case 'persona-artifact':
-      return <PersonaArtifactBlock event={event} />;
+function GroupRow({ group }: { group: BrainChatGroup }): ReactElement {
+  switch (group.kind) {
     case 'assistant-delta':
-      return <PersonaDeltaBlock event={event} />;
+      return <ThinkingRow group={group} />;
+    case 'persona-log':
+      return <PersonaLogRow group={group} />;
+    case 'persona-artifact':
+      return <PersonaArtifactRow group={group} />;
+    case 'tool-use':
+      if (group.agent === 'brain') {
+        return <BrainToolUseGroup group={group} />;
+      }
+      return <PersonaToolUseRow group={group} />;
   }
+}
+
+/**
+ * Final assistant text — Markdown-rendered via react-markdown + remark-gfm.
+ * We scope the styles under `.brain-chat-markdown` in globals.css so heading
+ * sizes, list padding, and code-block borders match the Terminal Cyber
+ * theme without leaking to other surfaces.
+ */
+function AssistantMarkdown({ content }: { content: string }): ReactElement {
+  return (
+    <div className="brain-chat-markdown font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.5] text-fg-primary">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
 }
 
 function AssistantBubble({ turn }: { turn: BrainChatTurn }): ReactElement {
   const events = turn.brainEvents ?? [];
-  const isEmpty = turn.content === '' && events.length === 0;
+  const groups = groupBrainChatEvents(events);
+  const isEmpty = turn.content === '' && groups.length === 0;
 
   return (
     <div
@@ -244,18 +273,18 @@ function AssistantBubble({ turn }: { turn: BrainChatTurn }): ReactElement {
           thinking…
         </p>
       ) : null}
-      {turn.content !== '' ? (
-        <p className="whitespace-pre-wrap break-words font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.5] text-fg-primary">
-          {turn.content}
-        </p>
-      ) : null}
-      {events.length > 0 ? (
+      {/* Nested work log first: tool-use scopes, persona logs, artifacts,
+          thinking rows. This is the Memind's "how" surface and lives ABOVE
+          the final reply so the reader's eye lands on the Markdown answer
+          last (UAT fix #3). */}
+      {groups.length > 0 ? (
         <div className="flex flex-col gap-1.5">
-          {events.map((ev, i) => (
-            <BrainEventRow key={`${turn.id}-ev-${i.toString()}`} event={ev} />
+          {groups.map((g, i) => (
+            <GroupRow key={`${turn.id}-g-${i.toString()}-${g.kind}`} group={g} />
           ))}
         </div>
       ) : null}
+      {turn.content !== '' ? <AssistantMarkdown content={turn.content} /> : null}
     </div>
   );
 }
