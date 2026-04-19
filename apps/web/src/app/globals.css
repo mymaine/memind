@@ -1450,6 +1450,28 @@ code,
 .artifact-label {
   color: var(--fg-emphasis);
 }
+/*
+ * UAT fix (2026-04-20): whole row is a clickable link to the matching
+ * explorer (BSCScan / Base Sepolia / Pinata gateway / X). Suppress the
+ * default anchor underline and pick up a subtle hover treatment so the
+ * affordance is obvious without shouting.
+ */
+.artifact-row-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.artifact-row-link:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg-elevated));
+}
+.artifact-row-link:hover .artifact-label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 .console-pane {
   display: flex;

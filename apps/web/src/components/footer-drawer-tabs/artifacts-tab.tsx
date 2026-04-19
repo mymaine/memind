@@ -22,6 +22,11 @@
  * Hash shortening: when the reference length exceeds 12 chars we render
  * `${slice(0,6)}..${slice(-4)}`; otherwise the full string.
  *
+ * UAT fix (2026-04-20): each row wraps in an <a> that opens the matching
+ * verifier (BSCScan / Base Sepolia / Pinata gateway / X) in a new tab so
+ * judges can independently verify the hash. Rows whose artifact has no
+ * resolvable URL (e.g. meme-image upload-failed) render as plain divs.
+ *
  * Empty state: `no artifacts yet · launch a token or order a shill`.
  */
 import type { ReactElement } from 'react';
@@ -125,6 +130,43 @@ export function mapArtifactToFooterRow(a: Artifact): FooterArtifactRow {
   }
 }
 
+/**
+ * Map an artifact to the external verifier URL that proves the hash is
+ * real. Returns undefined when no link target exists (e.g. meme-image
+ * whose Pinata upload failed — there's nothing to open). Each artifact
+ * kind already carries its own explorerUrl / gatewayUrl / url / tweetUrl
+ * field; this helper just selects the right one so the UI does not have
+ * to branch inline.
+ */
+export function resolveArtifactExplorerUrl(a: Artifact): string | undefined {
+  switch (a.kind) {
+    case 'bsc-token':
+    case 'token-deploy-tx':
+    case 'x402-tx':
+      return a.explorerUrl;
+    case 'lore-cid':
+      return a.gatewayUrl;
+    case 'lore-anchor':
+      // Layer-2 on-chain anchor trio is all-or-nothing; prefer the BSC
+      // tx link when it exists so judges can verify the memo. Otherwise
+      // there is no public URL for the content hash alone.
+      return a.explorerUrl;
+    case 'tweet-url':
+      return a.url;
+    case 'shill-order':
+      // Paid tx lives on BSC mainnet — use the canonical BSCScan tx URL.
+      return `https://bscscan.com/tx/${a.paidTxHash}`;
+    case 'shill-tweet':
+      return a.tweetUrl;
+    case 'meme-image':
+      return a.gatewayUrl ?? undefined;
+    case 'heartbeat-tick':
+    case 'heartbeat-decision':
+      // These are run-local artifacts without an external verifier.
+      return undefined;
+  }
+}
+
 export interface ArtifactsTabProps {
   readonly artifacts: readonly Artifact[];
 }
@@ -153,19 +195,42 @@ export function ArtifactsTab(props: ArtifactsTabProps): ReactElement {
     <div className="artifacts-pane">
       {artifacts.map((a, idx) => {
         const row = mapArtifactToFooterRow(a);
-        return (
-          <div key={`${row.chain}-${idx.toString()}`} className="artifact-row">
+        const href = resolveArtifactExplorerUrl(a);
+        const rowKey = `${row.chain}-${idx.toString()}`;
+        const children = (
+          <>
             <span className="ev-dot" style={{ background: row.color }} />
             <span className="mono" style={{ color: row.color, width: 60 }}>
               {row.chain}
             </span>
             <span className="artifact-label">{row.label}</span>
-            <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+            <span className="mono artifact-hash" style={{ color: 'var(--fg-tertiary)' }}>
               {row.hashShort}
             </span>
             <span className="ev-check" style={{ marginLeft: 'auto' }}>
               ✓
             </span>
+          </>
+        );
+        // When a verifier URL exists, wrap the row in an <a> so clicks
+        // open BSCScan / IPFS gateway / X in a new tab. Otherwise keep
+        // the plain div so no-op rows do not look pretend-interactive.
+        if (href !== undefined) {
+          return (
+            <a
+              key={rowKey}
+              className="artifact-row artifact-row-link"
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {children}
+            </a>
+          );
+        }
+        return (
+          <div key={rowKey} className="artifact-row">
+            {children}
           </div>
         );
       })}

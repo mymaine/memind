@@ -9,7 +9,12 @@
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Artifact } from '@hack-fourmeme/shared';
-import { ArtifactsTab, mapArtifactToFooterRow, shortenRef } from '../artifacts-tab.js';
+import {
+  ArtifactsTab,
+  mapArtifactToFooterRow,
+  resolveArtifactExplorerUrl,
+  shortenRef,
+} from '../artifacts-tab.js';
 
 const TX_HASH = `0x${'a'.repeat(64)}`;
 const TX_HASH_SHORT = `0xaaaa..aaaa`;
@@ -112,6 +117,124 @@ describe('<ArtifactsTab />', () => {
       expect(row.chain).toBe(c.expectedChain);
       expect(row.color).toBe(c.expectedColor);
     }
+  });
+
+  it('each artifact row renders as an <a> that opens the matching explorer in a new tab (UAT 2026-04-20)', () => {
+    // UAT fix: On-chain Artifacts pills MUST be clickable so judges can
+    // verify the hashes independently on BSCScan / IPFS gateway / X. Each
+    // row becomes an external link (target=_blank + rel=noopener noreferrer)
+    // wrapping the pill content.
+    const txHash = `0x${'a'.repeat(64)}`;
+    const artifacts: Artifact[] = [
+      {
+        kind: 'bsc-token',
+        chain: 'bsc-mainnet',
+        address: `0x${'b'.repeat(40)}`,
+        explorerUrl: `https://bscscan.com/token/0x${'b'.repeat(40)}`,
+      },
+      {
+        kind: 'x402-tx',
+        chain: 'base-sepolia',
+        txHash,
+        explorerUrl: `https://sepolia.basescan.org/tx/${txHash}`,
+        amountUsdc: '0.01',
+      },
+      {
+        kind: 'lore-cid',
+        cid: 'bafybeigdy123456',
+        gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafybeigdy123456',
+        author: 'creator',
+      },
+    ];
+    const out = renderToStaticMarkup(<ArtifactsTab artifacts={artifacts} />);
+    // Three <a> tags, each with target=_blank + rel=noopener.
+    const anchors = out.match(/<a[^>]*href="[^"]+"[^>]*>/g) ?? [];
+    expect(anchors.length).toBeGreaterThanOrEqual(3);
+    expect(out).toMatch(/<a[^>]*target="_blank"/);
+    expect(out).toMatch(/rel="noopener noreferrer"/);
+    expect(out).toContain(`https://bscscan.com/token/0x${'b'.repeat(40)}`);
+    expect(out).toContain(`https://sepolia.basescan.org/tx/${txHash}`);
+    expect(out).toContain('https://gateway.pinata.cloud/ipfs/bafybeigdy123456');
+  });
+
+  it('resolveArtifactExplorerUrl maps each artifact kind to its verification URL', () => {
+    expect(
+      resolveArtifactExplorerUrl({
+        kind: 'bsc-token',
+        chain: 'bsc-mainnet',
+        address: `0x${'b'.repeat(40)}`,
+        explorerUrl: `https://bscscan.com/token/0x${'b'.repeat(40)}`,
+      }),
+    ).toBe(`https://bscscan.com/token/0x${'b'.repeat(40)}`);
+    expect(
+      resolveArtifactExplorerUrl({
+        kind: 'token-deploy-tx',
+        chain: 'bsc-mainnet',
+        txHash: `0x${'c'.repeat(64)}`,
+        explorerUrl: `https://bscscan.com/tx/0x${'c'.repeat(64)}`,
+      }),
+    ).toBe(`https://bscscan.com/tx/0x${'c'.repeat(64)}`);
+    expect(
+      resolveArtifactExplorerUrl({
+        kind: 'x402-tx',
+        chain: 'base-sepolia',
+        txHash: `0x${'d'.repeat(64)}`,
+        explorerUrl: `https://sepolia.basescan.org/tx/0x${'d'.repeat(64)}`,
+        amountUsdc: '0.01',
+      }),
+    ).toBe(`https://sepolia.basescan.org/tx/0x${'d'.repeat(64)}`);
+    expect(
+      resolveArtifactExplorerUrl({
+        kind: 'lore-cid',
+        cid: 'bafybeigdyabc',
+        gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafybeigdyabc',
+        author: 'narrator',
+      }),
+    ).toBe('https://gateway.pinata.cloud/ipfs/bafybeigdyabc');
+    expect(
+      resolveArtifactExplorerUrl({
+        kind: 'tweet-url',
+        url: 'https://x.com/foo/status/1',
+        tweetId: '1',
+      }),
+    ).toBe('https://x.com/foo/status/1');
+    expect(
+      resolveArtifactExplorerUrl({
+        kind: 'meme-image',
+        status: 'ok',
+        cid: 'bafymemeok',
+        gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafymemeok',
+        prompt: 'pixel dog',
+      }),
+    ).toBe('https://gateway.pinata.cloud/ipfs/bafymemeok');
+    // upload-failed meme-image has no URL (no CDN to point at) → undefined.
+    expect(
+      resolveArtifactExplorerUrl({
+        kind: 'meme-image',
+        status: 'upload-failed',
+        cid: null,
+        gatewayUrl: null,
+        prompt: 'pixel dog',
+        errorMessage: 'pinata timeout',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('rows with no resolvable URL render as plain divs, not anchors (meme-image upload-failed)', () => {
+    const artifacts: Artifact[] = [
+      {
+        kind: 'meme-image',
+        status: 'upload-failed',
+        cid: null,
+        gatewayUrl: null,
+        prompt: 'pixel dog',
+        errorMessage: 'pinata timeout',
+      },
+    ];
+    const out = renderToStaticMarkup(<ArtifactsTab artifacts={artifacts} />);
+    expect(out).toContain('artifact-row');
+    // No anchor wrapping this row.
+    expect(out).not.toMatch(/<a[^>]*href[^>]*>[^<]*artifact-row|artifact-row[^<]*<\/a>/);
   });
 
   it('mapArtifactToFooterRow handles meme-image upload-failed by labelling the hash', () => {
