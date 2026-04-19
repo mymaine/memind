@@ -68,6 +68,17 @@ html {
   scroll-behavior: smooth;
 }
 
+/*
+ * Offset #id jumps by the sticky Header height (immersive-single-page
+ * P1 Task 2 / AC-ISP-3). Every top-level section anchored by the SectionToc
+ * or by `/market → /#order-shill` carries an implicit 56px margin-top so
+ * `scrollIntoView()` + plain `<a href="#...">` hash jumps land below the
+ * Header instead of being occluded by it.
+ */
+section[id] {
+  scroll-margin-top: 56px;
+}
+
 html,
 body {
   background-color: var(--color-bg-primary);
