@@ -19,7 +19,7 @@ import type { AssistantTextByAgent, ToolCallsByAgent, ToolCallState } from '@/ho
  * Visual spec: docs/design.md §4 "Log Panel" + §7 "log-line-in" animation.
  */
 
-const COLUMNS: { id: Exclude<AgentId, 'heartbeat'>; label: string }[] = [
+const COLUMNS: { id: Exclude<AgentId, 'heartbeat' | 'brain' | 'shiller'>; label: string }[] = [
   { id: 'creator', label: 'creator' },
   { id: 'narrator', label: 'narrator' },
   { id: 'market-maker', label: 'market-maker' },
@@ -38,7 +38,7 @@ function AgentColumn({
   toolCalls,
   assistantText,
 }: {
-  agent: Exclude<AgentId, 'heartbeat'>;
+  agent: Exclude<AgentId, 'heartbeat' | 'brain' | 'shiller'>;
   label: string;
   logs: LogEvent[];
   toolCalls: ToolCallState[];
@@ -118,15 +118,15 @@ export function LogPanel({
   toolCalls?: ToolCallsByAgent;
   assistantText?: AssistantTextByAgent;
 }) {
-  // a2a runs emit no heartbeat entries, but filter defensively so adding the
-  // heartbeat kind later does not regress the 3-column layout.
-  const byAgent: Record<Exclude<AgentId, 'heartbeat'>, LogEvent[]> = {
+  // a2a runs emit no heartbeat/brain/shiller entries, but filter defensively
+  // so adding those kinds later does not regress the 3-column layout.
+  const byAgent: Record<Exclude<AgentId, 'heartbeat' | 'brain' | 'shiller'>, LogEvent[]> = {
     creator: [],
     narrator: [],
     'market-maker': [],
   };
   for (const e of logs) {
-    if (e.agent === 'heartbeat') continue;
+    if (e.agent === 'heartbeat' || e.agent === 'brain' || e.agent === 'shiller') continue;
     byAgent[e.agent].push(e);
   }
 

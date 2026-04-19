@@ -95,6 +95,8 @@ function buildToolCalls(
     narrator: [],
     'market-maker': [],
     heartbeat: [],
+    brain: [],
+    shiller: [],
   };
   for (const { agent, call } of patches) {
     base[agent] = [...base[agent], call];

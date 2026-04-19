@@ -71,6 +71,8 @@ const IDLE_STATUSES: Record<AgentId, AgentStatus> = {
   narrator: 'idle',
   'market-maker': 'idle',
   heartbeat: 'idle',
+  brain: 'idle',
+  shiller: 'idle',
 };
 
 const TAB_BUTTON_CLASS =

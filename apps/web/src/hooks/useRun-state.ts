@@ -45,6 +45,8 @@ export const EMPTY_TOOL_CALLS: ToolCallsByAgent = {
   narrator: [],
   'market-maker': [],
   heartbeat: [],
+  brain: [],
+  shiller: [],
 };
 
 export const EMPTY_ASSISTANT_TEXT: AssistantTextByAgent = {
@@ -52,6 +54,8 @@ export const EMPTY_ASSISTANT_TEXT: AssistantTextByAgent = {
   narrator: '',
   'market-maker': '',
   heartbeat: '',
+  brain: '',
+  shiller: '',
 };
 
 /**

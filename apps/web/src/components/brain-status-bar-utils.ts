@@ -32,6 +32,8 @@ const AGENT_TO_PERSONA_LABEL: Record<AgentId, string> = {
   narrator: 'Narrator',
   'market-maker': 'Market-maker / Shiller',
   heartbeat: 'Heartbeat',
+  brain: 'Brain',
+  shiller: 'Shiller',
 };
 
 export function deriveBrainStatus(runState: RunState): BrainStatus {

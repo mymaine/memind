@@ -36,6 +36,8 @@ const AGENT_TONE: Record<LogEvent['agent'], string> = {
   narrator: 'border-l-[color:var(--color-chain-ipfs)]',
   'market-maker': 'border-l-[color:var(--color-chain-base)]',
   heartbeat: 'border-l-accent',
+  brain: 'border-l-accent',
+  shiller: 'border-l-[color:var(--color-chain-base)]',
 };
 
 function levelColor(level: LogEvent['level']): string {
