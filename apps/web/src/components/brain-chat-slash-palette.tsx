@@ -29,8 +29,11 @@ export interface BrainChatSlashPaletteProps {
 const PALETTE_CLASS =
   'absolute bottom-full left-0 right-0 z-10 mb-2 flex max-h-[280px] flex-col gap-0.5 overflow-y-auto rounded-[var(--radius-card)] border border-border-default bg-bg-primary p-1 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.6)]';
 
+// UAT 2026-04-20 #3: two-row candidate layout — line 1 is `/cmd` with the
+// usage example (monospace, prominent); line 2 is the description (dim
+// small print) so the dropdown doesn't feel cramped.
 const ROW_BASE =
-  'flex w-full items-center gap-3 rounded-[var(--radius-default)] border border-transparent px-3 py-2 text-left font-[family-name:var(--font-sans-body)] text-[12px] text-fg-secondary transition-colors hover:border-accent';
+  'flex w-full flex-col gap-1 rounded-[var(--radius-default)] border border-transparent px-3 py-2 text-left font-[family-name:var(--font-sans-body)] text-[12px] text-fg-secondary transition-colors hover:border-accent';
 
 const ROW_ACTIVE = 'border-accent bg-[color-mix(in_oklab,var(--color-accent)_12%,transparent)]';
 
@@ -77,13 +80,19 @@ export function BrainChatSlashPalette(props: BrainChatSlashPaletteProps): ReactE
             onClick={() => onPick(cmd)}
             className={`${ROW_BASE} ${isActive ? ROW_ACTIVE : ''}`}
           >
-            <span className="shrink-0 font-[family-name:var(--font-mono)] text-[13px] text-fg-primary">
-              /{cmd.name}
-            </span>
-            <span className="flex-1 text-fg-secondary">{cmd.description}</span>
-            <span className="shrink-0 font-[family-name:var(--font-mono)] text-[10px] text-fg-tertiary">
-              {cmd.usage}
-            </span>
+            {/* Row 1: `/cmd` + usage example, monospace */}
+            <div className="flex items-baseline gap-2">
+              <span className="font-[family-name:var(--font-mono)] text-[13px] text-fg-primary">
+                /{cmd.name}
+              </span>
+              <span className="font-[family-name:var(--font-mono)] text-[11px] text-fg-tertiary">
+                {cmd.usage}
+              </span>
+            </div>
+            {/* Row 2: description, dim small print */}
+            <div className="font-[family-name:var(--font-sans-body)] text-[11px] leading-[1.45] text-fg-tertiary">
+              {cmd.description}
+            </div>
           </button>
         );
       })}
