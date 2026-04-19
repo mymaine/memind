@@ -154,8 +154,10 @@ export default function HomePage(): React.ReactElement {
         </main>
       </div>
       {/* Drawer is fixed bottom (position:fixed in its own styles), so it
-          lives outside <main> and does not participate in the scroll flow. */}
-      <DevLogsDrawer runState={state} host="home" />
+          lives outside <main> and does not participate in the scroll flow.
+          BRAIN-P5 Task 4 threads the shared useRun() controller through so
+          the Panels fallback tab can drive LaunchPanel + OrderPanel directly. */}
+      <DevLogsDrawer runState={state} host="home" runController={hookResult} />
       <Toast message={toastMessage} onDismiss={clearToast} />
     </>
   );

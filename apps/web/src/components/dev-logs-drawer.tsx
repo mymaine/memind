@@ -29,6 +29,8 @@ import { ShillOrderPanel } from './shill-order-panel';
 import { AnchorLedgerPanel } from './anchor-ledger-panel';
 import { HeartbeatSection } from './heartbeat-section';
 import { TxList } from './tx-list';
+import { LaunchPanel } from './product/launch-panel';
+import { OrderPanel } from './product/order-panel';
 import {
   DEV_LOGS_TABS,
   useDevLogsDrawer,
@@ -36,6 +38,7 @@ import {
   type DevLogsState,
   type DevLogsTab,
 } from '@/hooks/useDevLogsDrawer';
+import type { UseRunResult } from '@/hooks/useRun';
 import type { RunState } from '@/hooks/useRun-state';
 import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS } from '@/hooks/useRun-state';
 
@@ -54,6 +57,13 @@ export interface DevLogsDrawerProps {
    * a `shill-order`.
    */
   readonly host?: 'home' | 'market';
+  /**
+   * BRAIN-P5 Task 4: optional run controller threaded from the host page.
+   * When provided, the Panels tab hosts LaunchPanel + OrderPanel as an
+   * engineering fallback for the chat-driven Live Demo surfaces. When
+   * absent the Panels tab renders a short placeholder copy.
+   */
+  readonly runController?: UseRunResult;
   readonly className?: string;
 }
 
@@ -64,6 +74,7 @@ const TAB_LABELS: Record<DevLogsTab, string> = {
   ledger: 'Ledger',
   heartbeat: 'HB',
   tx: 'Tx',
+  panels: 'Panels',
 };
 
 const IDLE_STATUSES: Record<AgentId, AgentStatus> = {
@@ -211,6 +222,22 @@ export function DevLogsDrawer(props: DevLogsDrawerProps): ReactElement {
           </DevLogsTabPanel>
           <DevLogsTabPanel id="tx" active={state.tab === 'tx'}>
             <TxList artifacts={artifacts} />
+          </DevLogsTabPanel>
+          <DevLogsTabPanel id="panels" active={state.tab === 'panels'}>
+            {props.runController !== undefined ? (
+              <div className="flex flex-col gap-4">
+                <p className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
+                  Engineering fallback — the form-driven Launch + Order panels remain available
+                  alongside the chat-driven Live Demo surfaces.
+                </p>
+                <LaunchPanel runController={props.runController} />
+                <OrderPanel runController={props.runController} />
+              </div>
+            ) : (
+              <div className="rounded-[var(--radius-card)] border border-dashed border-border-default bg-bg-surface p-6 text-center text-[13px] text-fg-tertiary">
+                Panels are only available on the main surface.
+              </div>
+            )}
           </DevLogsTabPanel>
         </div>
       </div>

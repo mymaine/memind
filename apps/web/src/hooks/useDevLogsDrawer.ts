@@ -27,9 +27,12 @@
  */
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 
-export type DevLogsTab = 'logs' | 'arch' | 'orders' | 'ledger' | 'heartbeat' | 'tx';
+export type DevLogsTab = 'logs' | 'arch' | 'orders' | 'ledger' | 'heartbeat' | 'tx' | 'panels';
 
-/** Ordered tab list — index (+1) maps to the `'1'..'6'` keyboard shortcut. */
+/** Ordered tab list — index (+1) maps to the `'1'..'7'` keyboard shortcut.
+ *  BRAIN-P5 Task 4 appended the `panels` fallback tab hosting LaunchPanel +
+ *  OrderPanel as an engineering alternative to the chat-driven Live Demo
+ *  surfaces. */
 export const DEV_LOGS_TABS = [
   'logs',
   'arch',
@@ -37,6 +40,7 @@ export const DEV_LOGS_TABS = [
   'ledger',
   'heartbeat',
   'tx',
+  'panels',
 ] as const satisfies readonly DevLogsTab[];
 
 const TAB_SET = new Set<DevLogsTab>(DEV_LOGS_TABS);
@@ -95,9 +99,10 @@ export function routeKeyToAction(
     return state.open ? { type: 'close' } : null;
   }
 
-  // `1..6` pick tabs; only meaningful while the drawer is open so the user
-  // always sees the result of pressing the key.
-  if (state.open && key.length === 1 && key >= '1' && key <= '6') {
+  // `1..7` pick tabs; only meaningful while the drawer is open so the user
+  // always sees the result of pressing the key. BRAIN-P5 extended the range
+  // to include the `panels` fallback tab.
+  if (state.open && key.length === 1 && key >= '1' && key <= '7') {
     const idx = Number(key) - 1;
     const tab = DEV_LOGS_TABS[idx];
     if (tab !== undefined) return { type: 'setTab', tab };
