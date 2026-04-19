@@ -199,11 +199,29 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // registration state.
   const registry = new ToolRegistry();
 
+  // Shared event-forwarders — each tool factory takes this bundle so every
+  // nested persona-side log / artifact / tool_use / assistant:delta event
+  // surfaces on the Brain run's SSE stream under the same runId. Without
+  // this, the FooterDrawer Logs / Artifacts / Brain Console tabs stay empty
+  // for the full 60-90s persona execution window and the UI looks hung.
+  const eventForwarders = {
+    onLog: (event: Parameters<typeof store.addLog>[1]) => store.addLog(runId, event),
+    onArtifact: (artifact: Parameters<typeof store.addArtifact>[1]) =>
+      store.addArtifact(runId, artifact),
+    onToolUseStart: (event: Parameters<typeof store.addToolUseStart>[1]) =>
+      store.addToolUseStart(runId, event),
+    onToolUseEnd: (event: Parameters<typeof store.addToolUseEnd>[1]) =>
+      store.addToolUseEnd(runId, event),
+    onAssistantDelta: (event: Parameters<typeof store.addAssistantDelta>[1]) =>
+      store.addAssistantDelta(runId, event),
+  };
+
   // Tools that depend only on client + registry (creator).
   const invokeCreatorTool = createInvokeCreatorTool({
     persona: creatorPersona,
     client: anthropic,
     registry,
+    ...eventForwarders,
   });
 
   // Narrator tool needs the LoreStore + a tokenMeta resolver. We read the
@@ -232,6 +250,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     registry,
     store: loreStore,
     resolveTokenMeta,
+    ...eventForwarders,
   });
 
   // Shiller tool needs post_shill_for + an order resolver. The order resolver
@@ -272,6 +291,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     persona: shillerPersona,
     postShillForTool,
     resolveOrder,
+    ...eventForwarders,
   });
 
   // Heartbeat tool needs a systemPrompt + buildUserInput. Single tick per call.
@@ -283,7 +303,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     systemPrompt: HEARTBEAT_SYSTEM_PROMPT,
     buildUserInput: ({ tickId, tickAt }) =>
       `Tick ${tickId} at ${tickAt}. Pick exactly ONE action and respond with the required JSON object.`,
-    onLog: (event) => store.addLog(runId, event),
+    ...eventForwarders,
   });
 
   const tools: ReadonlyArray<AgentTool<unknown, unknown>> = [
