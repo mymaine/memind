@@ -12,10 +12,10 @@
  *
  *   1. Real-data binding (spec §Ch11 Evidence 必改). On-chain pills come
  *      from the published `runState.artifacts`. When the live run has
- *      shipped >= 5 artifacts we render the first 5 via
- *      `mapArtifactToEvidenceRow`; otherwise we fall back to the
- *      hardcoded 5-row FALLBACK anchored on our 2026-04-18 BSC launch +
- *      2026-04-20 heartbeat demo.
+ *      shipped at least one artifact we render the real rows first and
+ *      pad remaining slots from the hardcoded FALLBACK so the grid is
+ *      always 5 pills (UAT 2026-04-20). A 0-artifact run still shows the
+ *      full fallback grid anchored on 2026-04-18 BSC launch data.
  *   2. Engineering rows (spec §Ch11 Engineering rows). The handoff's
  *      `gpt-4o · 5s / 890ms avg` is replaced with
  *      `claude-sonnet-4.5 · 5s / autonomous` (we ship Claude via
