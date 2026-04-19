@@ -65,7 +65,8 @@ describe('createAsciiBackdropController', () => {
     const ctrl = makeController(false, fakes);
     ctrl.install();
     expect(fakes.addEventListener).toHaveBeenCalledTimes(1);
-    const [handler, options] = fakes.addEventListener.mock.calls[0];
+    const firstCall = fakes.addEventListener.mock.calls[0] ?? [];
+    const [handler, options] = firstCall;
     expect(typeof handler).toBe('function');
     // Passive listener so scroll stays on the compositor thread.
     expect(options).toEqual({ passive: true });
@@ -87,7 +88,8 @@ describe('createAsciiBackdropController', () => {
     const ctrl = makeController(false, fakes, 128);
     const dispose = ctrl.install();
     // Fire a scroll; controller schedules one rAF and stores the handle.
-    const handler = fakes.addEventListener.mock.calls[0][0] as () => void;
+    const installCall = fakes.addEventListener.mock.calls[0] ?? [];
+    const handler = installCall[0] as () => void;
     handler();
     expect(fakes.raf).toHaveBeenCalledTimes(1);
     // Second scroll in the same frame must not re-schedule (rAF throttle).
@@ -96,7 +98,8 @@ describe('createAsciiBackdropController', () => {
     // Dispose removes the listener + cancels the pending frame.
     dispose();
     expect(fakes.removeEventListener).toHaveBeenCalledTimes(1);
-    expect(fakes.removeEventListener.mock.calls[0][0]).toBe(handler);
+    const removeCall = fakes.removeEventListener.mock.calls[0] ?? [];
+    expect(removeCall[0]).toBe(handler);
     expect(fakes.caf).toHaveBeenCalledWith(42);
   });
 });
