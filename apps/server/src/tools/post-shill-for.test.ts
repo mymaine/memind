@@ -219,8 +219,11 @@ describe('createPostShillForTool.execute', () => {
   });
 
   it('throws when both attempts violate the guard', async () => {
+    // Two distinct violation classes: bscscan domain + paid-intent word.
+    // Four.meme URLs are explicitly ALLOWED (see GUARD_PATTERNS) so they
+    // cannot be used as a "guaranteed guard miss" fixture anymore.
     const dirty1 = '$BAT check bscscan.com 🦇';
-    const dirty2 = '$BAT visit https://four.meme/token 🦇';
+    const dirty2 = '$BAT I was paid to post this 🦇';
     const { client, spy } = mockAnthropicSequence([dirty1, dirty2]);
     const { tool: postToXTool, executeSpy } = stubPostToXTool();
 

@@ -86,12 +86,13 @@ interface GuardPattern {
 }
 
 const GUARD_PATTERNS: GuardPattern[] = [
-  // URL / domain blocks — raw substring, case-insensitive.
-  { label: 'http://', pattern: /http:\/\//i },
-  { label: 'https://', pattern: /https:\/\//i },
-  { label: 'www.', pattern: /www\./i },
+  // URL / domain blocks — `four.meme/token/<addr>` is DELIBERATELY allowed
+  // so the tweet drives sponsor-facing click-through traffic (judged at
+  // 2026-04-19: the $0.20 URL surcharge × 1-2 demo tweets is a cheap price
+  // for BD-visible attribution to the four.meme token page). Other block
+  // explorers stay banned — evaluators reading raw bscscan data is a
+  // distraction, and `base-sepolia` leaks the micro-payment rail.
   { label: 'bscscan', pattern: /bscscan/i },
-  { label: 'four.meme', pattern: /four\.meme/i },
   { label: 'base-sepolia', pattern: /base-sepolia/i },
   // Paid-intent leak words — word-boundary so common substrings pass.
   { label: 'paid', pattern: /\bpaid\b/i },
@@ -126,9 +127,9 @@ const BASE_RULES = `You are a promotional agent. A creator has paid you to shill
 Rules (all MANDATORY):
 - Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
 - Length <= 250 characters (hard cap, count before emoji expansion).
-- Lead with the $SYMBOL, not a URL.
-- Do NOT include http:// or https:// or www. or any URL (URLs trigger $0.20 surcharge + spam flags).
-- Do NOT mention bscscan, four.meme, base-sepolia, or any block explorer.
+- Lead with the $SYMBOL.
+- INCLUDE the four.meme token URL at the end of the tweet so readers can click through to the token page. Format: https://four.meme/token/<TOKEN_ADDRESS> — use the exact address supplied in the user prompt (full 0x...40-hex, lowercase).
+- Do NOT include any other URL — no bscscan, no base-sepolia explorers, no personal links. The single four.meme/token URL is the only allowed link.
 - Do NOT write the words "paid", "sponsored", "promotion", "hired", or "shill" anywhere.
 - Vary emoji + hashtag usage (boilerplate "check this out" drives X spam detection).
 - Write in the voice of a curious reader who just discovered the project.
