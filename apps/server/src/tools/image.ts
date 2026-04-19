@@ -41,6 +41,20 @@ export const imageInputSchema = z.object({
 });
 export type ImageInput = z.infer<typeof imageInputSchema>;
 
+/**
+ * Hard rule appended to every caller-supplied prompt before it reaches
+ * Gemini. Meme generators love to bake copy, ticker mockups, and hashtag
+ * headers into the raw bytes — those overlays look amateur at thumbnail
+ * size and can trip trademark / X-anti-spam filters. The creator LLM
+ * occasionally asks for on-image text anyway ("…with bold headline
+ * 'PEPE RISES'"); when the caller really wants text they can say so in
+ * the prompt and this rule defers via the "unless explicitly required"
+ * escape hatch. The rule lives on the execute path (not the tool
+ * description) so it survives any future prompt-refactor upstream.
+ */
+const NO_TEXT_IN_IMAGE_RULE =
+  'IMPORTANT: Do not render any text, letters, words, captions, logos, ticker symbols, or watermarks inside the image unless the prompt explicitly requires it. The image must be purely visual.';
+
 // Output mirrors the meme-image artifact's two-state shape so the calling
 // agent can hand the result straight through to the SSE artifact emitter
 // without re-massaging fields. `status='ok'` carries cid + gatewayUrl, and
@@ -193,10 +207,11 @@ export function createImageTool(
     outputSchema: imageOutputSchema,
     async execute(input) {
       const { prompt, name } = imageInputSchema.parse(input);
+      const augmentedPrompt = `${prompt}\n\n${NO_TEXT_IN_IMAGE_RULE}`;
 
       const response = await options.client.models.generateContent({
         model,
-        contents: [{ text: prompt }],
+        contents: [{ text: augmentedPrompt }],
         config: {
           responseModalities: ['IMAGE'],
           imageConfig: { aspectRatio: '1:1' },

@@ -166,7 +166,12 @@ describe('createImageTool.execute', () => {
       config?: { responseModalities?: string[]; imageConfig?: { aspectRatio?: string } };
     };
     expect(call.model).toBe('gemini-2.5-flash-image');
-    expect(call.contents[0]?.text).toBe('a cool meme');
+    // Post-2026-04-20 UAT: prompt is augmented with a no-text rule before
+    // it reaches Gemini so meme images stop baking on-image captions.
+    // Check the caller-supplied prompt is preserved as a prefix and that
+    // the guard phrase is appended.
+    expect(call.contents[0]?.text).toMatch(/^a cool meme\n\n/);
+    expect(call.contents[0]?.text).toContain('Do not render any text');
     expect(call.config?.responseModalities).toEqual(['IMAGE']);
     expect(call.config?.imageConfig?.aspectRatio).toBe('1:1');
   });
