@@ -212,8 +212,18 @@ const ENG_ROWS: ReadonlyArray<{ label: string; val: string }> = [
 export function Ch11Evidence({ p }: Ch11EvidenceProps): ReactElement {
   const runState = useRunState();
   const artifacts = runState.artifacts;
+  // UAT fix (2026-04-20): when the live run has shipped at least one
+  // real artifact, show those first and pad the remaining slots from
+  // FALLBACK_ONCHAIN so the grid is always 5 pills. Pre-fix: <5
+  // real artifacts fell back to 100% fake hashes, which undersold the
+  // actual on-chain deliveries. Post-fix: 4 real + 1 fallback reads as
+  // "mostly real, one sample", which tells a true story.
+  const realRows = artifacts.slice(0, 5).map(mapArtifactToEvidenceRow);
+  const padCount = Math.max(0, 5 - realRows.length);
   const onchain: readonly EvidenceRow[] =
-    artifacts.length >= 5 ? artifacts.slice(0, 5).map(mapArtifactToEvidenceRow) : FALLBACK_ONCHAIN;
+    realRows.length === 0
+      ? FALLBACK_ONCHAIN
+      : [...realRows, ...FALLBACK_ONCHAIN.slice(0, padCount)];
   return (
     <div className="ch ch-evidence">
       <Label n={11}>evidence</Label>

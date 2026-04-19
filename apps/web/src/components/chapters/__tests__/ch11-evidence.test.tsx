@@ -97,6 +97,53 @@ describe('<Ch11Evidence> fallback behaviour', () => {
 });
 
 describe('<Ch11Evidence> real-data binding', () => {
+  it('when runState has 0 artifacts, renders all 5 fallback pills (unchanged baseline)', () => {
+    // Already covered by the fallback-behaviour suite above; asserted here
+    // again alongside the new padding cases so the 0-artifact branch sits
+    // next to the 2/5 mixed branch for easy comparison.
+    mockUseRunState.mockReturnValue(makeRunning([]));
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const onchainPills = html.match(/class="ev-pill"[^>]/g) ?? [];
+    expect(onchainPills.length).toBe(5);
+    expect(html).toContain('0x4E39d254..74444');
+  });
+
+  it('when runState has 2 real artifacts, renders 2 real + 3 fallback pills (UAT 2026-04-20)', () => {
+    // UAT fix: pre-fix the threshold was >=5, so any real run under 5
+    // artifacts silently rendered 100% fallback hashes, undercutting the
+    // live-demo story. Post-fix: real artifacts come first, fallback pads
+    // the tail so the grid is always 5 pills but reads as "mostly real".
+    const realArtifacts: Artifact[] = [
+      {
+        kind: 'bsc-token',
+        chain: 'bsc-mainnet',
+        address: '0x1111111111111111111111111111111111111111',
+        explorerUrl: 'https://bscscan.com/token/0x1111111111111111111111111111111111111111',
+      },
+      {
+        kind: 'token-deploy-tx',
+        chain: 'bsc-mainnet',
+        txHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
+        explorerUrl: 'https://bscscan.com/tx/0x2222',
+      },
+    ];
+    mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    // Both real hashes present.
+    expect(html).toContain('0x11111111..1111');
+    expect(html).toContain('0x22222222..2222');
+    // First 3 fallback hashes come after (pad to 5 total).
+    expect(html).toContain('0x4E39d254..74444');
+    expect(html).toContain('0x760ff53f..760c9b');
+    expect(html).toContain('bafkrei..peq4');
+    // The 4th / 5th fallback hashes MUST NOT appear — we only pad 3.
+    expect(html).not.toContain('0xa812..9fc4');
+    expect(html).not.toContain('bafkrei..abcd');
+    // Still exactly 5 pills rendered.
+    const onchainPills = html.match(/class="ev-pill"[^>]/g) ?? [];
+    expect(onchainPills.length).toBe(5);
+  });
+
   it('when runState has >= 5 artifacts, renders the real hashes instead of fallback', () => {
     const realArtifacts: Artifact[] = [
       {
