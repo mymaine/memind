@@ -19,8 +19,22 @@
 import type { CSSProperties, ReactElement } from 'react';
 
 export const SLOT_VH = 2.2;
-export const FADE_IN_FRAC = 0.18;
-export const FADE_OUT_FRAC = 0.18;
+// Fade window shrunk from the original 0.18 / 0.18 (hold=64%) to
+// 0.12 / 0.12 (hold=76%) after UAT Issue #3: chapter interior animations
+// were landing right as the chapter started fading out, so users saw the
+// final state for only a beat. Wider hold = more dwell time on resolved
+// content. Combined with the `INTERIOR_SPEEDUP` below, interior
+// animations now finish at ~two-thirds of hold instead of the boundary.
+export const FADE_IN_FRAC = 0.12;
+export const FADE_OUT_FRAC = 0.12;
+/**
+ * Interior progress multiplier (UAT Issue #3). The raw `interior` scalar
+ * goes 0 → 1 across the hold window; multiplying by 1.5 then clamping
+ * lets chapter animations (count-up, type-on, EKG draw) reach their
+ * final state at ~2/3 of hold so users dwell on the resolved content for
+ * longer before the cross-fade hands off.
+ */
+export const INTERIOR_SPEEDUP = 1.5;
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
@@ -171,11 +185,15 @@ export function StickyStage({
         const localP = slotPx > 0 ? clamp01((scrollY - startY) / slotPx) : 0;
 
         // Interior progress drives chapter-internal animations (type-on,
-        // count-up, bar fills). It reaches 1 just as the hold window ends
-        // so animations complete before the chapter leaves the stage.
+        // count-up, bar fills). The raw 0→1 scalar spans the hold window;
+        // the INTERIOR_SPEEDUP multiplier lets animations finish at ~2/3
+        // of hold (UAT Issue #3) so users spend the rest of hold on the
+        // resolved state instead of watching the animation finish at the
+        // boundary.
         const holdStart = FADE_IN_FRAC;
         const holdEnd = 1 - FADE_OUT_FRAC;
-        const interior = clamp01((localP - holdStart) / (holdEnd - holdStart));
+        const interiorRaw = clamp01((localP - holdStart) / (holdEnd - holdStart));
+        const interior = clamp01(interiorRaw * INTERIOR_SPEEDUP);
 
         // Edge flags (Issue #2 / UAT): the first and last chapter skip
         // their fade-in / fade-out halves respectively so scrollY=0 paints

@@ -217,19 +217,33 @@ describe('<StickyStage />', () => {
     }
   });
 
-  it('forwards interior progress p to the chapter Comp', () => {
-    // mid-hold: interior should be ~ (localP - 0.18) / (0.82 - 0.18) with
-    // localP = 0.5 → interior ≈ 0.5. Chapter dev-glyph writes `p.toFixed(3)`
-    // into data-p so we can read it off the markup.
-    const y = SLOT_PX * 0.5;
+  it('forwards interior progress p to the chapter Comp (with UAT Issue #3 speedup)', () => {
+    // UAT Issue #3: the interior scalar is now `clamp01(raw * 1.5)` so
+    // chapter animations land at ~2/3 of hold and users spend the rest
+    // of hold on the resolved state.
+    // Target a middle chapter (B, idx 1) so isFirst/isLast do not change
+    // interior math. localP=0.5 of B → raw = (0.5 - 0.12)/(0.88 - 0.12)
+    // = 0.38/0.76 = 0.5 → interior = clamp01(0.5 * 1.5) = 0.75. We check
+    // the raw number that lands on the chapter Comp's `data-p` prop.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.5;
     const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
-    // ChA is the live one; its data-p should be within [0.4, 0.6] around
-    // localP=0.5 (conversion to interior via the hold-window math).
-    const m = html.match(/data-testid="ch-a" data-p="([0-9.]+)"/);
+    const m = html.match(/data-testid="ch-b" data-p="([0-9.]+)"/);
     expect(m).not.toBeNull();
     const value = Number.parseFloat(m![1]!);
-    expect(value).toBeGreaterThan(0.4);
-    expect(value).toBeLessThan(0.6);
+    expect(value).toBeCloseTo(0.75, 2);
+  });
+
+  it('interior progress clamps to 1 once localP passes ~2/3 of hold', () => {
+    // UAT Issue #3 Task C: the SPEEDUP saturates interior at 1 once
+    // raw >= 1/1.5 ≈ 0.667. Target a middle chapter, set localP deep
+    // into hold (0.75 → raw = 0.63/0.76 ≈ 0.83 → interior = clamp(1.25)
+    // = 1). Chapter animations should be fully resolved by this point.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.75;
+    const html = renderToStaticMarkup(<StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} />);
+    const m = html.match(/data-testid="ch-b" data-p="([0-9.]+)"/);
+    expect(m).not.toBeNull();
+    const value = Number.parseFloat(m![1]!);
+    expect(value).toBeCloseTo(1, 2);
   });
 });
 
