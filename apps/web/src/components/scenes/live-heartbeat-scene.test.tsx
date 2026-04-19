@@ -1,12 +1,11 @@
 /**
- * Red tests for <LiveHeartbeatScene /> (immersive-single-page P1 Task 5 /
- * AC-ISP-5).
+ * Tests for <LiveHeartbeatScene /> (BRAIN-P5 Task 3 / AC-BRAIN-6).
  *
- * LiveHeartbeatScene hosts the "Autonomous Heartbeat" operation block.
- * Same skeleton shape as the sibling live-demo scenes: outer
- * `<section id="heartbeat-demo">`, h2 intro header, and a
- * `brain-chat-slot-heartbeat` placeholder for BRAIN-P5. See
- * live-launch-scene.test.tsx for the strategy rationale.
+ * LiveHeartbeatScene hosts the "Autonomous Heartbeat" operation block with
+ * a chat-driven heartbeat entry point. Same shape as the sibling scenes:
+ * outer `<section id="heartbeat-demo">`, h2 intro header, a
+ * `brain-chat-slot-heartbeat` wrapper around `<BrainChat scope="heartbeat" />`.
+ * See live-launch-scene.test.tsx for the strategy rationale.
  */
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -16,7 +15,7 @@ function render(): string {
   return renderToStaticMarkup(<LiveHeartbeatScene />);
 }
 
-describe('<LiveHeartbeatScene /> skeleton contract', () => {
+describe('<LiveHeartbeatScene /> contract', () => {
   it('mounts `<section id="heartbeat-demo">` with the matching aria-labelledby heading', () => {
     const out = render();
     expect(out).toMatch(/<section[^>]+id="heartbeat-demo"/);
@@ -34,9 +33,9 @@ describe('<LiveHeartbeatScene /> skeleton contract', () => {
     expect(out).toContain('ticks');
   });
 
-  it('reserves a `brain-chat-slot-heartbeat` placeholder for the BRAIN-P5 <BrainChat /> embed', () => {
+  it('embeds the BrainChat surface with scope="heartbeat" inside the brain-chat-slot wrapper', () => {
     const out = render();
     expect(out).toMatch(/data-testid="brain-chat-slot-heartbeat"/);
-    expect(out).toMatch(/class="[^"]*\bbrain-chat-slot\b/);
+    expect(out).toMatch(/aria-label="Brain chat"[^>]*data-scope="heartbeat"/);
   });
 });

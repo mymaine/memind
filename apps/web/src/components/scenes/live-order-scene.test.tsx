@@ -1,10 +1,10 @@
 /**
- * Red tests for <LiveOrderScene /> (immersive-single-page P1 Task 5 /
- * AC-ISP-5).
+ * Tests for <LiveOrderScene /> (BRAIN-P5 Task 2 / AC-BRAIN-6).
  *
- * LiveOrderScene hosts the "Order a Shill" operation block. Same skeleton
- * shape as LiveLaunchScene: outer `<section id="order-shill">`, h2 intro
- * header, and a `brain-chat-slot-order` placeholder for BRAIN-P5. See
+ * LiveOrderScene hosts the "Order a Shill" operation block with a chat-
+ * driven pitch commissioning flow. Same shape as LiveLaunchScene: outer
+ * `<section id="order-shill">`, h2 intro header, a `brain-chat-slot-order`
+ * wrapper around the embedded `<BrainChat scope="order" />`. See
  * live-launch-scene.test.tsx for the strategy rationale.
  */
 import { describe, expect, it } from 'vitest';
@@ -15,7 +15,7 @@ function render(): string {
   return renderToStaticMarkup(<LiveOrderScene />);
 }
 
-describe('<LiveOrderScene /> skeleton contract', () => {
+describe('<LiveOrderScene /> contract', () => {
   it('mounts `<section id="order-shill">` with the matching aria-labelledby heading', () => {
     const out = render();
     expect(out).toMatch(/<section[^>]+id="order-shill"/);
@@ -31,9 +31,9 @@ describe('<LiveOrderScene /> skeleton contract', () => {
     expect(out).toContain('aged X account');
   });
 
-  it('reserves a `brain-chat-slot-order` placeholder for the BRAIN-P5 <BrainChat /> embed', () => {
+  it('embeds the BrainChat surface with scope="order" inside the brain-chat-slot wrapper', () => {
     const out = render();
     expect(out).toMatch(/data-testid="brain-chat-slot-order"/);
-    expect(out).toMatch(/class="[^"]*\bbrain-chat-slot\b/);
+    expect(out).toMatch(/aria-label="Brain chat"[^>]*data-scope="order"/);
   });
 });

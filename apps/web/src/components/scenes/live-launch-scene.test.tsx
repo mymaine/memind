@@ -1,19 +1,16 @@
 /**
- * Red tests for <LiveLaunchScene /> (immersive-single-page P1 Task 5 /
- * AC-ISP-5).
+ * Tests for <LiveLaunchScene /> (BRAIN-P5 Task 1 / AC-BRAIN-6).
  *
  * LiveLaunchScene is the stand-alone section wrapper that hosts the
- * "Launch demo" operation block on the single-page home surface. This
- * skeleton revision only owns three things:
+ * "Launch demo" operation block on the single-page home surface. It owns
+ * four things:
  *
  *   1. The outer `<section id="launch-demo">` with `aria-labelledby` wiring.
- *   2. An intro header (h2 + 2-3 line pitch paragraph) so the section
- *      reads as a self-contained story beat before the live panel lands.
- *   3. A `brain-chat-slot` placeholder div tagged
- *      `data-testid="brain-chat-slot-launch"` — BRAIN-P5 will swap this
- *      for `<BrainChat scope="launch" />`. Keeping the slot carved out
- *      here means the parallel BRAIN-P5 agent can drop the chat surface
- *      in without touching this file's structure.
+ *   2. An intro header (h2 + pitch paragraph).
+ *   3. A wrapper `data-testid="brain-chat-slot-launch"` preserved so page /
+ *      external selectors can target the slot.
+ *   4. An embedded `<BrainChat scope="launch" />` providing the chat-driven
+ *      Launch flow.
  *
  * Testing strategy mirrors the sibling scene tests: node-env vitest with
  * `renderToStaticMarkup`. Client effects (`useScrollReveal`) never fire in
@@ -27,7 +24,7 @@ function render(): string {
   return renderToStaticMarkup(<LiveLaunchScene />);
 }
 
-describe('<LiveLaunchScene /> skeleton contract', () => {
+describe('<LiveLaunchScene /> contract', () => {
   it('mounts `<section id="launch-demo">` with the matching aria-labelledby heading', () => {
     const out = render();
     // The landmark owns its own section id so page.tsx mounts the scene
@@ -42,18 +39,20 @@ describe('<LiveLaunchScene /> skeleton contract', () => {
   it('renders the narrative intro paragraph so the section reads before the live panel lands', () => {
     const out = render();
     // The intro is a 2-3 line pitch describing what the live Launch demo
-    // will do once the Brain chat surface lands. Assert a high-signal
-    // substring so copy edits that drop the "on-chain" beat fail loud.
+    // will do. Assert a high-signal substring so copy edits that drop the
+    // "on-chain" beat fail loud.
     expect(out).toContain('deploys the token');
     expect(out).toContain('on-chain');
   });
 
-  it('reserves a `brain-chat-slot-launch` placeholder for the BRAIN-P5 <BrainChat /> embed', () => {
+  it('embeds the BrainChat surface with scope="launch" inside the brain-chat-slot wrapper', () => {
     const out = render();
-    // Slot stub; BRAIN-P5 replaces its inner markup with <BrainChat
-    // scope="launch" />. The data-testid + stable class name let the
-    // downstream agent target the slot without touching this file.
+    // The slot wrapper with the stable data-testid is preserved so page
+    // selectors / external agents can still target the chat embed region.
     expect(out).toMatch(/data-testid="brain-chat-slot-launch"/);
-    expect(out).toMatch(/class="[^"]*\bbrain-chat-slot\b/);
+    // BrainChat renders a landmark `<section aria-label="Brain chat" ...
+    // data-scope="launch">` — asserting the scope attribute is the tightest
+    // structural guarantee that the embed is wired with the right scope.
+    expect(out).toMatch(/aria-label="Brain chat"[^>]*data-scope="launch"/);
   });
 });
