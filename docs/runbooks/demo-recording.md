@@ -90,17 +90,27 @@ Verify every item before you hit record. A missing item mid-take burns 2-3 minut
 
 Rehearse once before recording. Target ≤ 2:00; ideal 1:40.
 
+**Each shot below lists a `> NARRATION:` line — the exact sentence to say on camera while the visual plays.** The narration is what turns this from "cool UI" into "I understand what this product is" in the judge's head. Do not paraphrase on the first take — read it verbatim until you have the pacing, then improvise on take 3+.
+
+### 1.2a Core narrative (memorise this in one breath before recording)
+
+> four.meme absorbed 32,000 tokens in one October 2025 day. Most died in 48 hours. Minting is solved; discovery is broken. We ship an **agent-to-agent commerce primitive** on four.meme: a Creator agent deploys a token and writes its origin **lore**; a Narrator agent continues the lore chapter by chapter; a Market-maker agent pays 0.01 USDC via x402 to read that lore as alpha; and a Shiller agent uses the same lore to write on-voice tweets creators pay for. Shill is the first shipped SKU — the primitive scales to snipe, LP, alpha-feed.
+
+Every shot in §1.2 drops one sentence from that paragraph on the viewer. Keep the full story in your head; deliver one clause per beat.
+
 #### 0:00 – 0:10 · Opening title + 32k spam framing
 
 - **Tab**: any title slide tool or a static browser tab showing a pre-rendered title card.
 - **Visual**: large text — _"Four.meme launched 32,000 tokens in a single day of October 2025."_ Background: the Four.meme explorer page scrolling past a blur of spam token names.
 - **Observation**: set the problem before any product appears. 10 seconds is the full budget — do not linger.
+- **> NARRATION**: "Four.meme shipped 32,000 tokens in one October day. Most died in 48 hours. Minting is solved. Discovery is not."
 
 #### 0:10 – 0:18 · Transition — legit creators drown
 
 - **Visual**: single highlighted token name (e.g. `HBNB2026-<today's theme>`) briefly glows gold then gets flooded by the scrolling spam.
 - **Text overlay** (optional): _"Legit creators drown before anyone sees them."_
 - **Observation**: viewer is now primed for a tool that rescues creators.
+- **> NARRATION**: "Legit creators drown before anyone sees them. Our answer: an agent-to-agent commerce primitive."
 
 #### 0:18 – 0:35 · Creator phase (reuse Phase 4.5 assets)
 
@@ -108,17 +118,20 @@ Rehearse once before recording. Target ≤ 2:00; ideal 1:40.
 - **Action**: click the first preset button (e.g. "Shiba Astronaut on Mars…") → click **Run swarm**.
 - **Visual**: Creator column fills — `narrative_generator` → `meme_image_creator` → `onchain_deployer` → `lore_writer`. MemeImageCard renders in the tab row. `bsc-token` + `token-deploy-tx` pills light up.
 - **Observation** (what the viewer should see): left column alive with log lines + 64px meme thumb + 2 BSC pills. The token is _real, on BSC mainnet_, gas ~$0.05.
+- **> NARRATION**: "The Creator agent deploys a real four.meme token on BSC mainnet from one prompt, then writes the token's origin lore — its world-building codex — and pins it to IPFS."
 
 #### 0:35 – 0:50 · Narrator continues lore
 
 - **Action**: let the Narrator column auto-fill. No clicks.
 - **Visual**: middle column `extend_lore` tool call → lore chapter CID pill → `lore-cid` pill lights up.
 - **Observation**: architecture diagram — Narrator node pulses emerald; streaming delta visible in the log.
+- **> NARRATION**: "A Narrator agent reads chapter one and writes chapter two. Every chapter sits behind a paid x402 endpoint — agents pay each other 0.01 USDC to read lore as alpha, and that settlement tx is on Base Sepolia, verifiable."
 
 #### 0:50 – 0:55 · Transition — "so the creator hires a shiller"
 
 - **Visual**: quick cut to a text card — _"So the creator hires an AI shiller."_ — or simply alt-tab straight to `/market` and let the new panel speak for itself.
 - **Observation**: keep this beat ≤ 5s; the payoff is the next 25 seconds.
+- **> NARRATION**: "Same primitive, second SKU. When a creator wants reach, they hire an AI shiller."
 
 #### 0:55 – 1:05 · Order the shill — x402 payment
 
@@ -128,18 +141,21 @@ Rehearse once before recording. Target ≤ 2:00; ideal 1:40.
   2. The UI triggers a POST to `/shill/:tokenAddr`; x402 middleware returns 402; the agent wallet signs EIP-3009; Base Sepolia USDC tx settles.
 - **Visual**: payment status row shows `402 Payment Required` → `Signing EIP-3009` → `Settled ✓` with a Base Sepolia tx hash pill.
 - **Observation**: pay-link pill must have an actual tx hash (not `pending…`) before you move on. If still `pending…` after 5s, **pause** — Base Sepolia sometimes stalls; see degrade plan below.
+- **> NARRATION**: "Creator pays 0.01 USDC over x402 on Base Sepolia. EIP-3009 signed, settled on-chain, click the pill to verify."
 
 #### 1:05 – 1:20 · Shiller picks up, posts real tweet
 
 - **Action**: none — wait for the Shiller tick (3-5s with the demo override).
 - **Visual**: in the Active Orders panel, the row transitions `queued` → `processing ⚙️` → `done ✓`. A `shill-tweet` artifact appears with the tweet URL pill.
-- **Observation**: the tweet text appears inline in the Completed Shills column. Body must lead with `$<SYMBOL>` and must **not** contain `http://` or `bscscan.com` (URL-posts trigger the $0.20 X surcharge — guard is in the tool, but eyeball it anyway).
+- **Observation**: the tweet text appears inline in the Completed Shills column. Body must lead with `$<SYMBOL>` and link to `four.meme/token/...` — other URLs remain blocked (bscscan / base-sepolia).
+- **> NARRATION**: "The Shiller reads the same lore the Narrator wrote, drafts one on-voice tweet, and posts from its own aged X account — with a click-through back to the four.meme token page."
 
 #### 1:20 – 1:30 · Cutaway to real X tweet
 
 - **Action**: alt-tab to Tab 3 (Shiller X profile). Refresh if needed. Click into the newest post.
 - **Visual**: the real tweet on x.com with the token `$<SYMBOL>` visible. Do **not** scroll — stay on the tweet for ~8 seconds so the viewer has time to read it and verify this is a real X post, not a mock.
 - **Observation**: this is the money shot for the "Practical Value" rubric line. Spend the time.
+- **> NARRATION**: "Here it is on x.com. Real account, real followers, real click-through to four.meme."
 
 #### 1:30 – 1:40 · Heartbeat persistence recap
 
@@ -147,12 +163,14 @@ Rehearse once before recording. Target ≤ 2:00; ideal 1:40.
 - **Action**: scroll down to the Heartbeat panel → click the `timeline` tab or the panel header to show prior autonomous ticks.
 - **Visual**: the TweetFeed with several prior Heartbeat posts from the same Shiller account (these are the AC7 self-shill tick posts, not today's shill-for-creator tweet).
 - **Observation**: demonstrates the agent is _persistent_ — not a one-shot demo. The tick counter and decision rows ("`#N check_status → post — <reason>`") drive this home.
+- **> NARRATION**: "This isn't a one-shot. The Heartbeat agent keeps ticking, keeps posting — agents that persist, that you don't babysit."
 
 #### 1:40 – 1:50 · Closing title cards
 
-- **Card 1** (3s): _"First agent-to-agent shilling market on Four.meme."_
-- **Card 2** (3s): _"Phase 2 of Agentic Mode — shipped in 4 days, solo."_
-- **Card 3** (3s): _"Next: multi-shiller competition, quality scoring, reputation."_
+- **Card 1** (3s): _"First agent-to-agent commerce primitive on Four.meme."_
+- **Card 2** (3s): _"Shill shipped today. Snipe, LP, alpha-feed — same rails, next."_
+- **Card 3** (3s): _"Phase 2 of Agentic Mode — shipped in 4 days, solo."_
+- **> NARRATION** (say over all three cards): "Shill is SKU one. Snipe, liquidity provisioning, alpha-feed — same primitive, same rails. Phase two of Agentic Mode, shipped in four days, solo."
 
 ### 1.3 Time-axis sanity — matches `docs/features/shilling-market.md`?
 
