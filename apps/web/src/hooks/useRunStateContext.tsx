@@ -22,10 +22,10 @@
  * nothing rather than throwing mid-render.
  *
  * Design lock: docs/decisions/2026-04-19-brain-agent-positioning.md §Scope
- * — the `<BrainIndicator /> + <BrainDetailModal />` pair is the entire
- * "Brain is here" surface (post immersive-single-page P1 Task 3 /
- * AC-ISP-6), and it MUST reflect real live run state for the demo climax
- * to land.
+ * — the `<BrainIndicator /> + <BrainPanel />` pair is the entire
+ * "Brain is here" surface (post memind-scrollytelling-rebuild AC-MSR-7;
+ * the prior <BrainDetailModal /> was retired with the slide-in panel),
+ * and it MUST reflect real live run state for the demo climax to land.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';

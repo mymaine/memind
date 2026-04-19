@@ -4,11 +4,9 @@
  * BrainIndicator — slim TopBar-resident "Token Brain is here" control
  * (memind-scrollytelling-rebuild AC-MSR-3).
  *
- * Replaces the previous modal-owning indicator: the click no longer opens a
- * <BrainDetailModal /> inline; it forwards to the parent's `onClick` which
- * will open the right-slide-in BrainPanel landing in P0-15. Until the panel
- * is wired, the handler is a no-op — the button still mounts so the visual
- * language matches the design spec.
+ * The click forwards to the parent's `onClick` which opens the right-side
+ * <BrainPanel /> (page.tsx owns the open-state toggle post P0-15). The
+ * old <BrainDetailModal /> centred dialog was retired in the same cycle.
  *
  * Split into <BrainIndicatorView /> (pure, props-only, node-testable via
  * renderToStaticMarkup) and <BrainIndicator /> (client shell that subscribes
