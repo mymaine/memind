@@ -29,6 +29,16 @@ import {
   type BrainStatus,
 } from './brain-status-bar-utils';
 import { BrainDetailModal } from './brain-detail-modal';
+import { PixelHumanGlyph, type ShillingMood } from './pixel-human-glyph';
+
+// Status → mascot mood. `sleep` evokes the "not ticking" idle state; `work`
+// evokes the active runtime. Keeps the indicator's header real-estate tiny
+// (size=20) so the mascot reads as a status glyph rather than a standalone
+// illustration.
+const STATUS_MOOD: Readonly<Record<BrainStatus, ShillingMood>> = {
+  idle: 'sleep',
+  online: 'work',
+};
 
 export interface BrainIndicatorViewProps {
   readonly runState: RunState;
@@ -57,26 +67,17 @@ export function BrainIndicatorView(props: BrainIndicatorViewProps): ReactElement
       onClick={onOpen}
       className="inline-flex h-8 items-center gap-2 rounded-[var(--radius-default)] border border-border-default bg-bg-surface px-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary transition-colors hover:border-accent hover:text-fg-primary focus:outline-none focus-visible:border-accent md:text-[12px]"
     >
-      {/* Glyph — static 12x12 SVG mirroring the retired BrainStatusBar's
-          mark. No decorative loops (design.md §7). */}
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 16 16"
-        fill="none"
-        aria-hidden="true"
-        className="shrink-0 text-accent"
-      >
-        <circle cx="8" cy="8" r="3" fill="currentColor" />
-        <circle
-          cx="8"
-          cy="8"
-          r="6.5"
-          stroke="currentColor"
-          strokeOpacity="0.5"
-          strokeDasharray="2 2"
+      {/* Status mascot — replaces the old 12x12 accent-circle glyph. The
+          mood swaps with BrainStatus: sleep ↔ idle, work ↔ online. Size 20
+          keeps the indicator compact so it still fits the Header's 32px
+          button row. */}
+      <span className="shrink-0" data-testid="brain-indicator-mascot">
+        <PixelHumanGlyph
+          size={20}
+          mood={STATUS_MOOD[status]}
+          ariaLabel={`Token Brain status: ${statusLabel}`}
         />
-      </svg>
+      </span>
 
       <span className="font-semibold text-accent-text">TOKEN BRAIN</span>
 

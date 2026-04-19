@@ -97,4 +97,28 @@ describe('<BrainIndicatorView />', () => {
     );
     expect(open).toContain('aria-expanded="true"');
   });
+
+  it('renders the tiny status mascot with mood="sleep" when idle', () => {
+    const out = renderToStaticMarkup(
+      <BrainIndicatorView runState={IDLE_STATE} modalOpen={false} onOpen={() => {}} />,
+    );
+    // The accent-circle SVG that used to live in the button was replaced
+    // by a size=20 PixelHumanGlyph whose mood mirrors BrainStatus. Idle
+    // → sleep (the mascot dozes).
+    expect(out).toMatch(/data-testid="brain-indicator-mascot"/);
+    expect(out).toMatch(
+      /data-testid="brain-indicator-mascot"[^]*?data-mood="sleep"/,
+    );
+  });
+
+  it('flips the status mascot to mood="work" during a running run', () => {
+    const state = runningState([log('creator', 'deploying token')]);
+    const out = renderToStaticMarkup(
+      <BrainIndicatorView runState={state} modalOpen={false} onOpen={() => {}} />,
+    );
+    // Online → work mood so the indicator reads as busy.
+    expect(out).toMatch(
+      /data-testid="brain-indicator-mascot"[^]*?data-mood="work"/,
+    );
+  });
 });
