@@ -12,8 +12,8 @@
 - **4 agents, 9 typed tools, 692 green tests** — x402 integration settles real USDC every `pnpm test`. Every `shill-tweet` artifact carries a clickable four.meme token URL back to sponsor surface.
 - **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; engineering detail (logs / timeline / tx pills / architecture) lives in a `D`-to-open Developer Drawer — judge-first up-front, engineer-deep on demand.
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint) · Deadline: 2026-04-22 UTC 15:59
-- Demo video: <!-- TODO: record per docs/runbooks/demo-recording.md and paste URL -->
-- Runbook: [`docs/runbooks/demo-recording.md`](./docs/runbooks/demo-recording.md) · Architecture: [`docs/architecture.md`](./docs/architecture.md)
+- Demo video: <!-- TODO: paste URL after recording -->
+- Architecture: [`docs/architecture.md`](./docs/architecture.md)
 
 ## Problem
 
