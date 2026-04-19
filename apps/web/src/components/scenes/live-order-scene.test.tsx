@@ -1,0 +1,39 @@
+/**
+ * Red tests for <LiveOrderScene /> (immersive-single-page P1 Task 5 /
+ * AC-ISP-5).
+ *
+ * LiveOrderScene hosts the "Order a Shill" operation block. Same skeleton
+ * shape as LiveLaunchScene: outer `<section id="order-shill">`, h2 intro
+ * header, and a `brain-chat-slot-order` placeholder for BRAIN-P5. See
+ * live-launch-scene.test.tsx for the strategy rationale.
+ */
+import { describe, expect, it } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { LiveOrderScene } from './live-order-scene.js';
+
+function render(): string {
+  return renderToStaticMarkup(<LiveOrderScene />);
+}
+
+describe('<LiveOrderScene /> skeleton contract', () => {
+  it('mounts `<section id="order-shill">` with the matching aria-labelledby heading', () => {
+    const out = render();
+    expect(out).toMatch(/<section[^>]+id="order-shill"/);
+    expect(out).toMatch(/aria-labelledby="order-shill-heading"/);
+    expect(out).toMatch(/<h2[^>]+id="order-shill-heading"[^>]*>\s*Order a Shill\s*<\/h2>/);
+  });
+
+  it('renders the narrative intro paragraph describing the shill commission flow', () => {
+    const out = render();
+    // Intro hinges on the 0.01 USDC payment beat + aged X account fact —
+    // both are core pitch points for the Order SKU.
+    expect(out).toContain('0.01 USDC');
+    expect(out).toContain('aged X account');
+  });
+
+  it('reserves a `brain-chat-slot-order` placeholder for the BRAIN-P5 <BrainChat /> embed', () => {
+    const out = render();
+    expect(out).toMatch(/data-testid="brain-chat-slot-order"/);
+    expect(out).toMatch(/class="[^"]*\bbrain-chat-slot\b/);
+  });
+});
