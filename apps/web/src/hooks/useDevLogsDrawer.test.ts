@@ -101,9 +101,17 @@ describe('routeKeyToAction', () => {
     });
   });
 
-  it("returns null for '1'..'6' when the drawer is closed", () => {
+  it("maps '7' (open state) to setTab 'panels'", () => {
+    // BRAIN-P5 Task 4 adds a Panels fallback tab at the end of the tab list.
+    expect(routeKeyToAction('7', null, false, OPEN_STATE)).toEqual({
+      type: 'setTab',
+      tab: 'panels',
+    });
+  });
+
+  it("returns null for '1'..'7' when the drawer is closed", () => {
     expect(routeKeyToAction('1', null, false, CLOSED_STATE)).toBeNull();
-    expect(routeKeyToAction('6', null, false, CLOSED_STATE)).toBeNull();
+    expect(routeKeyToAction('7', null, false, CLOSED_STATE)).toBeNull();
   });
 
   it('returns null for unrecognised keys', () => {
@@ -123,9 +131,17 @@ describe('routeKeyToAction', () => {
     expect(routeKeyToAction('d', 'textarea', false, OPEN_STATE)).toBeNull();
   });
 
-  it('DEV_LOGS_TABS export exposes 6 ordered tab ids', () => {
-    // Sanity pin so `'1'..'6'` routing stays aligned with the drawer UI.
-    expect(DEV_LOGS_TABS).toEqual(['logs', 'arch', 'orders', 'ledger', 'heartbeat', 'tx']);
+  it('DEV_LOGS_TABS export exposes 7 ordered tab ids (incl. panels)', () => {
+    // Sanity pin so `'1'..'7'` routing stays aligned with the drawer UI.
+    expect(DEV_LOGS_TABS).toEqual([
+      'logs',
+      'arch',
+      'orders',
+      'ledger',
+      'heartbeat',
+      'tx',
+      'panels',
+    ]);
   });
 });
 

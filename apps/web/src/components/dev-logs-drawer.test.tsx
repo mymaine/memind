@@ -1,27 +1,31 @@
 /**
- * Red tests for `<DevLogsDrawer />` (V4.7-P4 Task 6 / AC-P4.7-5a).
+ * Tests for `<DevLogsDrawer />` (V4.7-P4 Task 6 / AC-P4.7-5a,
+ * BRAIN-P5 Task 4 / AC-BRAIN-6).
  *
  * The drawer is a sticky-bottom container that toggles between a 56px
- * header and a 40vh expanded panel, hosts the 6 engineering panels
- * (Logs / Arch / Orders / Ledger / Heartbeat / Tx) in a tablist, and
- * NEVER unmounts its tab contents (risk: SSE events queue up into an
+ * header and a 40vh expanded panel, hosts the engineering panels
+ * (Logs / Arch / Orders / Ledger / Heartbeat / Tx / Panels) in a tablist,
+ * and NEVER unmounts its tab contents (risk: SSE events queue up into an
  * unmounted LogPanel and get lost).
  *
  * Tests render to static markup so we can pin:
  *   - `aria-expanded` on the drawer trigger reflects controller.state.open.
- *   - `role="tablist"` is present with 6 tabs and labels.
+ *   - `role="tablist"` is present with 7 tabs and labels.
  *   - `aria-selected="true"` tracks controller.state.tab.
- *   - All 6 tab panels exist in the markup in every combination — the
+ *   - All 7 tab panels exist in the markup in every combination — the
  *     only visibility difference is the `hidden` attribute.
  *   - host='home' greys the Orders tab; host='market' keeps it active.
  *   - A run-state with pill-shaped artifacts produces at least one
  *     `<a href="...">` inside the Tx panel.
+ *   - Panels tab renders LaunchPanel + OrderPanel when a runController is
+ *     threaded (BRAIN-P5 fallback) and a placeholder copy otherwise.
  */
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Artifact } from '@hack-fourmeme/shared';
 import type { RunState } from '@/hooks/useRun-state';
-import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS } from '@/hooks/useRun-state';
+import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS, IDLE_STATE } from '@/hooks/useRun-state';
+import type { UseRunResult } from '@/hooks/useRun';
 import type { DevLogsController, DevLogsState, DevLogsTab } from '@/hooks/useDevLogsDrawer.js';
 import { DevLogsDrawer } from './dev-logs-drawer.js';
 
@@ -76,12 +80,12 @@ describe('<DevLogsDrawer />', () => {
     expect(selectedMatches.length).toBe(1);
   });
 
-  it('renders a tablist with the 6 dev-log tab labels', () => {
+  it('renders a tablist with the 7 dev-log tab labels (incl. Panels)', () => {
     const out = renderToStaticMarkup(
       <DevLogsDrawer controller={makeController({ open: true, tab: 'logs' })} host="market" />,
     );
     expect(out).toContain('role="tablist"');
-    for (const label of ['Logs', 'Arch', 'Orders', 'Ledger', 'HB', 'Tx']) {
+    for (const label of ['Logs', 'Arch', 'Orders', 'Ledger', 'HB', 'Tx', 'Panels']) {
       expect(out).toContain(label);
     }
   });
@@ -107,12 +111,12 @@ describe('<DevLogsDrawer />', () => {
     expect(ordersButtonMatch?.[0]).not.toContain('aria-disabled="true"');
   });
 
-  it('mounts all 6 tab panels simultaneously so SSE events reach every inner component', () => {
+  it('mounts all 7 tab panels simultaneously so SSE events reach every inner component', () => {
     const out = renderToStaticMarkup(
       <DevLogsDrawer controller={makeController({ open: true, tab: 'tx' })} host="market" />,
     );
-    // All six panel ids must appear in the markup regardless of active tab.
-    for (const tab of ['logs', 'arch', 'orders', 'ledger', 'heartbeat', 'tx']) {
+    // All seven panel ids must appear in the markup regardless of active tab.
+    for (const tab of ['logs', 'arch', 'orders', 'ledger', 'heartbeat', 'tx', 'panels']) {
       expect(out).toContain(`id="devlogs-panel-${tab}"`);
     }
   });
@@ -157,5 +161,35 @@ describe('<DevLogsDrawer />', () => {
     );
     // The Tx panel should contain at least one pill link pointing to our fixture.
     expect(out).toContain(`https://sepolia.basescan.org/tx/${TX_HASH}`);
+  });
+
+  it('renders LaunchPanel + OrderPanel inside the Panels tab when a runController is threaded (BRAIN-P5 Task 4)', () => {
+    // When a runController is injected, the Panels tab hosts LaunchPanel
+    // (section#launch-panel) + OrderPanel (section#order) as an engineering
+    // fallback for the BRAIN-P5 chat-driven Live Demo surfaces.
+    const runController: UseRunResult = {
+      state: IDLE_STATE,
+      startRun: () => Promise.resolve(),
+      resetRun: () => {},
+    };
+    const out = renderToStaticMarkup(
+      <DevLogsDrawer
+        controller={makeController({ open: true, tab: 'panels' })}
+        host="home"
+        runController={runController}
+      />,
+    );
+    expect(out).toMatch(/<section[^>]+id="launch-panel"/);
+    expect(out).toMatch(/<section[^>]+id="order"/);
+  });
+
+  it('shows the "Panels are only available on the main surface" placeholder when runController is absent', () => {
+    // Without a runController the panels cannot drive real runs, so the
+    // tab renders a short placeholder copy that points engineers at the
+    // main Live Demo surface.
+    const out = renderToStaticMarkup(
+      <DevLogsDrawer controller={makeController({ open: true, tab: 'panels' })} host="home" />,
+    );
+    expect(out).toContain('Panels are only available on the main surface.');
   });
 });
