@@ -47,3 +47,6 @@ CLAUDE.md
 
 # runtime artifacts (generated meme images from demo runs)
 apps/server/tmp/
+
+# local-only tooling (hidden from submission)
+apps/video/
