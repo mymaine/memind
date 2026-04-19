@@ -1,30 +1,64 @@
 # Shilling Market on Four.meme
 
-> **Shilling Market** — a creator-to-agent promotion service on four.meme, paid over [x402](https://github.com/coinbase/x402). A marketplace where AI agents shill for creators drowning in 32k daily spam tokens. Creator launches a four.meme token, pays 0.01 USDC per shill post; the shiller agent reads the lore, writes a promotional tweet, and posts it from its own aged X account. Agentic Mode Phase 2 — shipped as a Creator Discovery tool.
+> **Agent-to-agent commerce primitive on four.meme**, paid over [x402](https://github.com/coinbase/x402). One Creator agent deploys a real BSC mainnet token and writes its **lore** (the token's AI-generated origin codex, chapter 1). A Narrator agent reads chapter 1 and writes chapter 2 — every chapter served from an x402-paid endpoint so agents pay each other 0.01 USDC to read lore as alpha. A Market-maker agent fetches the lore to drive its decisions. A Shiller agent uses the same lore to draft on-voice tweets that creators pay 0.01 USDC to commission, posted from a real aged X account. **Shill is the first shipped SKU; snipe, LP provisioning, alpha-feed ship on the same rails next.**
 
 [![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-692%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#evidence-on-chain--in-repo)
 
 ## TL;DR for Judges
 
-- Creator launches a real **BSC mainnet** token in a **67-second autonomous run** (one-line prompt → deploy + IPFS lore + meme PNG).
-- Creator pays **0.01 USDC on Base Sepolia via x402** to order a shill; the Shiller agent reads the lore, writes a single on-voice tweet, and posts it from its own aged X account.
-- **4 agents, 9 typed tools, 692 green tests** — x402 integration settles real USDC every `pnpm test`.
-- **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; engineering detail (logs / timeline / tx pills / architecture) is a `D`-to-open Developer Drawer — judge-first up-front, engineer-deep on demand.
+- **The thesis**: memecoins have a discovery problem, not a minting problem. Agents can solve it — if they have a **commerce rail** between them. We built that rail: four agents on one runtime, paying each other in 0.01 USDC increments over x402, trading a commodity called **lore** (AI-generated token world-building).
+- **The loop**: Creator deploys a real BSC mainnet token in **67s** and writes its lore chapter 1 → Narrator extends chapter 2 → Market-maker pays 0.01 USDC on Base Sepolia via x402 to read lore as alpha → Shiller reads the same lore to post an on-voice tweet from a real aged X account when a creator commissions one.
+- **Why this is a primitive, not a feature**: Shill is SKU 1 (shipped today). The same rails — paid x402 endpoints + lore-backed agent decisions + on-chain settlement — scale to snipe, LP provisioning, alpha-feed without redesigning the rail.
+- **4 agents, 9 typed tools, 692 green tests** — x402 integration settles real USDC every `pnpm test`. Every `shill-tweet` artifact carries a clickable four.meme token URL back to sponsor surface.
+- **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; engineering detail (logs / timeline / tx pills / architecture) lives in a `D`-to-open Developer Drawer — judge-first up-front, engineer-deep on demand.
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint) · Deadline: 2026-04-22 UTC 15:59
 - Demo video: <!-- TODO: record per docs/runbooks/demo-recording.md and paste URL -->
 - Runbook: [`docs/runbooks/demo-recording.md`](./docs/runbooks/demo-recording.md) · Architecture: [`docs/architecture.md`](./docs/architecture.md)
 
 ## Problem
 
-Four.meme saw 32k spam tokens land in a single October 2025 day, and across memecoins 97% of tokens die inside 48 hours because launchers abandon them after the mint. Minting is cheap; discovery is not. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers with three phases — Phase 1 shipped, Phase 2 (on-chain identity) and Phase 3 (agent economic loop) have no public reference. This repo is the gap-filler: **Shilling Market**, a runnable creator promotion service where a creator pays an AI shiller 0.01 USDC over x402 to post a promotional tweet from the shiller's aged X account. Same rails also power agent-to-agent lore purchases — shilling is the product, a2a commerce is the substrate.
+Four.meme saw 32k spam tokens land in a single October 2025 day, and across memecoins 97% of tokens die inside 48 hours because launchers abandon them after the mint. Minting is cheap; **discovery is not**. Four.meme's March 2026 [Agentic Mode](https://four.meme) roadmap answers with three phases — Phase 1 (Agent Skill Framework) is live; Phase 2 (agent-to-agent commerce) and Phase 3 (autonomous economic loop) have no public reference implementation. This repo fills that gap.
+
+## How it works — the agent commerce loop
+
+Every memecoin should have a **soul**, not just a contract address. We give tokens that soul as structured data — **lore** — and then let four agents trade services around it.
+
+**Lore** = the AI-generated origin codex of a token. Think of it as Pokémon card back-story, NFT collection world-building, or MMO world-codex — but for a memecoin, split into numbered chapters, pinned to IPFS, and served from a paid x402 endpoint.
+
+```
+┌──────────────┐  writes  ┌──────────────┐  extends  ┌──────────────┐
+│ Creator      │ ───ch1──►│  LoreStore   │◄───ch2──── │ Narrator     │
+│ (supply)     │          │  (IPFS CIDs) │            │ (supply)     │
+└──────┬───────┘          └──────┬───────┘            └──────────────┘
+       │ deploys                 │ served by
+       ▼                         ▼
+┌──────────────┐          ┌─────────────────┐      ┌──────────────┐
+│ BSC mainnet  │          │ x402 /lore/:addr│◄─pays│ Market-maker │
+│ four.meme    │          │ 0.01 USDC       │  USDC│ (demand)     │
+│ TokenManager │          └─────────────────┘  via └──────────────┘
+└──────────────┘                  ▲            x402
+                                  │ reads same lore
+                         ┌────────┴────────┐       ┌──────────────┐
+                         │ Shiller         │◄─pays─│ Creator      │
+                         │ (demand, $SKU1) │  0.01 │ (human via   │
+                         │ posts on X      │  USDC │  /market)    │
+                         └─────────────────┘       └──────────────┘
+```
+
+Three observations that make this a **primitive** rather than a one-off app:
+
+1. **Same lore, multiple buyers.** Market-maker and Shiller both pay to read the identical chapter. Add more SKUs (snipe bot, LP optimizer, alpha-feed) and they all share the lore substrate — zero new infrastructure.
+2. **Same rail, multiple payers.** x402 settles from agents (Market-maker paying Narrator) or from humans (Creator paying Shiller) through the exact same EIP-3009 / Base Sepolia USDC flow.
+3. **Same tweet, real click-through.** Shiller tweets lead with `$SYMBOL` and end with `https://four.meme/token/0x...` — every demo tweet is a live backlink to the sponsor surface.
 
 ## What we built
 
-- **Shilling Market** (headline product, a creator-to-agent promotion service): creator pays 0.01 USDC via x402 to order a shill; the Shiller agent pulls the order, reads lore, generates one on-voice tweet, posts from its own aged X account — all in one tick.
-- **4 agents on one Anthropic SDK tool-use runtime**: Creator (deploys four.meme token), Narrator (writes lore → `LoreStore`), Market-maker / Shiller (dual persona: a2a lore purchases or shill fulfilment), Heartbeat (`setInterval` autonomous tick with X-posting decisions).
+- **Agent commerce primitive** — the four-agent loop above, fully wired. `Creator` + `Narrator` sit on the supply side (write + extend lore); `Market-maker` + `Shiller` sit on the demand side (pay to consume lore, each for their own downstream purpose).
+- **Shilling Market (SKU 1, shipped)** — creator UI at `/market` takes tokenAddr + optional brief, pays 0.01 USDC via x402, and an AI shiller posts a real tweet from an aged X account within ~6 seconds. Click-through back to `four.meme/token/<addr>`.
+- **4 agents on one Anthropic SDK tool-use runtime**: Creator / Narrator / Market-maker (dual persona Market-maker or Shiller depending on mode) / Heartbeat (`setInterval` autonomous tick).
 - **Typed tool registry** (`AgentTool<TIn, TOut>`): `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for`, `x402_fetch_lore`.
 - **x402 server on `@x402/express` v2**, four paid endpoints: `/shill/:tokenAddr` (0.01 USDC, creator-facing), `/lore/:addr` (0.01, `LoreStore`-backed), `/alpha/:addr` (0.01), `/metadata/:addr` (0.005).
-- **In-memory `LoreStore` + `ShillOrderStore`**: Narrator publishes, Shiller consumes — same runtime, opposite directions.
+- **In-memory `LoreStore` + `ShillOrderStore`**: Narrator publishes lore, Shiller consumes lore + orders — same runtime, opposite directions, zero coupling between producers and consumers.
 - **Next.js 15 product dashboard** (Terminal Cyber on Tailwind v4): two routes share a 6-scene skeleton — Hero (6s Creator→USDC→Shiller→Tweet loop with a typewriter tweet) · Problem (32k-ticker marquee) · Solution (3-step cards + embedded x402 micro-animation) · Product (LaunchPanel on `/` · OrderPanel on `/market`, both driven by pure `derive-*-state` reducers over `useRun()` SSE) · Vision (SKU matrix + 3-tier take-rate + Phase map) · Evidence (5 fixed on-chain pills). All legacy engineering panels (3-column logs, timeline, architecture diagram, tx list, anchor ledger, heartbeat, shill orders) live inside a collapsible `DevLogsDrawer` (`D` to open, `1–6` to tab, `Esc` to close, `prefers-reduced-motion` fully respected).
 - **CLI demos** sharing the orchestration path: `demo:creator`, `demo:a2a`, `demo:heartbeat`, `demo:shill`.
 
