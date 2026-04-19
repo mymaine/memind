@@ -169,7 +169,9 @@ function PersonaLogRow({
         <span>·</span>
         <span>{group.tool}</span>
       </div>
-      <p className={`break-words font-[family-name:var(--font-sans-body)] ${levelClass}`}>
+      <p
+        className={`[overflow-wrap:anywhere] break-all font-[family-name:var(--font-sans-body)] ${levelClass}`}
+      >
         {group.message}
       </p>
     </div>
@@ -191,8 +193,10 @@ function PersonaArtifactRow({
         className={`flex items-center justify-between gap-3 rounded-[var(--radius-card)] border bg-bg-surface px-3 py-2 text-[12px] hover:[filter:drop-shadow(0_0_4px_currentColor)] ${AGENT_TONE[group.agent]} border-l-4`}
         style={{ borderColor: `var(${d.chainColorVar})`, color: `var(${d.chainColorVar})` }}
       >
-        <span className="font-[family-name:var(--font-mono)]">{d.primaryText}</span>
-        <span className="text-fg-tertiary">{d.kindLabel}</span>
+        <span className="[overflow-wrap:anywhere] min-w-0 break-all font-[family-name:var(--font-mono)]">
+          {d.primaryText}
+        </span>
+        <span className="shrink-0 text-fg-tertiary">{d.kindLabel}</span>
       </a>
     );
   }
@@ -217,7 +221,7 @@ function ThinkingRow({
       <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-fg-tertiary">
         {group.agent} · thinking
       </span>
-      <p className="break-words text-fg-secondary">{group.text}</p>
+      <p className="[overflow-wrap:anywhere] break-all text-fg-secondary">{group.text}</p>
     </div>
   );
 }
