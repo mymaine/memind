@@ -12,9 +12,14 @@
  * vitest runs under `node` with no jsdom, so we render via
  * `renderToStaticMarkup` + regex.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Ch7Heartbeat } from '../ch7-heartbeat.js';
+
+// CSS-regression source for UAT issue #9.
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../../app/globals.css'), 'utf8');
 
 describe('<Ch7Heartbeat>', () => {
   it('at p=0 no decision row is rendered (ticks = floor(0) = 0)', () => {
@@ -58,5 +63,18 @@ describe('<Ch7Heartbeat>', () => {
     expect(html).toContain('decides');
     // Mascot glyph mounts with walk-right mood.
     expect(html).toMatch(/data-mood="walk-right"/);
+  });
+
+  it('.hb-pulse centers its EKG content vertically inside the grid (UAT issue #9)', () => {
+    // UAT: the EKG trace pinned to the top of its two-row cell, leaving a
+    // dead band below. justify-content:center on the flex column keeps the
+    // SVG + axis labels aligned with the operator.log midline.
+    const stripped = GLOBALS_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = stripped.match(/\.hb-pulse\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    const body = rule?.[1] ?? '';
+    expect(body).toMatch(/display:\s*flex/);
+    expect(body).toMatch(/flex-direction:\s*column/);
+    expect(body).toMatch(/justify-content:\s*center/);
   });
 });

@@ -963,6 +963,12 @@ code,
   padding: 24px;
   display: flex;
   flex-direction: column;
+  /* UAT issue #9 — .hb-pulse spans two grid rows while .hb-ops on the
+   * right spans one + .hb-glyph spans one. The EKG content (SVG + axis
+   * labels) only occupies ~200px, so without justify-content:center the
+   * trace pins to the top and leaves a dead band below. Centering keeps
+   * the playhead horizontally aligned with the operator.log midline. */
+  justify-content: center;
   gap: 12px;
 }
 .hb-svg {
