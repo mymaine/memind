@@ -11,6 +11,7 @@
 import { useRef } from 'react';
 import { BrainChat } from '@/components/brain-chat';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
+import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
 
 export interface LiveHeartbeatSceneProps {
   readonly freeze?: boolean;
@@ -42,20 +43,34 @@ export function LiveHeartbeatScene({
       data-testid="live-heartbeat-scene"
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <header className="flex flex-col gap-2">
-          <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
-            Operation · 3 / 3
-          </span>
-          <h2
-            id="heartbeat-demo-heading"
-            className="font-[family-name:var(--font-sans-display)] text-[28px] font-semibold leading-[1.1] text-fg-emphasis"
+        <header className="flex items-start justify-between gap-6">
+          <div className="flex flex-col gap-2">
+            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
+              Operation · 3 / 3
+            </span>
+            <h2
+              id="heartbeat-demo-heading"
+              className="font-[family-name:var(--font-sans-display)] text-[28px] font-semibold leading-[1.1] text-fg-emphasis"
+            >
+              Autonomous Heartbeat
+            </h2>
+            <p className="max-w-[640px] font-[family-name:var(--font-sans-body)] text-[14px] leading-[1.5] text-fg-secondary">
+              Give the Brain a token address. It ticks autonomously — reading status, extending lore,
+              or posting when the moment is right.
+            </p>
+          </div>
+          {/* Scope mascot — Heartbeat persona walks in place, matching the
+              continuous tick cadence. `walk-right` is a loop mood. */}
+          <div
+            className="hidden shrink-0 sm:block"
+            data-testid="live-heartbeat-mascot"
           >
-            Autonomous Heartbeat
-          </h2>
-          <p className="max-w-[640px] font-[family-name:var(--font-sans-body)] text-[14px] leading-[1.5] text-fg-secondary">
-            Give the Brain a token address. It ticks autonomously — reading status, extending lore,
-            or posting when the moment is right.
-          </p>
+            <PixelHumanGlyph
+              size={80}
+              mood="walk-right"
+              ariaLabel="Memind mascot: heartbeat scope"
+            />
+          </div>
         </header>
 
         {/* BrainChat embed — BRAIN-P5 Task 3. Wrapper preserves the stable

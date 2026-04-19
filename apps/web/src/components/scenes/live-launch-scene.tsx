@@ -23,6 +23,7 @@
 import { useRef } from 'react';
 import { BrainChat } from '@/components/brain-chat';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
+import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
 
 export interface LiveLaunchSceneProps {
   /** Deterministic reveal for tests — applies `.scene--revealed` regardless
@@ -59,20 +60,35 @@ export function LiveLaunchScene({
       data-testid="live-launch-scene"
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <header className="flex flex-col gap-2">
-          <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
-            Operation · 1 / 3
-          </span>
-          <h2
-            id="launch-demo-heading"
-            className="font-[family-name:var(--font-sans-display)] text-[28px] font-semibold leading-[1.1] text-fg-emphasis"
+        <header className="flex items-start justify-between gap-6">
+          <div className="flex flex-col gap-2">
+            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
+              Operation · 1 / 3
+            </span>
+            <h2
+              id="launch-demo-heading"
+              className="font-[family-name:var(--font-sans-display)] text-[28px] font-semibold leading-[1.1] text-fg-emphasis"
+            >
+              Live Launch Demo
+            </h2>
+            <p className="max-w-[640px] font-[family-name:var(--font-sans-body)] text-[14px] leading-[1.5] text-fg-secondary">
+              Tell the Brain a theme. It deploys the token, writes lore chapter 1, and reports back
+              on-chain artifacts in seconds.
+            </p>
+          </div>
+          {/* Scope mascot — Creator persona is busy typing the token
+              metadata during a launch run. Static mood: the scene header
+              is not the place for a cycling animation. */}
+          <div
+            className="hidden shrink-0 sm:block"
+            data-testid="live-launch-mascot"
           >
-            Live Launch Demo
-          </h2>
-          <p className="max-w-[640px] font-[family-name:var(--font-sans-body)] text-[14px] leading-[1.5] text-fg-secondary">
-            Tell the Brain a theme. It deploys the token, writes lore chapter 1, and reports back
-            on-chain artifacts in seconds.
-          </p>
+            <PixelHumanGlyph
+              size={80}
+              mood="type-keyboard"
+              ariaLabel="Memind mascot: launch scope"
+            />
+          </div>
         </header>
 
         {/* BrainChat embed — BRAIN-P5 Task 1. The wrapper keeps the stable

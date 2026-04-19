@@ -12,6 +12,7 @@
 import { useRef } from 'react';
 import { BrainChat } from '@/components/brain-chat';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
+import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
 
 export interface LiveOrderSceneProps {
   readonly freeze?: boolean;
@@ -43,20 +44,33 @@ export function LiveOrderScene({
       data-testid="live-order-scene"
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <header className="flex flex-col gap-2">
-          <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
-            Operation · 2 / 3
-          </span>
-          <h2
-            id="order-shill-heading"
-            className="font-[family-name:var(--font-sans-display)] text-[28px] font-semibold leading-[1.1] text-fg-emphasis"
+        <header className="flex items-start justify-between gap-6">
+          <div className="flex flex-col gap-2">
+            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.5px] text-fg-tertiary">
+              Operation · 2 / 3
+            </span>
+            <h2
+              id="order-shill-heading"
+              className="font-[family-name:var(--font-sans-display)] text-[28px] font-semibold leading-[1.1] text-fg-emphasis"
+            >
+              Order a Shill
+            </h2>
+            <p className="max-w-[640px] font-[family-name:var(--font-sans-body)] text-[14px] leading-[1.5] text-fg-secondary">
+              Commission a shill. The Shiller persona drafts an on-voice tweet and posts from an aged
+              X account for 0.01 USDC.
+            </p>
+          </div>
+          {/* Scope mascot — Shiller persona shouts through a megaphone. */}
+          <div
+            className="hidden shrink-0 sm:block"
+            data-testid="live-order-mascot"
           >
-            Order a Shill
-          </h2>
-          <p className="max-w-[640px] font-[family-name:var(--font-sans-body)] text-[14px] leading-[1.5] text-fg-secondary">
-            Commission a shill. The Shiller persona drafts an on-voice tweet and posts from an aged
-            X account for 0.01 USDC.
-          </p>
+            <PixelHumanGlyph
+              size={80}
+              mood="megaphone"
+              ariaLabel="Memind mascot: order scope"
+            />
+          </div>
         </header>
 
         {/* BrainChat embed — BRAIN-P5 Task 2. Wrapper preserves the stable

@@ -36,4 +36,14 @@ describe('<LiveOrderScene /> contract', () => {
     expect(out).toMatch(/data-testid="brain-chat-slot-order"/);
     expect(out).toMatch(/aria-label="Brain chat"[^>]*data-scope="order"/);
   });
+
+  it('renders the scope mascot in the header with mood="megaphone"', () => {
+    const out = render();
+    // Order scope maps to the Shiller persona, which shouts on-voice
+    // tweets — mascot mood "megaphone".
+    expect(out).toMatch(/data-testid="live-order-mascot"/);
+    expect(out).toMatch(
+      /data-testid="live-order-mascot"[^]*?data-mood="megaphone"/,
+    );
+  });
 });

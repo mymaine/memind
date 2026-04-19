@@ -55,4 +55,14 @@ describe('<LiveLaunchScene /> contract', () => {
     // structural guarantee that the embed is wired with the right scope.
     expect(out).toMatch(/aria-label="Brain chat"[^>]*data-scope="launch"/);
   });
+
+  it('renders the scope mascot in the header with mood="type-keyboard"', () => {
+    const out = render();
+    // Launch scope maps to the Creator persona, which is busy typing
+    // metadata into the deploy call — mascot mood "type-keyboard".
+    expect(out).toMatch(/data-testid="live-launch-mascot"/);
+    expect(out).toMatch(
+      /data-testid="live-launch-mascot"[^]*?data-mood="type-keyboard"/,
+    );
+  });
 });

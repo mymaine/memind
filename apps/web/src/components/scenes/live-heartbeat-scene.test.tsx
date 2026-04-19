@@ -38,4 +38,15 @@ describe('<LiveHeartbeatScene /> contract', () => {
     expect(out).toMatch(/data-testid="brain-chat-slot-heartbeat"/);
     expect(out).toMatch(/aria-label="Brain chat"[^>]*data-scope="heartbeat"/);
   });
+
+  it('renders the scope mascot in the header with mood="walk-right"', () => {
+    const out = render();
+    // Heartbeat scope is a persistent ticker — mascot walks in place with
+    // mood "walk-right" (the only continuous-loop mood in the shipped set
+    // that reads as forward motion).
+    expect(out).toMatch(/data-testid="live-heartbeat-mascot"/);
+    expect(out).toMatch(
+      /data-testid="live-heartbeat-mascot"[^]*?data-mood="walk-right"/,
+    );
+  });
 });
