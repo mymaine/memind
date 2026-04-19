@@ -17,17 +17,17 @@
  * modal-open state + wires useRun). Mirrors the <HeaderView /> / <Header />
  * pattern already shipped on this repo.
  *
- * TODO(brain-runstate-thread): the client shell currently mounts in the
- * root layout with no runState. Threading per-page useRun() state into a
- * layout-level component requires a RunStateContext provider that wraps
- * <main> in each page, which the V4.7-P4 brief explicitly excludes
- * ("Do not refactor useRun"). The pure view already accepts `runState`,
- * so the wiring work is an <= 30 LoC follow-up whenever the context lands.
+ * Run state wiring: the client shell reads live state from the
+ * RunStateContext mounted in `app/layout.tsx`. Each page publishes via
+ * `usePublishRunState(state)`; the bar subscribes via `useRunState()` and
+ * lights up the active persona whenever a run is in flight. An explicit
+ * `runState` prop still overrides the context — tests pass a fixture
+ * state directly rather than mounting the provider.
  */
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 import type { RunState } from '@/hooks/useRun-state';
-import { IDLE_STATE } from '@/hooks/useRun-state';
+import { useRunState } from '@/hooks/useRunStateContext';
 import { BRAIN_ARCHITECTURE } from '@/lib/narrative-copy';
 import {
   deriveActivePersonaLabel,
@@ -134,7 +134,12 @@ export interface BrainStatusBarProps {
  */
 export function BrainStatusBar(props: BrainStatusBarProps): ReactElement {
   const [open, setOpen] = useState(false);
-  const runState = props.runState ?? IDLE_STATE;
+  // Explicit prop wins (tests pass a fixture) — otherwise subscribe to the
+  // layout-level RunStateContext. Routes that never mount the provider (or
+  // pages that never call usePublishRunState) read IDLE_STATE from the
+  // context's default, so the bar still renders `idle`.
+  const contextRunState = useRunState();
+  const runState = props.runState ?? contextRunState;
 
   return (
     <>

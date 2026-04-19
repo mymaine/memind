@@ -41,11 +41,16 @@ import { EvidenceScene } from '@/components/scenes/evidence-scene';
 import { DevLogsDrawer } from '@/components/dev-logs-drawer';
 import { Toast } from '@/components/toast';
 import { useRun } from '@/hooks/useRun';
+import { usePublishRunState } from '@/hooks/useRunStateContext';
 import { FOOTER_TAGLINE, HERO_PITCH_MARKET, HERO_SUBCOPY_MARKET } from '@/lib/narrative-copy';
 
 export default function MarketPage(): React.ReactElement {
   const hookResult = useRun();
   const { state } = hookResult;
+  // Publish into the layout-level RunStateContext so the <BrainStatusBar />
+  // mounted in app/layout.tsx reflects the live run (active persona +
+  // online/idle status). No-op outside a provider.
+  usePublishRunState(state);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const errorMessage = state.phase === 'error' ? state.error : null;

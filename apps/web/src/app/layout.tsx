@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { Header } from '@/components/header';
 import { BrainStatusBar } from '@/components/brain-status-bar';
+import { RunStateProvider } from '@/hooks/useRunStateContext';
 import './globals.css';
 
 // Inter drives `--font-sans-body` (design.md §3); system-ui already backs
@@ -29,19 +30,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body>
-        <Header />
         {/*
-         * BrainStatusBar mounts in the root layout so the Brain is visible on
-         * every route (decisions/2026-04-19-brain-agent-positioning.md §Scope
-         * explicitly forbids a dedicated /brain route). The bar + click-to-open
-         * modal is the entire "Brain is here" surface.
-         *
-         * It currently renders with no runState (idle). Threading the per-page
-         * useRun() state in would require a RunStateContext provider — deferred
-         * per the V4.7-P4 brief's "do not refactor useRun" guardrail.
+         * <RunStateProvider /> hoists the run-state context above both the
+         * <BrainStatusBar /> (sibling) and the routed <main> (children). Each
+         * page (/page.tsx, /market/page.tsx) publishes its `useRun()` state
+         * via `usePublishRunState(state)`; the bar subscribes via
+         * `useRunState()`. Routes without a useRun instance (e.g. /demo/glyph)
+         * leave the context at IDLE_STATE, and the bar stays `idle`.
          */}
-        <BrainStatusBar />
-        {children}
+        <RunStateProvider>
+          <Header />
+          <BrainStatusBar />
+          {children}
+        </RunStateProvider>
       </body>
     </html>
   );

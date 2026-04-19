@@ -30,11 +30,16 @@ import { EvidenceScene } from '@/components/scenes/evidence-scene';
 import { DevLogsDrawer } from '@/components/dev-logs-drawer';
 import { Toast } from '@/components/toast';
 import { useRun } from '@/hooks/useRun';
+import { usePublishRunState } from '@/hooks/useRunStateContext';
 import { FOOTER_TAGLINE } from '@/lib/narrative-copy';
 
 export default function HomePage(): React.ReactElement {
   const hookResult = useRun();
   const { state } = hookResult;
+  // Publish into the layout-level RunStateContext so the <BrainStatusBar />
+  // mounted in app/layout.tsx reflects the live run (active persona +
+  // online/idle status). No-op outside a provider.
+  usePublishRunState(state);
 
   // V2-P5 Task 6: surface 409 concurrency (and any other terminal) errors as
   // a toast. The page-level error banner previously sat next to ThemeInput;
