@@ -28,7 +28,7 @@ function findCommand(name: string): SlashCommand {
 describe('SLASH_COMMANDS registry', () => {
   it('exposes all seven documented commands with correct kind mapping', () => {
     const names = SLASH_COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['help', 'heartbeat', 'launch', 'lore', 'order', 'reset', 'status']);
+    expect(names).toEqual(['heartbeat', 'help', 'launch', 'lore', 'order', 'reset', 'status']);
 
     const serverCmds = SLASH_COMMANDS.filter((c) => c.kind === 'server')
       .map((c) => c.name)
