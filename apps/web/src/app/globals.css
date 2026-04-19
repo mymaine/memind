@@ -520,7 +520,17 @@ body:has(.logs-drawer.open) .toc {
   height: 100%;
   padding: 20px 0 10px;
 }
-.ch-hero-top,
+.ch-hero-top {
+  /*
+   * UAT 2026-04-20: group both mono readouts on the right edge instead
+   * of pinning `memind.system › boot` to the far left. Order in the JSX
+   * stays boot → chain so the boot badge reads first when scanned L-R.
+   */
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+}
 .ch-hero-bottom {
   display: flex;
   justify-content: space-between;
