@@ -1649,6 +1649,18 @@ code,
  * Markdown surfaces. Colours use the Terminal Cyber tokens so rendered
  * output sits naturally inside the assistant bubble.
  */
+/*
+ * UAT fix (2026-04-20): long transaction hashes / CIDs inside markdown
+ * (e.g. `0x85763d2587042984727f6fce8b31b35f2f17e22c3804aa7f9...`) were
+ * running past the 460px brain panel because browsers don't break
+ * all-hex strings mid-run. `overflow-wrap: anywhere` lets the paragraph
+ * break at any character when no soft-break exists; `word-break:
+ * break-word` provides a fallback for older engines.
+ */
+.brain-chat-markdown {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .brain-chat-markdown p {
   margin: 0 0 8px 0;
 }
@@ -1667,6 +1679,8 @@ code,
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 .brain-chat-markdown a:hover {
   filter: drop-shadow(0 0 4px currentColor);
@@ -1686,6 +1700,9 @@ code,
   border-radius: 3px;
   background: color-mix(in oklab, var(--accent) 10%, transparent);
   color: var(--accent-text, var(--accent));
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 .brain-chat-markdown pre {
   margin: 0 0 8px 0;
@@ -1694,6 +1711,9 @@ code,
   border: 1px solid var(--border-default);
   background: var(--bg-primary);
   overflow-x: auto;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 .brain-chat-markdown pre code {
   background: transparent;
