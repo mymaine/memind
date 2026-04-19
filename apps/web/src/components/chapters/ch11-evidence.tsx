@@ -280,12 +280,29 @@ export function Ch11Evidence({ p }: Ch11EvidenceProps): ReactElement {
                 {'meme \u00d7 mind \u00b7 four.meme ai sprint'}
               </div>
               <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
-                <button type="button" className="cta cta-primary">
+                <button
+                  type="button"
+                  className="cta cta-primary"
+                  onClick={() => {
+                    // Loop back to Ch1 Hero so the judge can re-watch or try
+                    // the live run themselves. Browser smooth-scroll provides
+                    // the easing; StickyStage re-routes activeIdx automatically.
+                    if (typeof window !== 'undefined') {
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                >
                   {'open the demo \u2192'}
                 </button>
-                <button type="button" className="cta cta-ghost">
+                <a
+                  className="cta cta-ghost"
+                  href="https://github.com/mymaine/hack-bnb-fourmeme-agent-creator"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
+                >
                   see the code
-                </button>
+                </a>
               </div>
             </div>
           </div>

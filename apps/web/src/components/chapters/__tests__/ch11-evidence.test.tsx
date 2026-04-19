@@ -76,6 +76,24 @@ describe('<Ch11Evidence> fallback behaviour', () => {
     expect(html).toContain('open the demo');
     expect(html).toContain('see the code');
   });
+
+  it('"see the code" renders as an external link to the repo (UAT issue #1)', () => {
+    // UAT: the two closing CTAs must be clickable. `see the code` opens a
+    // new tab to the repo on GitHub. Assert the <a> with target=_blank +
+    // rel=noopener exists; URL precise host is not the assertion target
+    // (URL is configurable at deploy), but it MUST be an absolute http(s).
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    expect(html).toMatch(/<a[^>]*href="https?:\/\/[^"]*github[^"]*"[^>]*target="_blank"/);
+    expect(html).toMatch(/rel="noopener noreferrer"/);
+  });
+
+  it('"open the demo" renders a button (clickable target for scroll-to-top)', () => {
+    // UAT: clicking `open the demo` loops back to Ch1 so the judge can
+    // re-watch or start a new run. SSR asserts the button is present; the
+    // onClick handler runs at runtime only (jsdom-less vitest can't fire it).
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    expect(html).toMatch(/<button[^>]*class="cta cta-primary"[^>]*>[^<]*open the demo/);
+  });
 });
 
 describe('<Ch11Evidence> real-data binding', () => {
