@@ -1,75 +1,43 @@
 /**
  * Unit tests for the pure helpers that back the shared <Header /> component.
  *
- * Covers AC-P4.7-1:
- *   - NAV_ITEMS has exactly the three entries spec'd (Home / Market / Evidence).
- *   - isActiveNavItem matches exact-route semantics for Home / Market.
- *   - Evidence anchor lights up on both `/` and `/market` because the anchor is
- *     duplicated on every scene where Evidence renders.
- *   - headerOuterClass toggles between transparent and backdrop-blur variants
- *     based on the scrolled boolean — the only piece of scroll plumbing we
- *     need to assert, since useScrollProgress is already covered elsewhere.
+ * Post-immersive-single-page P1 Task 3 / AC-ISP-4: the Header menu is slimmed
+ * down to a single primary nav entry (Home) + a GitHub icon link + the new
+ * <BrainIndicator /> mounted alongside them. The former Market + Evidence
+ * content anchors were removed — the sticky left-side SectionToc owns the
+ * section jumps on `md+`, and sub-md viewers see the slim nav only.
  */
 import { describe, it, expect } from 'vitest';
 import { NAV_ITEMS, isActiveNavItem, headerOuterClass } from './header-utils.js';
 
 describe('NAV_ITEMS', () => {
-  it('contains exactly three entries in spec order (Home / Market / Evidence)', () => {
-    expect(NAV_ITEMS).toHaveLength(3);
-    expect(NAV_ITEMS.map((i) => i.label)).toEqual(['Home', 'Market', 'Evidence']);
+  it('contains exactly one primary nav entry (Home) after the AC-ISP-4 slim-down', () => {
+    expect(NAV_ITEMS).toHaveLength(1);
+    expect(NAV_ITEMS.map((i) => i.label)).toEqual(['Home']);
   });
 
-  it('routes Home and Market as kind=route, Evidence as kind=anchor', () => {
-    const [home, market, evidence] = NAV_ITEMS;
+  it('routes Home as kind=route targeting `/`', () => {
+    const [home] = NAV_ITEMS;
     expect(home?.kind).toBe('route');
     expect(home?.href).toBe('/');
-    expect(market?.kind).toBe('route');
-    expect(market?.href).toBe('/market');
-    expect(evidence?.kind).toBe('anchor');
   });
 
-  it('only uses `#evidence` as the anchor fragment (no other hashes sneak in)', () => {
-    const anchors = NAV_ITEMS.filter((i) => i.kind === 'anchor').map((i) => i.href);
-    expect(anchors.every((h) => h.includes('#evidence'))).toBe(true);
-    const hashes = NAV_ITEMS.map((i) => {
-      const idx = i.href.indexOf('#');
-      return idx === -1 ? null : i.href.slice(idx);
-    }).filter((h): h is string => h !== null);
-    expect(hashes.every((h) => h === '#evidence')).toBe(true);
+  it('carries no anchor-kind entries (section jumps live in the SectionToc now)', () => {
+    const anchors = NAV_ITEMS.filter((i) => i.kind === 'anchor');
+    expect(anchors).toHaveLength(0);
   });
 });
 
 describe('isActiveNavItem', () => {
-  const [home, market, evidence] = NAV_ITEMS;
+  const [home] = NAV_ITEMS;
 
   it('lights Home when pathname is exactly `/`', () => {
     expect(isActiveNavItem(home!, '/')).toBe(true);
   });
 
-  it('does not light Home when pathname is `/market`', () => {
+  it('does not light Home on any other route', () => {
     expect(isActiveNavItem(home!, '/market')).toBe(false);
-  });
-
-  it('lights Market when pathname is `/market`', () => {
-    expect(isActiveNavItem(market!, '/market')).toBe(true);
-  });
-
-  it('does not light Market when pathname is `/`', () => {
-    expect(isActiveNavItem(market!, '/')).toBe(false);
-  });
-
-  it('lights Evidence on `/` (anchor exists on the Home scene)', () => {
-    expect(isActiveNavItem(evidence!, '/')).toBe(true);
-  });
-
-  it('lights Evidence on `/market` (anchor exists on the Market scene too)', () => {
-    expect(isActiveNavItem(evidence!, '/market')).toBe(true);
-  });
-
-  it('does not light any entry on an unknown route', () => {
     expect(isActiveNavItem(home!, '/foo')).toBe(false);
-    expect(isActiveNavItem(market!, '/foo')).toBe(false);
-    expect(isActiveNavItem(evidence!, '/foo')).toBe(false);
   });
 });
 
