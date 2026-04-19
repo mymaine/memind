@@ -644,11 +644,21 @@ code,
   background: rgba(0, 217, 146, 0.05);
 }
 .eq-final-card {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #050507;
+  /* UAT issue #6 — the original `background: var(--accent); color: #050507;`
+   * treatment read as a flat neon slab against the dark page, making MEMIND
+   * hard to focus on. Swap to an elevated dark surface with an accent
+   * border + glow; text glows accent green instead of becoming a near-black
+   * block. Matches the rest of the dashboard night-mode aesthetic and bumps
+   * the MEMIND glyph to the eye as the narrative climax. */
+  border: 2px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--accent);
   font-weight: 700;
   letter-spacing: 3px;
+  box-shadow:
+    0 0 24px rgba(0, 217, 146, 0.4),
+    inset 0 0 12px rgba(0, 217, 146, 0.08);
+  text-shadow: 0 0 10px rgba(0, 217, 146, 0.55);
 }
 .wallet-glyph {
   font-size: 38px;

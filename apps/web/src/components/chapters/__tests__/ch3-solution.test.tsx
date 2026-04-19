@@ -13,9 +13,15 @@
  *   - Wallet card hosts the `⌘` wallet glyph.
  *   - Final MEMIND card lives in an `.eq-final` slot.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Ch3Solution } from '../ch3-solution.js';
+
+// CSS-regression source for UAT issue #6 — lets us assert the shipped
+// .eq-final-card treatment without spinning jsdom.
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../../app/globals.css'), 'utf8');
 
 function countOnParts(html: string): number {
   return (html.match(/class="eq-part on"|class="eq-part eq-final on"/g) ?? []).length;
@@ -60,5 +66,27 @@ describe('<Ch3Solution>', () => {
     expect(html).toContain('what if every token had a');
     expect(html).toContain('brain');
     expect(html).toContain('it thinks. it talks. it pays. it shills itself.');
+  });
+
+  it('MEMIND final card ships glow treatment, not a flat neon slab (UAT issue #6)', () => {
+    // UAT: the old `background: var(--accent); color: #050507;` recipe read
+    // as an uncomfortable flat block. The fix swaps to an elevated dark
+    // surface with accent border + glow. Regression lock the new recipe
+    // so a future refactor cannot silently revert the visual treatment.
+    //
+    // Strip /* ... */ block comments before matching so doc comments that
+    // reference the old recipe don't falsely satisfy or reject the regex.
+    const stripped = GLOBALS_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = stripped.match(/\.eq-final-card\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    const body = rule?.[1] ?? '';
+    // Background must be a dark elevated surface, NOT raw accent.
+    expect(body).toMatch(/background:\s*var\(--bg-elevated\)/);
+    expect(body).not.toMatch(/background:\s*var\(--accent\)\s*;/);
+    // Text color flips to accent so MEMIND glows instead of turning dark.
+    expect(body).toMatch(/color:\s*var\(--accent\)/);
+    // Accent border + box-shadow glow are the contrast carriers.
+    expect(body).toMatch(/border:\s*2px\s+solid\s+var\(--accent\)/);
+    expect(body).toMatch(/box-shadow:/);
   });
 });
