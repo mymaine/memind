@@ -23,15 +23,6 @@ describe('txRefSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('still accepts BSC testnet (probe compatibility)', () => {
-    const result = txRefSchema.safeParse({
-      chain: 'bsc-testnet',
-      hash: '0xabc',
-      explorerUrl: 'https://testnet.bscscan.com/tx/0xabc',
-    });
-    expect(result.success).toBe(true);
-  });
-
   it('rejects unknown chain value', () => {
     const result = txRefSchema.safeParse({
       chain: 'mainnet',

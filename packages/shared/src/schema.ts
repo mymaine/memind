@@ -17,9 +17,10 @@ export type AgentId = z.infer<typeof agentIdSchema>;
 export const agentStatusSchema = z.enum(['idle', 'running', 'done', 'error']);
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 
-// `bsc-testnet` retained for probe compatibility only; production path is `bsc-mainnet`
-// per docs/decisions/2026-04-18-bsc-mainnet-pivot.md.
-export const chainSchema = z.enum(['bsc-mainnet', 'bsc-testnet', 'base-sepolia', 'ipfs']);
+// BSC testnet deliberately absent: TokenManager2 `0x5c95...762b` has no bytecode
+// on chainId 97. Production path is bsc-mainnet per
+// docs/decisions/2026-04-18-bsc-mainnet-pivot.md.
+export const chainSchema = z.enum(['bsc-mainnet', 'base-sepolia', 'ipfs']);
 export type Chain = z.infer<typeof chainSchema>;
 
 export const txRefSchema = z.object({
