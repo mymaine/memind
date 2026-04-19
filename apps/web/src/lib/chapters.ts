@@ -5,7 +5,7 @@
  * Only `id` + `title` live here — chapter React components are wired up in
  * `app/page.tsx` next to the placeholder/real comp mapping so this registry
  * stays dependency-free and tree-shake-friendly. TOC / Watermark /
- * ascii-backdrop / page.tsx all iterate this single source of truth so
+ * StickyStage / page.tsx all iterate this single source of truth so
  * reorders or renames only touch one file.
  *
  * Chapter order is spec-mandated (see AC-MSR-1 + Roadmap table); do not

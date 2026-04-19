@@ -1,6 +1,6 @@
 /**
  * Guards around CHAPTER_META — the single source of truth for the 11-chapter
- * order used by TOC / Watermark / StickyStage / ascii-backdrop. A stray
+ * order used by TOC / Watermark / StickyStage. A stray
  * reorder or typo here breaks anchor-jump + deep-link semantics, so we pin
  * the list + count explicitly.
  */

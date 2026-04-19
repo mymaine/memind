@@ -40,12 +40,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
          * activeIdx / progress props from the StickyStage engine, which are
          * only available inside the route component.
          *
-         * <AsciiBackdrop /> mount was removed by P0 Task 1 — the handoff
-         * explicitly calls for deleting the ASCII atmospheric layer so the
-         * new sticky-viewport radial-gradient carries the background treatment
-         * alone. The component file itself lives on at
-         * apps/web/src/components/ascii-backdrop.tsx for P1 contract deletion;
-         * we only drop the mount here.
+         * The P0 rebuild removed the legacy ASCII backdrop layer entirely
+         * (component + CSS). The sticky-viewport radial-gradient now owns the
+         * background treatment alone.
          */}
         <RunStateProvider>{children}</RunStateProvider>
       </body>
