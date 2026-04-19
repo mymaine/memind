@@ -22,7 +22,7 @@
  * `<section id>` / `sticky` / scene-integration assertions are gone: the
  * new engine owns all of those concerns internally.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import HomePage from './page.js';
 
@@ -44,6 +44,13 @@ describe('HomePage StickyStage shell', () => {
     expect(html).toMatch(/class="sticky-viewport"/);
   });
 
+  it('mounts the new TopBar header above the sticky stage', () => {
+    const html = renderHome();
+    expect(html).toMatch(/<header[^>]*class="topbar"/);
+    expect(html).toContain('MEMIND');
+    expect(html).toContain('TOKEN BRAIN');
+  });
+
   it('reserves CHAPTERS.length * SLOT_VH * vh + vh scroll pixels via inline height', () => {
     const html = renderHome();
     const expectedHeight = EXPECTED_CHAPTER_COUNT * SLOT_VH * SSR_DEFAULT_VH + SSR_DEFAULT_VH;
@@ -63,6 +70,30 @@ describe('HomePage StickyStage shell', () => {
     // empty aside from its own container.
     const html = renderHome();
     expect(html).not.toMatch(/data-chapter=/);
+  });
+
+  it('mounts <Ch1Hero /> for the hero slot once scrollY lands in its hold window', () => {
+    // scrollY is 0 under SSR (useScrollY guards on `window`), so no
+    // chapters render by default (all culled). Mock the hook to return a
+    // scrollY that puts slot 0 (hero) mid-hold, then re-import HomePage
+    // so the mock takes effect. The Ch1Hero mid-hold markup contains the
+    // canonical "memind.system › boot" string + the 3 chain pills, which
+    // never appear in <ChPlaceholder />.
+    vi.resetModules();
+    const SLOT_PX = SLOT_VH * SSR_DEFAULT_VH;
+    vi.doMock('@/hooks/useScrollY', () => ({
+      useScrollY: () => SLOT_PX * 0.5,
+    }));
+    return import('./page.js').then(({ default: Page }) => {
+      const html = renderToStaticMarkup(<Page />);
+      expect(html).toMatch(/data-chapter="hero"/);
+      expect(html).toContain('memind.system');
+      expect(html).toContain('BNB CHAIN');
+      expect(html).toContain('BASE L2');
+      expect(html).toContain('IPFS');
+      vi.doUnmock('@/hooks/useScrollY');
+      vi.resetModules();
+    });
   });
 
   it('still declares the 11 spec-mandated chapter ids in order via StickyStage props', () => {

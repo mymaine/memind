@@ -22,6 +22,7 @@
  * live run state to drive the ONLINE/IDLE badge.
  */
 import { useEffect, useState, type ReactElement } from 'react';
+import { Ch1Hero } from '@/components/chapters/ch1-hero';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
 import { useActiveChapter } from '@/hooks/useActiveChapter';
 import { useRun } from '@/hooks/useRun';
@@ -67,14 +68,19 @@ function makePlaceholderComp(label: string): StickyStageChapter['Comp'] {
   return PlaceholderComp;
 }
 
-// Chapter registry for the placeholder phase of the rebuild. Real chapter
-// components land in P0 Tasks 3-13; until then each slot gets a
-// <ChPlaceholder /> tile keyed off CHAPTER_META so the StickyStage engine
-// still has 11 tiles to cross-fade and the TOC / Watermark stay in sync.
+// Real chapter components land in P0 Tasks 3-13 one-by-one. Until then each
+// slot uses <ChPlaceholder /> keyed off CHAPTER_META so the StickyStage
+// engine still has 11 tiles to cross-fade and the TOC / Watermark stay in
+// sync. `REAL_COMPS` is the escape hatch — its entries override the
+// placeholder for any chapter whose real component has shipped.
+const REAL_COMPS: Partial<Record<string, StickyStageChapter['Comp']>> = {
+  hero: Ch1Hero,
+};
+
 const CHAPTERS: readonly StickyStageChapter[] = CHAPTER_META.map((m, idx) => ({
   id: m.id,
   title: m.title,
-  Comp: makePlaceholderComp(`CH${String(idx + 1).padStart(2, '0')} ${m.title}`),
+  Comp: REAL_COMPS[m.id] ?? makePlaceholderComp(`CH${String(idx + 1).padStart(2, '0')} ${m.title}`),
 }));
 
 export default function HomePage(): ReactElement {
