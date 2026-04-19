@@ -149,22 +149,36 @@ body {
 }
 
 /*
- * Scene reveal (AC-P4.7-8). Every top-level <section> in the 6-scene skeleton
- * carries `.scene`; useScrollReveal adds `.scene--revealed` the first time the
- * section enters the viewport (and never removes it). The reveal is one-way
- * by design so re-scrolling past a seen section does not re-animate.
+ * Scene reveal — "emerge in place" (immersive-single-page P1 Task 6 /
+ * AC-ISP-7). Every top-level <section> in the immersive surface carries
+ * `.scene`; useScrollReveal adds `.scene--revealed` the first time the
+ * section enters the viewport (and never removes it). The reveal is one-
+ * way by design so re-scrolling past a seen section does not re-animate.
+ *
+ * The previous implementation used `translateY(24px)` so sections visibly
+ * slid up from below. Evaluator feedback in the immersive-single-page
+ * pivot (spec §問題 bullet 4) is that the vertical slide reads as "the
+ * page is scrolling" rather than "content is emerging at its final
+ * position". The new formula keeps the element pinned in place and fades
+ * it in while the scale + blur resolve toward their neutral state:
+ *   - opacity: 0 → 1
+ *   - transform: scale(0.98) → scale(1)  — avoids positional drift
+ *   - filter: blur(4px) → blur(0)         — cements the "resolving" feel
  */
 .scene {
   opacity: 0;
-  transform: translateY(24px);
+  transform: scale(0.98);
+  filter: blur(4px);
   transition:
-    opacity 350ms var(--ease-out),
-    transform 350ms var(--ease-out);
+    opacity 400ms var(--ease-out),
+    transform 400ms var(--ease-out),
+    filter 400ms var(--ease-out);
 }
 
 .scene--revealed {
   opacity: 1;
-  transform: none;
+  transform: scale(1);
+  filter: blur(0);
 }
 
 /*
@@ -449,11 +463,17 @@ body {
   }
 
   /* Force scenes visible regardless of revealed state — the global rule above
-     only zeros transition-duration; the initial opacity/transform still applies
-     and would hide scenes from reduced-motion users until scroll fired. */
-  .scene {
+     only zeros transition-duration; the initial opacity/transform/filter
+     would otherwise hide scenes from reduced-motion users until scroll fired.
+     Per AC-ISP-7 we disable every part of the "emerge in place" formula
+     (opacity / transform / filter / transition) so reduced-motion users see
+     the final composed frame with no animation state at all. */
+  .scene,
+  .scene--revealed {
     opacity: 1 !important;
     transform: none !important;
+    filter: none !important;
+    transition: none !important;
   }
 
   /* Solution cards: no lift, no accent border. Hover only swaps the surface
