@@ -116,17 +116,19 @@ describe('createInvokeCreatorTool', () => {
   });
 
   it('forwards {theme} to creatorPersona.run and returns its output verbatim', async () => {
-    const run = vi.fn(async () => ({
-      tokenAddr: FAKE_TOKEN_ADDR,
-      tokenDeployTx: FAKE_TX,
-      loreIpfsCid: 'bafkrei-out',
-      metadata: {
-        name: 'HBNB2026-Alpha',
-        symbol: 'HBNB2026-ALP',
-        description: 'test',
-        imageLocalPath: '/tmp/alpha.png',
-      },
-    }));
+    const run = vi.fn(
+      async (_input: CreatorPersonaInput, _ctx: PersonaRunContext): Promise<CreatorResult> => ({
+        tokenAddr: FAKE_TOKEN_ADDR,
+        tokenDeployTx: FAKE_TX,
+        loreIpfsCid: 'bafkrei-out',
+        metadata: {
+          name: 'HBNB2026-Alpha',
+          symbol: 'HBNB2026-ALP',
+          description: 'test',
+          imageLocalPath: '/tmp/alpha.png',
+        },
+      }),
+    );
     const persona = makeCreatorPersona(run);
     const client = fakeClient();
     const registry = fakeRegistry();
@@ -183,13 +185,18 @@ describe('createInvokeNarratorTool', () => {
   });
 
   it('enriches input from resolveTokenMeta and delegates to narratorPersona.run', async () => {
-    const run = vi.fn(async () => ({
-      tokenAddr: FAKE_TOKEN_ADDR,
-      chapterNumber: 3,
-      ipfsHash: 'bafkrei-ch3',
-      ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch3',
-      chapterText: 'ch3 body',
-    }));
+    const run = vi.fn(
+      async (
+        _input: NarratorPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<NarratorPersonaOutput> => ({
+        tokenAddr: FAKE_TOKEN_ADDR,
+        chapterNumber: 3,
+        ipfsHash: 'bafkrei-ch3',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch3',
+        chapterText: 'ch3 body',
+      }),
+    );
     const persona = makeNarratorPersona(run);
     const client = fakeClient();
     const registry = fakeRegistry();
@@ -266,16 +273,21 @@ describe('createInvokeShillerTool', () => {
   });
 
   it('enriches with resolveOrder + threads postShillForTool to shillerPersona.run', async () => {
-    const run = vi.fn(async () => ({
-      orderId: 'order-42',
-      tokenAddr: FAKE_TOKEN_ADDR,
-      decision: 'shill' as const,
-      tweetId: 'tid-42',
-      tweetUrl: 'https://x.com/stub/status/tid-42',
-      tweetText: 'curious tale of HBNB',
-      postedAt: '2026-04-19T01:00:00.000Z',
-      toolCalls: [],
-    }));
+    const run = vi.fn(
+      async (
+        _input: ShillerPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<ShillerPersonaOutput> => ({
+        orderId: 'order-42',
+        tokenAddr: FAKE_TOKEN_ADDR,
+        decision: 'shill',
+        tweetId: 'tid-42',
+        tweetUrl: 'https://x.com/stub/status/tid-42',
+        tweetText: 'curious tale of HBNB',
+        postedAt: '2026-04-19T01:00:00.000Z',
+        toolCalls: [],
+      }),
+    );
     const persona = makeShillerPersona(run);
     const postShillForTool = fakePostShillForTool();
     const resolveOrder = vi.fn(() => ({
@@ -350,14 +362,19 @@ describe('createInvokeHeartbeatTickTool', () => {
   });
 
   it('constructs persona input from tool config and returns the tick snapshot', async () => {
-    const run = vi.fn(async () => ({
-      lastTickAt: '2026-04-19T00:00:00.000Z',
-      lastTickId: 'tick_abc',
-      successCount: 1,
-      errorCount: 0,
-      skippedCount: 0,
-      lastError: null,
-    }));
+    const run = vi.fn(
+      async (
+        _input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => ({
+        lastTickAt: '2026-04-19T00:00:00.000Z',
+        lastTickId: 'tick_abc',
+        successCount: 1,
+        errorCount: 0,
+        skippedCount: 0,
+        lastError: null,
+      }),
+    );
     const persona = makeHeartbeatPersona(run);
     const client = fakeClient();
     const registry = fakeRegistry();
