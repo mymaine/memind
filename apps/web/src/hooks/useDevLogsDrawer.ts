@@ -5,7 +5,8 @@
  *
  * The drawer has two pieces of state:
  *   - `open`: collapsed (56px header) vs expanded (40vh).
- *   - `tab`:  which of the 6 engineering panels is active.
+ *   - `tab`:  which of the 7 engineering panels is active (BRAIN-P5
+ *            appended the `panels` fallback tab).
  *
  * Both persist across reloads through `localStorage`. The spec's risk
  * section mandates that closing the drawer must NOT unmount tab contents
@@ -16,7 +17,7 @@
  *
  * Architecture follows the `useReducedMotion` / `useScrollReveal` family:
  *   - `routeKeyToAction`: pure mapping from a keyboard event to a drawer
- *     action. Drives the `D` / `1-6` / `Esc` shortcuts and the
+ *     action. Drives the `D` / `1-7` / `Esc` shortcuts and the
  *     activeElement guard.
  *   - `createDevLogsController`: pure controller backed by an injected
  *     Storage-shaped store + subscriber list. All state mutations go

@@ -172,7 +172,21 @@ export function BrainDetailModalView(props: BrainDetailModalViewProps): ReactEle
           </ul>
         </section>
 
-        {/* ── 4. Footer ──────────────────────────────────────────────── */}
+        {/* ── 4. Open full chat CTA (BRAIN-P5 Task 5) ────────────────────
+            The anchor jumps the scroll surface to the chat-driven Launch
+            demo so the user lands at the primary conversational surface.
+            Closing the modal is delegated to onClose so Esc + outside-click
+            behaviour stays symmetrical with the rest of the dialog. */}
+        <a
+          href="#launch-demo"
+          onClick={onClose}
+          data-testid="brain-detail-open-full-chat"
+          className="inline-flex items-center justify-center rounded-[var(--radius-default)] border border-accent bg-accent px-4 py-2 font-[family-name:var(--font-sans-body)] text-[13px] font-medium text-bg-primary transition-opacity hover:opacity-90"
+        >
+          Open full chat
+        </a>
+
+        {/* ── 5. Footer ──────────────────────────────────────────────── */}
         <footer className="border-t border-border-default pt-3 font-[family-name:var(--font-mono)] text-[10px] text-fg-tertiary md:text-[11px]">
           Decision: {DECISION_DOC}
         </footer>

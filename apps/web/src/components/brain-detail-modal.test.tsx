@@ -132,4 +132,24 @@ describe('<BrainDetailModalView />', () => {
     const dashes = out.match(/—/g) ?? [];
     expect(dashes.length).toBeGreaterThanOrEqual(3);
   });
+
+  it('renders an Open full chat anchor pointing at #launch-demo (BRAIN-P5 Task 5)', () => {
+    // Clicking the button should jump the scroll surface to the chat-driven
+    // Launch demo section so the Brain indicator hand-off lands the user at
+    // the primary conversational surface. A plain anchor with href="#launch-demo"
+    // is the simplest delivery — the browser handles smooth-scroll via the
+    // global CSS and the modal's Esc/outside-click behaviour closes it on
+    // blur. Assert the anchor's href + visible copy here; the click-to-close
+    // wiring is covered by the shell tests.
+    const out = renderToStaticMarkup(
+      <BrainDetailModalView
+        open={true}
+        onClose={NO_OP}
+        loreCount={null}
+        orderCount={null}
+        tickCount={null}
+      />,
+    );
+    expect(out).toMatch(/<a[^>]+href="#launch-demo"[^>]*>[^<]*Open full chat/i);
+  });
 });

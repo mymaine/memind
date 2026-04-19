@@ -5,11 +5,13 @@
  *
  * A bottom-sticky container that:
  *   - Collapses to a 56px header bar by default.
- *   - Expands to 40vh with a 6-tab tablist (Logs / Arch / Orders / Ledger
- *     / Heartbeat / Tx) containing the existing engineering panels
- *     untouched (they are imported, not re-implemented).
+ *   - Expands to 40vh with a 7-tab tablist (Logs / Arch / Orders / Ledger
+ *     / Heartbeat / Tx / Panels) containing the existing engineering
+ *     panels untouched (they are imported, not re-implemented). BRAIN-P5
+ *     appended the Panels tab to host LaunchPanel + OrderPanel as an
+ *     engineering fallback for the chat-driven Live Demo surfaces.
  *   - Persists `{open, tab}` to localStorage via `useDevLogsDrawer`.
- *   - Responds to `D` (toggle), `1..6` (pick tab), and `Esc` (close),
+ *   - Responds to `D` (toggle), `1..7` (pick tab), and `Esc` (close),
  *     with an activeElement guard so typing in a form field is safe.
  *
  * Mount contract (spec §Risk): tab contents are ALWAYS mounted, even
