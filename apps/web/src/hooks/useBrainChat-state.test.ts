@@ -100,6 +100,27 @@ describe('buildUserTurn + turnToApiMessage — send primitive (scenario 1)', () 
       content: 'Launch a meme about BNB Chain 2026.',
     });
   });
+
+  it('normalises an assistant turn to the API ChatMessage shape (UAT multi-turn regression)', () => {
+    // The hook's `send` path `[...priorTurns, userTurn].map(turnToApiMessage)`
+    // is the pipeline that produces the `messages` array POSTed to the
+    // server. Assistant turns carry the Brain's finished Markdown reply in
+    // `content`; the API consumer (server runtime) treats this as real
+    // multi-turn history so the LLM can reread prior factual outputs
+    // (deployed addresses, CIDs, tweet URLs). This test pins the shape so
+    // a future reducer refactor cannot silently drop the assistant content
+    // from the wire payload, re-introducing the "brain forgets" bug.
+    const assistant: BrainChatTurn = {
+      id: 'a1',
+      role: 'assistant',
+      content: 'Deployed HBNB2026-CHAIN at 0xabc.',
+      brainEvents: [],
+    };
+    expect(turnToApiMessage(assistant)).toEqual({
+      role: 'assistant',
+      content: 'Deployed HBNB2026-CHAIN at 0xabc.',
+    });
+  });
 });
 
 describe('applyAssistantDelta — brain agent accumulates into content (scenario 2)', () => {

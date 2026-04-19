@@ -269,6 +269,134 @@ describe('runAgentLoop', () => {
     expect(logs.some((e) => e.tool === 'runtime' && e.message.includes('loop end'))).toBe(true);
   });
 
+  // ─── Multi-turn context regression (UAT 2026-04-20) ──────────────────────
+  //
+  // The Brain meta-agent feeds the runtime a multi-turn transcript via
+  // `initialMessages`. These tests pin that the runtime:
+  //   - forwards the full chain to Anthropic's `messages.stream` verbatim
+  //     (so the model sees real `role: 'assistant'` turns, not a folded
+  //     string that would bury the prior factual outputs)
+  //   - rejects the `userInput` + `initialMessages` combo (caller bug)
+  //   - rejects a final non-user entry (Anthropic requires user-last).
+  // -------------------------------------------------------------------------
+  describe('initialMessages (multi-turn seeding)', () => {
+    it('forwards the full prior transcript to messages.stream on turn 1', async () => {
+      const registry = new ToolRegistry();
+      const { client, stream, snapshots } = fakeClient([textStream('0xdeadbeef')]);
+
+      const priorTranscript = [
+        { role: 'user' as const, content: '/launch a BNB 2026 meme' },
+        {
+          role: 'assistant' as const,
+          content: 'Deployed HBNB2026-CHAIN at 0xabcdef0123456789abcdef0123456789abcdef01.',
+        },
+        { role: 'user' as const, content: 'what was the tokenAddr you just gave me?' },
+      ];
+
+      const result = await runAgentLoop({
+        client,
+        model: 'test-model',
+        registry,
+        systemPrompt: 'test',
+        initialMessages: priorTranscript,
+      });
+
+      expect(stream).toHaveBeenCalledTimes(1);
+      const firstCallMessages = snapshots[0]?.messages ?? [];
+      // The runtime must hand Anthropic the full three-turn chain so the
+      // model can read its own prior assistant reply verbatim — the bug
+      // this regression guards against.
+      expect(firstCallMessages).toEqual(priorTranscript);
+      expect(result.finalText).toBe('0xdeadbeef');
+    });
+
+    it('rejects passing both userInput and initialMessages', async () => {
+      const registry = new ToolRegistry();
+      const { client } = fakeClient([textStream('never used')]);
+      await expect(
+        runAgentLoop({
+          client,
+          model: 'test-model',
+          registry,
+          systemPrompt: 'test',
+          userInput: 'foo',
+          initialMessages: [{ role: 'user', content: 'foo' }],
+        }),
+      ).rejects.toThrow(/OR `initialMessages`, not both/);
+    });
+
+    it('rejects an initialMessages whose final entry is not role="user"', async () => {
+      const registry = new ToolRegistry();
+      const { client } = fakeClient([textStream('never used')]);
+      await expect(
+        runAgentLoop({
+          client,
+          model: 'test-model',
+          registry,
+          systemPrompt: 'test',
+          initialMessages: [
+            { role: 'user', content: 'hi' },
+            { role: 'assistant', content: 'hello' },
+          ],
+        }),
+      ).rejects.toThrow(/final entry in `initialMessages` must have role="user"/);
+    });
+
+    it('rejects when neither userInput nor initialMessages is supplied', async () => {
+      const registry = new ToolRegistry();
+      const { client } = fakeClient([textStream('never used')]);
+      await expect(
+        runAgentLoop({
+          client,
+          model: 'test-model',
+          registry,
+          systemPrompt: 'test',
+        }),
+      ).rejects.toThrow(/supply either `userInput` or a non-empty `initialMessages`/);
+    });
+
+    it('keeps appending turns across tool_use rounds even when seeded with initialMessages', async () => {
+      // Simulates the realistic Brain loop: turn 1 sees a multi-turn
+      // transcript + calls a tool; the tool_result must be appended to the
+      // SAME running messages array, so turn 2's call shows the whole
+      // history (seed turns + assistant tool_use turn + tool_result).
+      const registry = new ToolRegistry();
+      const addSpy = vi.fn(async (i: AddInput) => ({ sum: i.a + i.b }));
+      registry.register(makeAddTool(addSpy) as unknown as AnyAgentTool);
+
+      const { client, stream, snapshots } = fakeClient([
+        toolUseStream([{ id: 'tu_1', name: 'add', input: { a: 40, b: 2 } }]),
+        textStream('answer is 42'),
+      ]);
+
+      await runAgentLoop({
+        client,
+        model: 'test-model',
+        registry,
+        systemPrompt: 'test',
+        initialMessages: [
+          { role: 'user', content: 'earlier context' },
+          { role: 'assistant', content: 'ok' },
+          { role: 'user', content: 'add 40 and 2' },
+        ],
+      });
+
+      expect(stream).toHaveBeenCalledTimes(2);
+      const turn1Messages = snapshots[0]?.messages ?? [];
+      expect(turn1Messages).toHaveLength(3);
+      const turn2Messages = snapshots[1]?.messages ?? [];
+      // After turn 1 the runtime appends the assistant tool_use turn + the
+      // synthetic user tool_result turn, so turn 2 sees 5 entries.
+      expect(turn2Messages).toHaveLength(5);
+      const turn2Last = turn2Messages[4] as {
+        role: string;
+        content: Array<{ type: string }>;
+      };
+      expect(turn2Last.role).toBe('user');
+      expect(turn2Last.content[0]?.type).toBe('tool_result');
+    });
+  });
+
   it('handles parallel tool_use blocks in a single turn', async () => {
     const registry = new ToolRegistry();
     const addSpy = vi.fn(async (i: AddInput) => ({ sum: i.a + i.b }));

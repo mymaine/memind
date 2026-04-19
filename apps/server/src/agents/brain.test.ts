@@ -143,4 +143,86 @@ describe('runBrainAgent', () => {
     const call = spy.mock.calls[0]?.[0];
     expect(call?.systemPrompt).toBe(BRAIN_SYSTEM_PROMPT);
   });
+
+  // ─── Multi-turn context regression (UAT 2026-04-20) ──────────────────────
+  //
+  // Before the fix `runBrainAgent` flattened the transcript into a single
+  // `userInput` string ("[user] foo\n[assistant] bar\n[user] baz") which
+  // Anthropic treated as one quoted block. The model often lost the prior
+  // assistant's factual output (deployed addresses, CIDs) on the follow-up
+  // turn — the reported "brain forgets the token I just launched" bug.
+  //
+  // These tests pin that the loop now receives the transcript through
+  // Anthropic's native `initialMessages` path AND that `userInput` is never
+  // set simultaneously (the runtime rejects that combo).
+  // -------------------------------------------------------------------------
+  describe('multi-turn context regression', () => {
+    it('forwards a multi-turn transcript as initialMessages (not userInput)', async () => {
+      const spy = vi.fn(async (_p: RunAgentLoopParams) => makeFakeLoopResult());
+      const params = baseParams(spy);
+      params.messages = [
+        { role: 'user', content: '/launch a BNB 2026 meme' },
+        {
+          role: 'assistant',
+          content: 'Deployed HBNB2026-CHAIN at 0xabcdef0123456789abcdef0123456789abcdef01.',
+        },
+        { role: 'user', content: 'what was the tokenAddr you just gave me?' },
+      ];
+      await runBrainAgent(params);
+
+      const call = spy.mock.calls[0]?.[0];
+      expect(call).toBeDefined();
+      // The runtime sees the full multi-turn chain, not a folded string.
+      expect(call!.userInput).toBeUndefined();
+      expect(call!.initialMessages).toBeDefined();
+      expect(call!.initialMessages!.length).toBe(3);
+      expect(call!.initialMessages![0]).toEqual({
+        role: 'user',
+        content: '/launch a BNB 2026 meme',
+      });
+      // The assistant's prior turn is preserved verbatim so the LLM can read
+      // the deployed token address from its OWN earlier reply — the bug this
+      // regression guards against.
+      expect(call!.initialMessages![1]).toEqual({
+        role: 'assistant',
+        content: 'Deployed HBNB2026-CHAIN at 0xabcdef0123456789abcdef0123456789abcdef01.',
+      });
+      expect(call!.initialMessages![2]).toEqual({
+        role: 'user',
+        content: 'what was the tokenAddr you just gave me?',
+      });
+    });
+
+    it('rejects a transcript whose final turn is not role="user"', async () => {
+      const spy = vi.fn(async (_p: RunAgentLoopParams) => makeFakeLoopResult());
+      const params = baseParams(spy);
+      params.messages = [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' },
+      ];
+      await expect(runBrainAgent(params)).rejects.toThrow(/final chat message/);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('rejects an empty messages array', async () => {
+      const spy = vi.fn(async (_p: RunAgentLoopParams) => makeFakeLoopResult());
+      const params = baseParams(spy);
+      params.messages = [];
+      await expect(runBrainAgent(params)).rejects.toThrow(/must not be empty/);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('forwards a single-turn transcript as a 1-entry initialMessages', async () => {
+      // The Brain should treat a first-turn send exactly like the multi-turn
+      // path — one user message in `initialMessages`, `userInput` unset. This
+      // keeps the runtime's input-shape contract stable across turn counts.
+      const spy = vi.fn(async (_p: RunAgentLoopParams) => makeFakeLoopResult());
+      await runBrainAgent(baseParams(spy));
+      const call = spy.mock.calls[0]?.[0];
+      expect(call?.userInput).toBeUndefined();
+      expect(call?.initialMessages).toEqual([
+        { role: 'user', content: 'launch a meme about BNB 2026' },
+      ]);
+    });
+  });
 });
