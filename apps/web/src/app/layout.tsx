@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { AsciiBackdrop } from '@/components/ascii-backdrop';
 import { Header } from '@/components/header';
 import { RunStateProvider } from '@/hooks/useRunStateContext';
 import './globals.css';
@@ -41,6 +42,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
          * immersive-single-page P1 Task 3 / AC-ISP-6 — the Brain surface
          * now lives inside the Header alongside the nav.
          */}
+        {/*
+         * <AsciiBackdrop /> is the fixed-position atmospheric layer
+         * (immersive-single-page P2 Task 1 / AC-ISP-8). It renders once at
+         * the top of <body> with `z-index: -1` + `pointer-events: none` so
+         * no UI layer (Header, Drawer, Toast, modals) is ever occluded and
+         * no click is intercepted. Mount order relative to the context
+         * provider does not matter — the backdrop is self-contained.
+         */}
+        <AsciiBackdrop />
         <RunStateProvider>
           <Header />
           {children}
