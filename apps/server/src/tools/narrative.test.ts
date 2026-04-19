@@ -142,7 +142,9 @@ describe('createNarrativeTool.execute', () => {
     await expect(tool.execute({ theme: 'broken parser' })).rejects.toThrow(/not valid JSON/);
   });
 
-  it('throws when Claude omits the HBNB2026- prefix on name', async () => {
+  it('coerces missing HBNB2026- prefix on name rather than throwing', async () => {
+    // Coerce helper re-attaches the prefix so a common LLM slip (dropping the
+    // literal "HBNB2026-" prefix) no longer breaks the whole Creator flow.
     const client = mockAnthropic(
       JSON.stringify({
         name: 'PlainCoin',
@@ -151,7 +153,80 @@ describe('createNarrativeTool.execute', () => {
       }),
     );
     const tool = createNarrativeTool({ client });
-    await expect(tool.execute({ theme: 'missing prefix' })).rejects.toThrow();
+    const out = await tool.execute({ theme: 'missing prefix' });
+    expect(out.name).toBe('HBNB2026-PlainCoin');
+  });
+
+  it('coerces over-long symbol suffix to 8 chars max', async () => {
+    // LLM seen emitting `HBNB2026-SHIBANAUT` (9-char suffix). Schema limit is
+    // 8; coerce trims to salvage the run instead of bubbling a zod error.
+    const client = mockAnthropic(
+      JSON.stringify({
+        name: 'HBNB2026-Shiba',
+        symbol: 'HBNB2026-SHIBANAUT',
+        description: 'shiba on mars',
+      }),
+    );
+    const tool = createNarrativeTool({ client });
+    const out = await tool.execute({ theme: 'shiba astronaut mars' });
+    expect(out.symbol).toBe('HBNB2026-SHIBANAU');
+  });
+
+  it('coerces lowercase + special chars in symbol suffix', async () => {
+    const client = mockAnthropic(
+      JSON.stringify({
+        name: 'HBNB2026-Neko',
+        symbol: 'HBNB2026-ne_ko!',
+        description: 'cyberpunk neko',
+      }),
+    );
+    const tool = createNarrativeTool({ client });
+    const out = await tool.execute({ theme: 'cyberpunk neko' });
+    expect(out.symbol).toBe('HBNB2026-NEKO');
+  });
+
+  it('coerces missing prefix on symbol', async () => {
+    const client = mockAnthropic(
+      JSON.stringify({
+        name: 'HBNB2026-Coin',
+        symbol: 'SHIBA',
+        description: 'no prefix on symbol',
+      }),
+    );
+    const tool = createNarrativeTool({ client });
+    const out = await tool.execute({ theme: 'no prefix' });
+    expect(out.symbol).toBe('HBNB2026-SHIBA');
+  });
+
+  it('falls back to MEME when symbol body strips to empty', async () => {
+    // All-punctuation suffix — strip leaves nothing; fallback keeps zod's
+    // min-length happy so the Creator flow still proceeds.
+    const client = mockAnthropic(
+      JSON.stringify({
+        name: 'HBNB2026-Mystery',
+        symbol: 'HBNB2026-___',
+        description: 'empty suffix fallback',
+      }),
+    );
+    const tool = createNarrativeTool({ client });
+    const out = await tool.execute({ theme: 'all punctuation' });
+    expect(out.symbol).toBe('HBNB2026-MEME');
+  });
+
+  it('clamps over-long name suffix to fit the 20-char cap', async () => {
+    // four.meme hard-caps name at 20 chars; prefix is 9 chars so suffix must
+    // be <= 11. A 15-char suffix gets trimmed without dropping the prefix.
+    const client = mockAnthropic(
+      JSON.stringify({
+        name: 'HBNB2026-SupremeLeaderCoin',
+        symbol: 'HBNB2026-SLC',
+        description: 'over-long name body',
+      }),
+    );
+    const tool = createNarrativeTool({ client });
+    const out = await tool.execute({ theme: 'over long name' });
+    expect(out.name.length).toBeLessThanOrEqual(20);
+    expect(out.name.startsWith('HBNB2026-')).toBe(true);
   });
 
   it('rejects invalid input via zod before any network call', async () => {

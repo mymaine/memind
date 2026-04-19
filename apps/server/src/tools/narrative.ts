@@ -22,6 +22,43 @@ import { type AnthropicMessagesClient, extractText, parseJsonFromText } from './
 
 const HBNB_PREFIX = 'HBNB2026-';
 
+/**
+ * LLMs occasionally ignore the system-prompt constraints (e.g. return a
+ * 9-char suffix like `SHIBANAUT`, lowercase letters, or drop the
+ * `HBNB2026-` prefix entirely). Rather than bubble the zod error up to the
+ * dashboard — which blocks the whole Creator flow and kills the demo — we
+ * coerce the model output into the canonical shape before validation. Only
+ * deterministic, content-preserving edits: case up, strip disallowed chars,
+ * clamp to 8-char suffix, re-attach prefix. A completely empty body falls
+ * back to `MEME` so zod's min-length check still has something to bite on.
+ */
+function coerceSymbolValue(raw: unknown): unknown {
+  if (typeof raw !== 'string') return raw;
+  let body = raw.trim();
+  if (body.startsWith(HBNB_PREFIX)) body = body.slice(HBNB_PREFIX.length);
+  body = body.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (body.length > 8) body = body.slice(0, 8);
+  if (body.length < 1) body = 'MEME';
+  return `${HBNB_PREFIX}${body}`;
+}
+
+/**
+ * Mirror guard for `name`. Name allows mixed-case letters + digits + a few
+ * punctuation marks per four.meme rules, but has a hard 20-char ceiling. We
+ * only fix the two most common LLM slips: missing prefix and over-long
+ * suffix. Leave the body as the model returned it so the human-readable
+ * narrative survives.
+ */
+function coerceNameValue(raw: unknown): unknown {
+  if (typeof raw !== 'string') return raw;
+  let body = raw.trim();
+  if (body.startsWith(HBNB_PREFIX)) body = body.slice(HBNB_PREFIX.length);
+  const suffixMax = NAME_MAX - HBNB_PREFIX.length;
+  if (body.length > suffixMax) body = body.slice(0, suffixMax);
+  if (body.length < 1) body = 'Meme';
+  return `${HBNB_PREFIX}${body}`;
+}
+
 // four.meme create-api hard-fails with `"size must be between 0 and 20"` above
 // 20 chars on `name`. The `HBNB2026-` prefix alone is 9 chars, leaving 11 for
 // the suffix — keep names terse.
@@ -124,9 +161,13 @@ export function createNarrativeTool(
       }
 
       const text = extractText(response);
-      const parsed = parseJsonFromText(text);
-      // Final output-shape validation — also catches missing HBNB2026- prefix
-      // even if the LLM ignored the system prompt rule.
+      const parsed = parseJsonFromText(text) as Record<string, unknown>;
+      // Coerce common LLM slips before zod so a 9-char suffix or missing
+      // prefix does not blow up the whole Creator flow. See helpers above.
+      if ('symbol' in parsed) parsed.symbol = coerceSymbolValue(parsed.symbol);
+      if ('name' in parsed) parsed.name = coerceNameValue(parsed.name);
+      // Final output-shape validation — catches anything the coercers miss
+      // (wrong types, absent fields, description too long, etc.).
       return narrativeOutputSchema.parse(parsed);
     },
   };
