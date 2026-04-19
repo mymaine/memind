@@ -41,6 +41,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { HeroScene } from '@/components/scenes/hero-scene';
 import { ProblemScene } from '@/components/scenes/problem-scene';
 import { SolutionScene } from '@/components/scenes/solution-scene';
+import { BrainArchitectureScene } from '@/components/scenes/brain-architecture-scene';
 import { VisionScene } from '@/components/scenes/vision-scene';
 import { EvidenceScene } from '@/components/scenes/evidence-scene';
 import { DevLogsDrawer } from '@/components/dev-logs-drawer';
@@ -101,9 +102,12 @@ export default function HomePage(): React.ReactElement {
           <section id="solution" className={wrapperClass}>
             <SolutionScene />
           </section>
-          {/* TODO(immersive-T4): mount <BrainArchitectureScene /> once it is
-            split out from <VisionScene />. */}
-          <section id="brain-architecture" className={placeholderClass} aria-hidden="true" />
+          {/* <BrainArchitectureScene /> owns its own `<section
+            id="brain-architecture">` so we mount it directly — wrapping it
+            would emit two DOM elements with `id="brain-architecture"` and
+            break the TOC anchor. The inner scene runs its own
+            useScrollReveal latch. (immersive-single-page P1 Task 4, done) */}
+          <BrainArchitectureScene />
 
           {/* ─── Operation: Launch / Order Shill / Heartbeat live demos ─────── */}
           {/* TODO(immersive-T5): mount <LiveLaunchScene runController={hookResult} />. */}
