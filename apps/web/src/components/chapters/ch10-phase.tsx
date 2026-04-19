@@ -4,8 +4,6 @@
  * <Ch10Phase> — phase map chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch10).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 488-521.
  * Interior progress `p ∈ [0, 1]` drives a single progress cursor:
  *
  *   - `cursor = lerp(0, 2, clamp(p * 1.2))` traverses 0 -> 2 across the

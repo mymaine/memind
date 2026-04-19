@@ -2,9 +2,7 @@
  * Tests for <Ch10Phase /> — phase map chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch10).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch10Phase
- * (lines 488-521):
+ * Ports the interior-progress contract from the design handoff:
  *
  *   - Three phase nodes: LAUNCH (shipped) / HEARTBEAT (building) /
  *     SWARM (future). Each node carries a status chip wired to the

@@ -4,8 +4,6 @@
  * <Ch2Problem> — second chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch2).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 73-117.
  * Interior progress `p ∈ [0, 1]` drives three synchronous micro-animations:
  *
  *   - Count-up: `n = floor(lerp(0, 32140, clamp(p/0.6)))`, rendered via

@@ -36,7 +36,7 @@ function shortHash(value: string, head = 6, tail = 4): string {
  * Anchor Evidence panel owns `lore-anchor`, and the Shilling Market panel owns
  * `shill-order` / `shill-tweet` (Phase 4.6) — so those kinds deliberately do
  * NOT participate in the TxList: the pill row stays focused on the 5 cross-
- * chain hashes evaluators look for.
+ * chain hashes users look for.
  */
 type NonPillKind =
   | 'heartbeat-tick'

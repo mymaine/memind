@@ -14,9 +14,6 @@
  * The pure `mapStageStyle()` helper is exported for unit tests so the
  * opacity / scale / blur curve is verifiable without mounting the
  * component.
- *
- * Port reference: `docs/design/memind-handoff/project/components/app.jsx`
- * lines 77-129.
  */
 import type { CSSProperties, ReactElement } from 'react';
 

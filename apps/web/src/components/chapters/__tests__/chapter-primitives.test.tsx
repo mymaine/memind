@@ -2,11 +2,10 @@
  * Tests for chapter primitives — Label / BigHeadline / Mono / Pill
  * (memind-scrollytelling-rebuild P0 Task 3).
  *
- * Ported from `docs/design/memind-handoff/project/components/chapters.jsx`
- * lines 11-34. These four primitives are shared across all 11 chapter
- * components and their output must match the CSS classes already ported
- * into `app/globals.css` (`.ch-label`, `.ch-label-num`, `.ch-headline`,
- * `.mono`, `.pill`, `.pill-dot`).
+ * Ported from the design handoff. These four primitives are shared across
+ * all 11 chapter components and their output must match the CSS classes
+ * already ported into `app/globals.css` (`.ch-label`, `.ch-label-num`,
+ * `.ch-headline`, `.mono`, `.pill`, `.pill-dot`).
  *
  * vitest runs under `node` with no jsdom, matching the repo's established
  * pattern (see `sticky-stage.test.tsx`). We render via

@@ -21,7 +21,7 @@ import { createStreamEventMapper } from './_stream-map.js';
  * `messages.create`. We forward the three stream-level events the dashboard
  * cares about (`tool_use:start`, `tool_use:end`, `assistant:delta`) through
  * dedicated callbacks while keeping the existing coarse `onLog` summary as a
- * companion layer (see docs/features/dashboard-v2.md).
+ * companion layer.
  */
 export interface RunAgentLoopParams {
   client: Anthropic;

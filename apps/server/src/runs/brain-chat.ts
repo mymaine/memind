@@ -435,8 +435,8 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // Shiller tool needs post_shill_for + an order resolver. The order resolver
   // tries to pick up an enqueued ShillOrderStore order for the tokenAddr; if
   // none exists, we synthesise one with a stub orderId so the tool still runs.
-  // TODO(BRAIN-P5): wire a real x402 creator-payment phase here if evaluators
-  // click a Brain-driven "/order" flow — for the demo, synthetic orderIds are
+  // TODO(BRAIN-P5): wire a real x402 creator-payment phase here if a user
+  // triggers a Brain-driven "/order" flow — for now, synthetic orderIds are
   // acceptable because the Shiller persona itself still posts a real tweet.
   //
   // When the X API credentials are not configured (CLI demos, unit tests),

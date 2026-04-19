@@ -4,8 +4,6 @@
  * <Ch9SKU> — SKU matrix chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch9).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 455-486.
  * Interior progress `p ∈ [0, 1]` drives a staggered card reveal:
  *
  *   - Each of the four product cards fades + scales in via

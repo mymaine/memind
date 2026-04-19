@@ -1,11 +1,5 @@
-# Documentation — docs/ is team-internal by default; only the paths
-# explicitly un-ignored below ship with the repo.
-#   docs/architecture.md  — judge-facing architecture detail
-# Everything else (spec / features / decisions / design / dev-commands /
-# testing / product / conventions / archive / runbooks) stays local.
-# Runbooks specifically contain demo narration scripts and rehearsal
-# checklists — shipping those would make the recorded demo feel scripted
-# to judges, so they stay out of the public repo.
+# Documentation — only architecture.md ships with the repo; the rest of
+# docs/ stays local.
 docs/*
 !docs/architecture.md
 

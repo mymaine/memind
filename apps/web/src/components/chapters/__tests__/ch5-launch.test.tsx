@@ -2,12 +2,10 @@
  * Tests for <Ch5Launch /> — scripted chat playback chapter
  * (memind-scrollytelling-rebuild AC-MSR-9 ch5).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch5Launch
- * (lines 252-305). Ch5 does NOT embed a real BrainChat — it is a scripted
- * playback: given 6 pre-authored lines with timestamps `t ∈ [0, 0.78]`,
- * each line becomes visible once `p > t` and fades in via
- * `fresh = clamp((p - t) * 20)`.
+ * Ports the interior-progress contract from the design handoff. Ch5 does
+ * NOT embed a real BrainChat — it is a scripted playback: given 6
+ * pre-authored lines with timestamps `t ∈ [0, 0.78]`, each line becomes
+ * visible once `p > t` and fades in via `fresh = clamp((p - t) * 20)`.
  *
  * vitest runs under `node` with no jsdom (matches every existing scene
  * test), so we render via `renderToStaticMarkup` + regex.

@@ -4,9 +4,6 @@
  * <Ch5Launch> — launch-by-chat chapter of the Memind scrollytelling
  * narrative (memind-scrollytelling-rebuild AC-MSR-9 ch5).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 252-305.
- *
  * Ch5 does NOT embed a real `<BrainChat />`. It is a scripted playback:
  * given 6 pre-authored lines with timestamps `t ∈ [0, 0.78]`, a line
  * becomes visible once `cutoff = p > l.t`. Each visible line fades in

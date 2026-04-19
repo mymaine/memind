@@ -30,8 +30,7 @@ import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
  *
  * **Reconciliation path (post-hackathon)**: add `ShillOrderStore.recordSettlement(orderId, txHash)`
  * and wire it via `res.on('finish', …)` to decode `X-PAYMENT-RESPONSE` after
- * the middleware has finalised the response. Tracked in the roadmap as
- * "Day-2 改良: /shill paidTxHash 從 stub 補真" in docs/features/shilling-market.md.
+ * the middleware has finalised the response.
  */
 const PENDING_PAID_TX_HASH = `0x${'0'.repeat(64)}`;
 

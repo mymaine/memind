@@ -6,8 +6,6 @@
  *   2. Open EventSource at /api/runs/:id/events
  *   3. Dispatch native SSE event types (log / artifact / status) to React state
  *   4. Close the stream on terminal status (done / error)
- *
- * Wire protocol: docs/decisions/2026-04-20-sse-and-runs-api.md.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {

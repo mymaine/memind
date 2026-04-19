@@ -4,9 +4,6 @@
  * <Ch6Shill> — shilling-by-chat chapter of the Memind scrollytelling
  * narrative (memind-scrollytelling-rebuild AC-MSR-9 ch6).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 307-366.
- *
  * Like Ch5, Ch6 does NOT embed a real `<BrainChat />`. It is a scripted
  * playback:
  *   - Two static top lines (`/shill ...` + `scheduling 3 drops`) whose

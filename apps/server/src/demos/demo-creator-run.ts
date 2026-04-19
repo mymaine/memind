@@ -5,7 +5,7 @@
  * (the project's LLM gateway), plus Gemini (image gen) and Pinata (IPFS)
  * clients, registers the four Creator tools, and invokes runCreatorAgent
  * with a user-supplied theme. On success prints BSC mainnet tx hash, IPFS
- * CID, and the local meme image path for judges to inspect.
+ * CID, and the local meme image path for users to inspect.
  *
  * Usage (from repo root):
  *   pnpm --filter @hack-fourmeme/server demo:creator -- "meme about BNB 2026"

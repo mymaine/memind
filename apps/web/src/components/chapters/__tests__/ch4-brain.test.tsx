@@ -2,9 +2,8 @@
  * Tests for <Ch4Brain /> — fourth chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch4).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch4Brain
- * (lines 163-250), with two FACT CORRECTIONS:
+ * Ports the interior-progress contract from the design handoff, with two
+ * FACT CORRECTIONS:
  *   - brain-core-sub reads `claude-sonnet-4.5 · 5s tick` (matches what
  *     `apps/server` actually calls via OpenRouter), NOT the design-stub
  *     `gpt-4o · 5s tick`.

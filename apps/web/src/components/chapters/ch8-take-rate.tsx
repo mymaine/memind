@@ -4,8 +4,6 @@
  * <Ch8TakeRate> — business chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch8).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 418-453.
  * Interior progress `p ∈ [0, 1]` drives two synchronous micro-animations:
  *
  *   - Big count-up: `$` + `fmt(lerp(0, 12.4, clamp(p/0.6)), 2)`. Reaches

@@ -1,8 +1,5 @@
 /**
- * Runs REST + SSE handler. Protocol lives in
- * `docs/decisions/2026-04-20-sse-and-runs-api.md` — any deviation from the
- * three endpoint shapes or the three SSE event names should update that
- * document first.
+ * Runs REST + SSE handler.
  *
  *   POST   /api/runs             — create a run, fire-and-forget orchestrator
  *   GET    /api/runs/:id         — final (or in-progress) snapshot
@@ -450,7 +447,7 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
       return;
     }
 
-    // SSE headers — see docs/decisions/2026-04-20-sse-and-runs-api.md.
+    // SSE headers.
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');

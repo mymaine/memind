@@ -2,9 +2,8 @@
  * Tests for <Ch7Heartbeat /> — autonomous-heartbeat chapter
  * (memind-scrollytelling-rebuild AC-MSR-9 ch7).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch7Heartbeat
- * (lines 368-416). Two concurrent animations:
+ * Ports the interior-progress contract from the design handoff. Two
+ * concurrent animations:
  *   - EKG polyline: `strokeDasharray=1000`, `strokeDashoffset = 1000 - p*1000`
  *   - Decision log: `ticks = floor(p * 14)` drives which of 8 scripted
  *     decision rows are rendered. Pass `p = 1` to see all 8.

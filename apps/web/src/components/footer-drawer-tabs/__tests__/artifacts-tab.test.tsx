@@ -120,7 +120,7 @@ describe('<ArtifactsTab />', () => {
   });
 
   it('each artifact row renders as an <a> that opens the matching explorer in a new tab (UAT 2026-04-20)', () => {
-    // UAT fix: On-chain Artifacts pills MUST be clickable so judges can
+    // UAT fix: On-chain Artifacts pills MUST be clickable so users can
     // verify the hashes independently on BSCScan / IPFS gateway / X. Each
     // row becomes an external link (target=_blank + rel=noopener noreferrer)
     // wrapping the pill content.

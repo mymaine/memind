@@ -134,7 +134,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   // UAT fix (2026-04-20): `/clear` is the more common muscle-memory verb
   // (OpenAI ChatGPT, Discord, Slack). We alias it onto the same client-side
   // reset handler so either command empties the transcript and forgets the
-  // prior turns. The help listing shows both so judges typing either form
+  // prior turns. The help listing shows both so users typing either form
   // get the expected behaviour.
   {
     name: 'clear',

@@ -2,9 +2,7 @@
  * Tests for <Ch1Hero /> — first chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch1).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch1Hero
- * (lines 37-71):
+ * Ports the interior-progress contract from the design handoff:
  *
  *   - Type-on `"Pay USDC. Get tweets."` across p ∈ [0, 0.5]
  *   - Glyph translates on X across p ∈ [0.2, 0.9]

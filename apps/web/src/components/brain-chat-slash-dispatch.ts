@@ -44,7 +44,7 @@ export interface DispatchSlashSubmissionArgs {
 
 /**
  * Compose the `/help` response body for a given scope. Lists every
- * registry command whose scopes include the current chat scope, so judges
+ * registry command whose scopes include the current chat scope, so users
  * typing `/help` in the launch scene see launch + lore + global shortcuts.
  */
 function formatHelpMessage(scope: SlashScope): string {
@@ -57,7 +57,7 @@ function formatHelpMessage(scope: SlashScope): string {
  * Compose the `/status` response body: session turn count + last assistant
  * timestamp if available (we pin wall-clock time in the turn id via
  * `makeTurnId` → includes `Date.now()` when crypto.randomUUID is absent, so
- * we cannot rely on it). For now report turn counts only — enough for judges
+ * we cannot rely on it). For now report turn counts only — enough for users
  * to verify the memory grew across turns, and avoids a fake timestamp.
  */
 function formatStatusMessage(turns: readonly BrainChatTurn[]): string {

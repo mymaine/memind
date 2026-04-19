@@ -5,8 +5,6 @@
  * narrative (memind-scrollytelling-rebuild AC-MSR-9 ch11 + Ch11 runState
  * integration).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 523-584.
  * Interior progress `p ∈ [0, 1]` drives a staggered pill reveal. The two
  * differences from the handoff:
  *
@@ -295,7 +293,7 @@ export function Ch11Evidence({ p }: Ch11EvidenceProps): ReactElement {
                   className="cta cta-primary"
                   onClick={() => {
                     // UAT 2026-04-20: the closing CTA now slides open the
-                    // BrainPanel so judges can try the live flow in-place.
+                    // BrainPanel so users can try the live flow in-place.
                     // Ch11 has no access to page.tsx's `openBrain` state
                     // setter, so we dispatch a CustomEvent on `window` and
                     // let the page listen. Fails silently in non-browser

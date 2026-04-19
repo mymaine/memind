@@ -24,7 +24,7 @@
  *
  * UAT fix (2026-04-20): each row wraps in an <a> that opens the matching
  * verifier (BSCScan / Base Sepolia / Pinata gateway / X) in a new tab so
- * judges can independently verify the hash. Rows whose artifact has no
+ * users can independently verify the hash. Rows whose artifact has no
  * resolvable URL (e.g. meme-image upload-failed) render as plain divs.
  *
  * Empty state: `no artifacts yet · launch a token or order a shill`.
@@ -148,7 +148,7 @@ export function resolveArtifactExplorerUrl(a: Artifact): string | undefined {
       return a.gatewayUrl;
     case 'lore-anchor':
       // Layer-2 on-chain anchor trio is all-or-nothing; prefer the BSC
-      // tx link when it exists so judges can verify the memo. Otherwise
+      // tx link when it exists so users can verify the memo. Otherwise
       // there is no public URL for the content hash alone.
       return a.explorerUrl;
     case 'tweet-url':
@@ -198,7 +198,7 @@ export function ArtifactsTab(props: ArtifactsTabProps): ReactElement {
         const href = resolveArtifactExplorerUrl(a);
         const rowKey = `${row.chain}-${idx.toString()}`;
         // UAT fix (2026-04-20): for successful meme-image artifacts, inline a
-        // 24x24 thumbnail before the chain label so judges spot the Creator's
+        // 24x24 thumbnail before the chain label so users spot the Creator's
         // output at a glance. The row still links to the Pinata gateway in a
         // new tab via the shared <a> wrapper below.
         const thumbSrc =

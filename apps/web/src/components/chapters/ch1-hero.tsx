@@ -4,8 +4,6 @@
  * <Ch1Hero> — first chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch1).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 37-71.
  * Interior progress `p ∈ [0, 1]` drives three synchronous micro-animations:
  *
  *   - Type-on: `"Pay USDC. Get tweets."` reveals letter-by-letter across

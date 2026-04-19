@@ -6,7 +6,7 @@
  * pin the mapping without mounting the component. Production caller passes
  * `onPick(text)` which pre-fills the input with the chip text; clicking the
  * chip does NOT auto-submit — the user still taps Send. This matches Slack /
- * Linear quick-prompt behaviour and keeps the demo honest (judges can see
+ * Linear quick-prompt behaviour and keeps the demo honest (users can see
  * the chip text before sending).
  */
 import type { ReactElement } from 'react';
@@ -14,7 +14,7 @@ import type { BrainChatScope } from '@/hooks/useBrainChat';
 
 // Suggestion chip copy. Keep each ≤ ~60 chars so the chip row does not wrap
 // on a typical demo laptop. Launch prompts lean towards BNB Chain themes
-// because judges evaluate the four.meme integration; order / heartbeat
+// because users evaluate the four.meme integration; order / heartbeat
 // prompts use an illustrative tokenAddr placeholder so the user can see the
 // expected shape and replace it with a real address.
 const LAUNCH_CHIPS: readonly string[] = [

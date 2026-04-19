@@ -3,8 +3,7 @@
  * (scrollY, viewport height, chapter count) to the currently active chapter
  * index plus the overall progress scalar [0, 1].
  *
- * Mirrors the StickyStage math in `docs/design/memind-handoff/project/components/app.jsx`
- * lines 334-339:
+ * Mirrors the StickyStage math:
  *   slotPx        = SLOT_VH * vh
  *   totalScrollH  = chapterCount * slotPx + vh
  *   activeIdx     = clamp(floor((scrollY + slotPx*0.3) / slotPx), [0, count-1])

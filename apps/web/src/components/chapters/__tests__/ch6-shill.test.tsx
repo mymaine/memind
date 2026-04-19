@@ -2,11 +2,10 @@
  * Tests for <Ch6Shill /> — shilling-by-chat chapter
  * (memind-scrollytelling-rebuild AC-MSR-9 ch6).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch6Shill
- * (lines 307-366). Two static chat lines anchor the top of the panel;
- * 3 `tweet-card` elements appear staggered at `t = 0.15 / 0.40 / 0.68`
- * and fade in via `fresh = clamp((p - t) * 12)` with a small translateY.
+ * Ports the interior-progress contract from the design handoff. Two static
+ * chat lines anchor the top of the panel; 3 `tweet-card` elements appear
+ * staggered at `t = 0.15 / 0.40 / 0.68` and fade in via
+ * `fresh = clamp((p - t) * 12)` with a small translateY.
  *
  * vitest runs under `node` with no jsdom, so we render via
  * `renderToStaticMarkup` + regex.

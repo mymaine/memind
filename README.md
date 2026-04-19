@@ -8,13 +8,13 @@
 
 [![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-716%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#evidence-on-chain--in-repo)
 
-## TL;DR for Judges
+## TL;DR
 
 - **The thesis**: memecoins have a discovery problem, not a minting problem. And launchers abandon them at hour 0 because post-launch ops is more work than the mint. We give every token its own **Memind** that takes over: writes the lore, posts the tweets, reads the chain, decides what to do next. The creator only mints.
 - **The loop**: the Memind's Creator persona deploys a real BSC mainnet token in **67s** and writes lore chapter 1 → Narrator persona continues chapter 2 → Market-maker persona pays 0.01 USDC on Base Sepolia via x402 to read lore as alpha → Pitch persona reads the same lore to post an on-voice tweet from a real aged X account when the creator commissions one → Heartbeat persona ticks on its own and decides what the Memind does next.
 - **Why this is a primitive, not a feature**: Memind Pitch is SKU 1, shipped. Every future SKU (Launch Boost, Community Ops, Alpha Feed, all sell-side) is a **new persona plugged into the same Memind**, not a new product. `Persona<TInput, TOutput>` is an explicit interface; new SKUs ship as ~50 lines of systemPrompt + tool subset.
 - **1 Memind (Brain runtime), 4 personas, 9 typed tools, 716 green tests.** x402 integration settles real USDC every `pnpm test`. Memind Pitch tweets support a toggleable four.meme click-through URL (default off during X's 7-day post-OAuth cooldown; toggle on post-cooldown for sponsor attribution).
-- **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; a **Memind Status Bar** across the top exposes active persona + memory state + last-tick timestamp (click for the Memind detail modal). Engineering detail (logs / timeline / tx pills / architecture) lives in a `D`-to-open Developer Drawer. Judge-first up-front, engineer-deep on demand.
+- **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; a **Memind Status Bar** across the top exposes active persona + memory state + last-tick timestamp (click for the Memind detail modal). Engineering detail (logs / timeline / tx pills / architecture) lives in a `D`-to-open Developer Drawer. Product-first up-front, engineer-deep on demand.
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint) · Deadline: 2026-04-22 UTC 15:59
 - Demo video: <!-- TODO: paste URL after recording -->
 - Architecture: [`docs/architecture.md`](./docs/architecture.md)
@@ -219,7 +219,7 @@ pnpm --filter @hack-fourmeme/web build   # Next.js production build sanity
 Hackathon credibility comes from honesty about deferred items.
 
 - **AC3 · on-chain anchor not implemented.** Moving chapter CIDs through `LoreStore` + SSE was cheaper than subscribing to a BSC event log; the log-queue screenshot fallback is a Day 5 task.
-- **AC5 · demo video not yet recorded.** Full runbook (pre-flight + shot script + degrade plans) lives at [`docs/runbooks/demo-recording.md`](./docs/runbooks/demo-recording.md).
+- **AC5 · demo video not yet recorded.**
 - **AC7 · live X posts blocked on $5 credit top-up.** Heartbeat runtime, `post_to_x`, `check_token_status`, `extend_lore` are implemented and tested; `--dry-run` proves the wiring end-to-end.
 - **`/alpha/:addr` and `/metadata/:addr` remain mocks.** They exercise the paid path but return canned payloads; `/lore/:addr` is real via `LoreStore`.
 - **Single-EOA x402 settlement in the demo.** Market-maker payer and Narrator `payTo` both resolve to `AGENT_WALLET_*`. The EIP-3009 handshake and USDC movement are real; splitting wallets is a documented production upgrade.
@@ -255,8 +255,8 @@ A: "Memind" is the product surface: _every memecoin gets a brain. And a wallet._
 - Hackathon: https://dorahacks.io/hackathon/fourmemeaisprint
 - x402 protocol: https://github.com/coinbase/x402
 - Four.meme: https://four.meme
-- Architecture: [`docs/architecture.md`](./docs/architecture.md) · Demo runbook: [`docs/runbooks/demo-recording.md`](./docs/runbooks/demo-recording.md)
-- Demo video: <!-- TODO: record per docs/runbooks/demo-recording.md and paste URL -->
+- Architecture: [`docs/architecture.md`](./docs/architecture.md)
+- Demo video: <!-- TODO: paste URL after recording -->
 
 ## License
 

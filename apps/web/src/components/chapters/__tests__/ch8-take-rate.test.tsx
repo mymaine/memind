@@ -2,9 +2,7 @@
  * Tests for <Ch8TakeRate /> — business chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch8).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch8TakeRate
- * (lines 418-453):
+ * Ports the interior-progress contract from the design handoff:
  *
  *   - Big count-up: `$` + `fmt(lerp(0, 12.4, clamp(p/0.6)), 2)` — the
  *     projected avg lifetime revenue per token. Reaches `$12.40` at

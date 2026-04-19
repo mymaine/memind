@@ -143,10 +143,10 @@ export const stubCreatorPaymentPhase: CreatorPaymentPhaseFn = async (deps) => {
  * `/shill/:tokenAddr` endpoint so the settlement tx is a genuine Base Sepolia
  * USDC transfer instead of the `stubCreatorPaymentPhase` sentinel.
  *
- * Dashboard flow (POST /api/runs kind='shill-market') wires this so
- * evaluators who click the settlement pill on the OrderPanel land on a real
- * BaseScan page — AC-P4.6-1 end-to-end proof. CLI demo keeps the stub by
- * default (mirrors AGENTS.md dry-run posture so `pnpm test` never spends USDC).
+ * Dashboard flow (POST /api/runs kind='shill-market') wires this so users who
+ * click the settlement pill on the OrderPanel land on a real BaseScan page —
+ * AC-P4.6-1 end-to-end proof. CLI demo keeps the stub by default (dry-run
+ * posture so `pnpm test` never spends USDC).
  *
  * Factory throws at construction time if `agentPrivateKey` is missing rather
  * than lazily at first payment — matches the fail-fast pattern the other

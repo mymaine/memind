@@ -8,8 +8,7 @@
  *       official scoped package which ships a plain CJS entrypoint.)
  *   B. TokenManager2 `0x5c95...762b` has no bytecode on BSC testnet (chainId 97).
  * Outcome: BLOCKED for testnet. The probe is read-only (no signing, no gas,
- * no tx); it re-confirms findings on every run. Details + next steps in
- * docs/spec.md Phase 1 Task 3.
+ * no tx); it re-confirms findings on every run.
  * Deps note: `scripts/` runs from repo root where `viem`/`zod` are not hoisted
  * (they live only under `apps/server/node_modules/`). To stay within the
  * "no new deps" constraint this probe uses `fetch` + hand-rolled env checks;
@@ -70,7 +69,7 @@ function readEnv(): ProbeEnv {
   const issues: string[] = [];
   const pk = process.env['BSC_DEPLOYER_PRIVATE_KEY'] ?? '';
   if (!pk) {
-    issues.push('BSC_DEPLOYER_PRIVATE_KEY: missing (set in .env.local, see docs/dev-commands.md)');
+    issues.push('BSC_DEPLOYER_PRIVATE_KEY: missing (set in .env.local)');
   } else if (!/^0x[0-9a-fA-F]{64}$/.test(pk)) {
     issues.push('BSC_DEPLOYER_PRIVATE_KEY: must be 0x-prefixed 32-byte hex');
   }
@@ -88,9 +87,7 @@ function readEnv(): ProbeEnv {
   }
   if (issues.length > 0) {
     console.error(
-      '[probe-fourmeme] .env.local invalid:\n' +
-        issues.map((i) => '  - ' + i).join('\n') +
-        '\n\nSee docs/dev-commands.md for required variables.',
+      '[probe-fourmeme] .env.local invalid:\n' + issues.map((i) => '  - ' + i).join('\n'),
     );
     process.exit(1);
   }
@@ -235,7 +232,7 @@ async function main(): Promise<void> {
     '  next steps for the lead:',
     '    1. ask sponsor for a BSC testnet TokenManager2 address, or',
     '    2. switch this probe to BSC mainnet (config shows deployCost=0), or',
-    '    3. downgrade AC1 to "createArg/signature + tx simulation only"; update docs/spec.md.',
+    '    3. downgrade AC1 to "createArg/signature + tx simulation only".',
     '',
     '  references:',
     `    mainnet  https://bscscan.com/address/${TOKEN_MANAGER2_MAINNET}`,

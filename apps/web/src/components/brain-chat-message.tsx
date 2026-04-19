@@ -1,7 +1,7 @@
 /**
  * BrainChatMessage — per-turn renderer for the BrainChat transcript.
  *
- * Visual model after the UAT fixes (see docs/decisions):
+ * Visual model after the UAT fixes:
  *   - User turn → right-aligned bubble, accent tone, plain text only.
  *   - Assistant turn:
  *       1. Grouped nested events (tool-use scopes, merged thinking rows,
@@ -47,7 +47,7 @@ const AGENT_TONE: Record<AgentId, string> = {
 /**
  * Map the Brain's tool names to user-facing persona labels. The Brain dispatches
  * `invoke_creator` / `invoke_narrator` / `invoke_shiller` / `invoke_heartbeat_tick`;
- * judges don't need to see the wire names, so we translate them.
+ * users don't need to see the wire names, so we translate them.
  */
 function friendlyPersonaName(toolName: string): string {
   if (toolName === 'invoke_creator') return 'Creator';
@@ -184,7 +184,7 @@ function PersonaArtifactRow({
   group: Extract<BrainChatGroup, { kind: 'persona-artifact' }>;
 }): ReactElement {
   // UAT fix #1 (2026-04-20): surface generated meme PNGs as clickable
-  // thumbnails inline in the bubble so judges can preview the Creator's
+  // thumbnails inline in the bubble so users can preview the Creator's
   // output without opening the FooterDrawer. The pill still links to the
   // Pinata gateway in a new tab; `target="_blank"` + `rel` hardens the
   // external navigation against window.opener leaks.

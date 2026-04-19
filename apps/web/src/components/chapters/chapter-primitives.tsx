@@ -2,10 +2,9 @@
  * Chapter primitives — shared building blocks for Ch1-11 components
  * (memind-scrollytelling-rebuild P0 Task 3, AC-MSR-9).
  *
- * Ported verbatim from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 11-34
- * and rewritten in TypeScript. These four components + three math helpers
- * render against the CSS classes already ported into `app/globals.css`:
+ * Ported verbatim from the design handoff and rewritten in TypeScript. These
+ * four components + three math helpers render against the CSS classes
+ * already ported into `app/globals.css`:
  *
  *   - `<Label n={N}>`   → `.ch-label` / `.ch-label-num` / `.ch-label-bar`
  *                         / `.ch-label-text`

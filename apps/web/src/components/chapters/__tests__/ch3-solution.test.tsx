@@ -2,9 +2,7 @@
  * Tests for <Ch3Solution /> — third chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch3).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch3Solution
- * (lines 119-161):
+ * Ports the interior-progress contract from the design handoff:
  *
  *   - Equation assembly: `step = clamp(p/0.7) * 4`. 4 `.eq-part` slots and
  *     3 `.eq-op` operators toggle `.on` at thresholds

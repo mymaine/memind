@@ -2,9 +2,7 @@
  * Tests for <Ch9SKU /> — SKU matrix chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch9).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch9SKU
- * (lines 455-486):
+ * Ports the interior-progress contract from the design handoff:
  *
  *   - Four SKU cards (BRAIN.BASIC / BRAIN.PRO / PERSONA.MINT /
  *     SHILL.CREDITS) appear staggered. Each card uses

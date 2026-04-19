@@ -35,8 +35,7 @@
  * no-ops outside a provider so pages that forgot to mount the provider
  * silently degrade rather than throwing mid-render.
  *
- * Design lock: docs/decisions/2026-04-19-brain-agent-positioning.md §Scope
- * — the `<BrainIndicator /> + <BrainPanel />` pair is the entire
+ * Design lock: the `<BrainIndicator /> + <BrainPanel />` pair is the entire
  * "Brain is here" surface (post memind-scrollytelling-rebuild AC-MSR-7;
  * the prior <BrainDetailModal /> was retired with the slide-in panel),
  * and it MUST reflect real live run state for the demo climax to land.

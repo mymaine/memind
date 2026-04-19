@@ -4,20 +4,18 @@
  * <Ch4Brain> — fourth chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch4).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 163-250,
- * with two FACT CORRECTIONS:
+ * Ported from the design handoff, with two FACT CORRECTIONS:
  *
  *   - `brain-core-sub` reads "claude-sonnet-4.5 · 5s tick" to match what
  *     `apps/server` actually calls via OpenRouter
  *     (`anthropic/claude-sonnet-4-5`). The design handoff still says
  *     `gpt-4o · 5s tick`; the ch4-brain.test.tsx regression guards this.
  *   - UAT issue #7 — X (Twitter) ships as a live delivery channel from
- *     Phase 3 onward (see `docs/decisions/2026-04-19-x-posting-agent.md`),
- *     so the port ring now declares 4 channels: `X (live)` + 3 soon
- *     channels (TELEGRAM / DISCORD / ON-CHAIN MSG). The sub-caption above
- *     the stage clarifies persona = content voice vs. channel = delivery
- *     surface — the UAT reported confusion about what the 4+3 labels meant.
+ *     Phase 3 onward, so the port ring now declares 4 channels: `X (live)` +
+ *     3 soon channels (TELEGRAM / DISCORD / ON-CHAIN MSG). The sub-caption
+ *     above the stage clarifies persona = content voice vs. channel =
+ *     delivery surface — the UAT reported confusion about what the 4+3
+ *     labels meant.
  *
  * Interior progress `p ∈ [0, 1]` drives:
  *

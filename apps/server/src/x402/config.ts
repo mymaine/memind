@@ -27,7 +27,6 @@ export interface PaidRoute {
 
 /**
  * The three paid endpoints exposed by the Agent-as-Creator server.
- * Prices and contents match the pricing table in docs/spec.md.
  */
 export const PAID_ROUTES: readonly PaidRoute[] = [
   {

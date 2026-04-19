@@ -4,9 +4,6 @@
  * <Ch3Solution> — third chapter of the Memind scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch3).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 119-161.
- *
  * Interior progress `p ∈ [0, 1]` drives the equation assembly:
  *
  *     step = clamp(p / 0.7) * 4

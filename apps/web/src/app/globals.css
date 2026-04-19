@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-/* ---------- Design tokens (see docs/design.md) ---------- */
+/* ---------- Design tokens ---------- */
 @theme {
   /* Canvas */
   --color-bg-primary: #050507;
@@ -52,21 +52,21 @@
 :root {
   color-scheme: dark;
 
-  /* Easing tokens (design.md §7). Declared on :root so .scene and future
-     scene animations can reference them without per-component literals. */
+  /* Easing tokens. Declared on :root so .scene and future scene animations
+     can reference them without per-component literals. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* ---------- Design-handoff alias layer ----------
-   * The Claude Design handoff (`docs/design/memind-handoff/project/components/styles.css`)
-   * uses bare CSS variable names (`--bg-primary`, `--fg-primary`, etc.) on
-   * every chapter + shell class. This repo already ships Tailwind v4
-   * `@theme` tokens under `--color-*` / `--font-*`. To port the handoff
-   * markup verbatim without forking naming conventions, we expose each
-   * handoff name as an alias of the canonical token. Both names resolve to
-   * the same paint so existing code using `var(--color-bg-primary)` and
-   * new chapter code using `var(--bg-primary)` render identically.
+   * The Claude Design handoff uses bare CSS variable names (`--bg-primary`,
+   * `--fg-primary`, etc.) on every chapter + shell class. This repo already
+   * ships Tailwind v4 `@theme` tokens under `--color-*` / `--font-*`. To
+   * port the handoff markup verbatim without forking naming conventions, we
+   * expose each handoff name as an alias of the canonical token. Both names
+   * resolve to the same paint so existing code using
+   * `var(--color-bg-primary)` and new chapter code using `var(--bg-primary)`
+   * render identically.
    * (memind-scrollytelling-rebuild P0 Task 1.)
    */
   --bg-primary: var(--color-bg-primary);
@@ -183,8 +183,7 @@ body {
 }
 
 /* =============================================================================
- * Memind Scrollytelling Rebuild — port from design handoff
- * (docs/design/memind-handoff/project/components/styles.css)
+ * Memind Scrollytelling Rebuild — port from design handoff.
  *
  * Shell + chapter styles for the StickyStage surface
  * (memind-scrollytelling-rebuild P0 Task 1). The handoff file uses bare
@@ -1451,7 +1450,7 @@ body:has(.logs-drawer.open) .toc {
 }
 /*
  * UAT fix (2026-04-20): keep the hash column lowercase + 0x-prefixed so
- * judges can copy/paste straight to BSCScan. The parent `.mono` class
+ * users can copy/paste straight to BSCScan. The parent `.mono` class
  * defaults to text-transform: uppercase, so override here. The inline
  * style on the span is a belt-and-braces guard.
  */
@@ -1514,7 +1513,7 @@ body:has(.logs-drawer.open) .toc {
  * body animates to 360px. Handle always stays clickable.
  */
 /*
- * UAT 2026-04-20: the LogsDrawer is a *debug* surface — judges validating
+ * UAT 2026-04-20: the LogsDrawer is a *debug* surface — users validating
  * the demo through BrainChat (meme thumb + artifact pills + markdown final
  * reply) already have enough on-screen evidence. The dev drawer is now
  * hidden by default and only materialises when the developer presses `D`.

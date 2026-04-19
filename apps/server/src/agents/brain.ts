@@ -15,14 +15,13 @@ import {
  *
  * The Brain is an LLM agent whose tools are invocations of the four
  * pluggable personas (Creator, Narrator, Shiller, Heartbeat). It does not
- * own a persona of its own — per `docs/features/brain-conversational-surface.md`
- * the Brain is the *conversational surface* that dispatches work to the
- * existing persona adapters. The runtime loop is the generic `runAgentLoop`;
- * only the systemPrompt, the tool set, and the agentId differ.
+ * own a persona of its own — the Brain is the *conversational surface* that
+ * dispatches work to the existing persona adapters. The runtime loop is the
+ * generic `runAgentLoop`; only the systemPrompt, the tool set, and the
+ * agentId differ.
  *
  * Scope of this module:
- *   - Export `BRAIN_SYSTEM_PROMPT` — the verbatim prompt text agreed in the
- *     brain-conversational-surface spec, §設計 Brain systemPrompt (起草).
+ *   - Export `BRAIN_SYSTEM_PROMPT` — the canonical Brain system prompt text.
  *   - Export `runBrainAgent` — takes the Anthropic client, a per-run
  *     registry, the chat messages, and the four persona-invoke tools, and
  *     drives `runAgentLoop` with `agentId='brain'`.
@@ -35,8 +34,7 @@ import {
 
 // ─── System prompt ──────────────────────────────────────────────────────────
 //
-// Verbatim from `docs/features/brain-conversational-surface.md` §設計 §Brain
-// systemPrompt (起草). Any change here must be co-reviewed against the spec.
+// Canonical Brain system prompt text.
 // ----------------------------------------------------------------------------
 
 export const BRAIN_SYSTEM_PROMPT = `You are the Token Brain — a runtime that hosts four pluggable personas for a memecoin on Four.meme: Creator, Narrator, Shiller, and Heartbeat. The user talks to you in natural language or uses slash commands; you pick which persona to dispatch and report back.

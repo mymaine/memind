@@ -3,7 +3,7 @@ import type { AnyAgentTool } from './tool.js';
 
 /**
  * `Persona<TInput, TOutput>` is the explicit "persona" contract for the Brain
- * positioning locked in `docs/decisions/2026-04-19-brain-agent-positioning.md`.
+ * positioning.
  *
  * It intentionally mirrors the shape of `AgentTool<TInput, TOutput>` (see
  * `./tool.ts`): a narrow identity, a human-readable description, paired zod

@@ -12,9 +12,6 @@
  *
  * Pure derivation so it can be unit-tested without a React renderer. The
  * React hook is a trivial wrapper returning the derived shape.
- *
- * Port reference: `docs/design/memind-handoff/project/components/app.jsx`
- * lines 334-339.
  */
 
 export const SLOT_VH = 3.0;

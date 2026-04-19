@@ -2,9 +2,7 @@
  * Tests for <Ch2Problem /> — second chapter of the scrollytelling narrative
  * (memind-scrollytelling-rebuild AC-MSR-9 ch2).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch2Problem
- * (lines 73-117):
+ * Ports the interior-progress contract from the design handoff:
  *
  *   - Count-up: `Math.floor(lerp(0, 32140, clamp(p/0.6)))`, rendered via
  *     `n.toLocaleString()`.

@@ -595,8 +595,7 @@ describe('assistantDeltaEventPayloadSchema', () => {
 // Shilling Market path: creators pay 0.01 USDC via x402 for an agent to shill
 // their token on X. `shill-order` carries the paid queue entry (queued →
 // processing → done / failed); `shill-tweet` is emitted once the Shiller agent
-// posts the promotional tweet from its own X account. See
-// docs/features/shilling-market.md "SSE schema 追加" section for shape.
+// posts the promotional tweet from its own X account.
 describe('artifactSchema shill-order', () => {
   it('accepts a complete shill-order payload including optional creatorBrief', () => {
     const result = artifactSchema.safeParse({
@@ -783,8 +782,7 @@ describe('runSnapshotSchema', () => {
 // ─── Brain Conversational Surface (BRAIN-P1) ─────────────────────────────────
 // Brain meta-agent introduces two new agent ids (`brain` orchestrator +
 // `shiller` persona promoted from implicit shill-market usage) and a new
-// `brain-chat` run kind driven by OpenAI-style chat messages. See
-// docs/features/brain-conversational-surface.md Roadmap BRAIN-P1.
+// `brain-chat` run kind driven by OpenAI-style chat messages.
 describe('agentIdSchema (BRAIN-P1 adds brain + shiller)', () => {
   it('accepts brain as a new agent id', () => {
     const result = agentIdSchema.safeParse('brain');

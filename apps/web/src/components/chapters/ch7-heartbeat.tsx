@@ -4,9 +4,6 @@
  * <Ch7Heartbeat> — autonomous-heartbeat chapter of the Memind
  * scrollytelling narrative (memind-scrollytelling-rebuild AC-MSR-9 ch7).
  *
- * Ported from
- * `docs/design/memind-handoff/project/components/chapters.jsx` lines 368-416.
- *
  * Interior progress `p ∈ [0, 1]` drives two synchronous animations:
  *   - EKG polyline: `strokeDasharray=1000` + `strokeDashoffset = 1000 - p*1000`
  *     so the trace draws from left to right as the chapter progresses. A

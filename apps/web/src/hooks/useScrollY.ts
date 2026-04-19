@@ -13,9 +13,6 @@
  * Split into a framework-free controller + a thin React shell so the rAF
  * gating is node-testable without jsdom (same convention as
  * `useScrollProgress`).
- *
- * Port reference: `docs/design/memind-handoff/project/components/app.jsx`
- * lines 9-20.
  */
 import { useEffect, useState } from 'react';
 

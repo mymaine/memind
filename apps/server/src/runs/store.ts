@@ -14,7 +14,7 @@
  * removes the need for SSE Last-Event-ID wiring on the hackathon timeline.
  *
  * No persistence is on purpose: single-process demo; restart-drops-runs is
- * acceptable per `docs/decisions/2026-04-20-sse-and-runs-api.md`.
+ * acceptable.
  */
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';

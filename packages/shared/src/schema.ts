@@ -1,9 +1,8 @@
 import { z } from 'zod';
 
-// `brain` + `shiller` appended in BRAIN-P1 (see
-// docs/features/brain-conversational-surface.md). Order of the original four
-// ids is preserved so exhaustive switches in downstream workspaces keep their
-// existing branches; new ids always appear at the tail.
+// `brain` + `shiller` appended in BRAIN-P1. Order of the original four ids is
+// preserved so exhaustive switches in downstream workspaces keep their existing
+// branches; new ids always appear at the tail.
 export const agentIdSchema = z.enum([
   'creator',
   'narrator',
@@ -18,8 +17,7 @@ export const agentStatusSchema = z.enum(['idle', 'running', 'done', 'error']);
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 
 // BSC testnet deliberately absent: TokenManager2 `0x5c95...762b` has no bytecode
-// on chainId 97. Production path is bsc-mainnet per
-// docs/decisions/2026-04-18-bsc-mainnet-pivot.md.
+// on chainId 97. Production path is bsc-mainnet.
 export const chainSchema = z.enum(['bsc-mainnet', 'base-sepolia', 'ipfs']);
 export type Chain = z.infer<typeof chainSchema>;
 
@@ -62,7 +60,6 @@ export type CreatorResult = z.infer<typeof creatorResultSchema>;
 // Artifacts — discriminated union of the five pill kinds shown in the web
 // dashboard. Server-side demo orchestrators emit these through the SSE stream
 // so the client renders the correct chain color + explorer link for each kind.
-// See docs/decisions/2026-04-20-sse-and-runs-api.md for the shape rationale.
 // ---------------------------------------------------------------------------
 
 const evmAddressRegex = /^0x[a-fA-F0-9]{40}$/;

@@ -3,8 +3,7 @@
  *
  * Goal: upload a small markdown file to Pinata public IPFS via the official
  * `pinata` v2 SDK (JWT auth), then fetch it back through the public gateway and
- * verify byte-for-byte round-trip. After this passes, update docs/spec.md
- * Roadmap Phase 1 Task 4 = [x].
+ * verify byte-for-byte round-trip.
  *
  * SDK note: legacy `@pinata/sdk` v2.1.0 is deprecated upstream in favour of the
  * new `pinata` package (v2.5+), which aligns with our `.env.example`'s
@@ -12,7 +11,7 @@
  * more reliable reads, but the public `gateway.pinata.cloud` works for a probe.
  *
  * Fallback (not executed here): if Pinata is unreachable during demo, fall back
- * to local filesystem + fake hash per spec.md risk section.
+ * to local filesystem + fake hash.
  */
 
 import { config as loadDotenv } from 'dotenv';
@@ -62,7 +61,7 @@ async function main(): Promise<void> {
   console.info(`[probe-pinata] gateway URL: ${publicGatewayUrl}`);
 
   // Verify round-trip via the public gateway (not the SDK's dedicated gateway),
-  // because AC1 requires the lore to be openable via public IPFS for judges.
+  // because AC1 requires the lore to be openable via public IPFS for users.
   console.info('[probe-pinata] fetching back via public gateway ...');
   const res = await fetch(publicGatewayUrl);
   if (!res.ok) {

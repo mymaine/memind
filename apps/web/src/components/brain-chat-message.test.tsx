@@ -237,7 +237,7 @@ describe('<BrainChatMessage /> — UAT fixes', () => {
 describe('<BrainChatMessage /> — UAT 2026-04-20 fixes', () => {
   it('renders meme-image artifact as a clickable <img> thumbnail linking to gatewayUrl', () => {
     // UAT fix #1: successful meme-image artifacts must surface a thumbnail
-    // (not just a text pill) so judges can preview the Creator output inline.
+    // (not just a text pill) so users can preview the Creator output inline.
     const artifact: Artifact = {
       kind: 'meme-image',
       status: 'ok',

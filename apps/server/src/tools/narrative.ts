@@ -14,10 +14,9 @@ import { type AnthropicMessagesClient, extractText, parseJsonFromText } from './
  *     the description into an inner shell invocation that does not escape it
  *     — an unbalanced quote crashes the deploy with `unexpected EOF`.
  *
- * Hackathon hard rule (AGENTS.md #4b): both `name` and `symbol` MUST start
- * with `HBNB2026-` so the demo tokens are not mistaken for real project
- * tokens. We instruct the model to do this AND verify it in-code — models
- * occasionally drop prefixes.
+ * Hackathon hard rule: both `name` and `symbol` MUST start with `HBNB2026-`
+ * so the demo tokens are not mistaken for real project tokens. We instruct the
+ * model to do this AND verify it in-code — models occasionally drop prefixes.
  */
 
 const HBNB_PREFIX = 'HBNB2026-';

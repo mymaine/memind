@@ -2,9 +2,8 @@
  * Tests for <Ch11Evidence /> — closing-evidence chapter of the
  * scrollytelling narrative (memind-scrollytelling-rebuild AC-MSR-9 ch11).
  *
- * Ports the interior-progress contract from
- * `docs/design/memind-handoff/project/components/chapters.jsx` Ch11Evidence
- * (lines 523-584), with two spec-mandated deltas:
+ * Ports the interior-progress contract from the design handoff, with two
+ * spec-mandated deltas:
  *
  *   1. On-chain pills MUST integrate real `runState.artifacts`. When the
  *      run has shipped >= 5 artifacts, the first 5 are rendered through
@@ -88,7 +87,7 @@ describe('<Ch11Evidence> fallback behaviour', () => {
   });
 
   it('"open the demo" renders a button (clickable target for scroll-to-top)', () => {
-    // UAT: clicking `open the demo` loops back to Ch1 so the judge can
+    // UAT: clicking `open the demo` loops back to Ch1 so the user can
     // re-watch or start a new run. SSR asserts the button is present; the
     // onClick handler runs at runtime only (jsdom-less vitest can't fire it).
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);

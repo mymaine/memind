@@ -31,13 +31,13 @@ import type { AgentTool } from '@hack-fourmeme/shared';
  *   - await the BSC mainnet receipt via a `viem` public client
  *   - decode the `TokenCreate` event to recover the deployed token address
  *
- * Why mainnet: the four-meme TokenManager2 contract has no testnet deployment
- * (see docs/decisions/2026-04-18-bsc-mainnet-pivot.md). The hackathon accepts
- * the ~$0.05 gas per deploy in exchange for a real tx hash.
+ * Why mainnet: the four-meme TokenManager2 contract has no testnet deployment.
+ * The hackathon accepts the ~$0.05 gas per deploy in exchange for a real tx
+ * hash.
  *
- * Why HBNB2026- prefix: hard-discipline #4b in AGENTS.md — any real token on
- * a public launchpad must be clearly flagged as hackathon demo so it does not
- * mislead humans browsing bscscan or dexscreener.
+ * Why HBNB2026- prefix: any real token on a public launchpad must be clearly
+ * flagged as hackathon demo so it does not mislead humans browsing bscscan or
+ * dexscreener.
  *
  * Secret hygiene: the deployer private key is received by the factory and
  * forwarded to the child process via the `PRIVATE_KEY` env var only. It is
@@ -84,15 +84,12 @@ const HBNB_SYMBOL_REGEX = /^HBNB2026-[A-Z0-9][A-Z0-9]{0,11}$/;
 export const deployerInputSchema = z.object({
   name: z
     .string()
-    .regex(
-      HBNB_NAME_REGEX,
-      'name must start with "HBNB2026-" prefix (hackathon demo guard, AGENTS.md #4b)',
-    ),
+    .regex(HBNB_NAME_REGEX, 'name must start with "HBNB2026-" prefix (hackathon demo guard)'),
   symbol: z
     .string()
     .regex(
       HBNB_SYMBOL_REGEX,
-      'symbol must start with "HBNB2026-" prefix and be uppercase (hackathon demo guard, AGENTS.md #4b)',
+      'symbol must start with "HBNB2026-" prefix and be uppercase (hackathon demo guard)',
     ),
   description: z.string().min(1).max(280),
   imageLocalPath: z.string().min(1),
