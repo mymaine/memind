@@ -1,14 +1,20 @@
 'use client';
 
 /**
- * Fixed ASCII backdrop with rAF-throttled scroll parallax (AC-ISP-8).
- * `.ascii-backdrop::before` in globals.css paints the character grid; this
- * component writes `--scroll-y` for the parallax transform. Users with
- * `prefers-reduced-motion` get a static frame — no listener attached. Pure
- * controller split matches useScrollProgress so node-env vitest can drive
- * every branch via injected fakes.
+ * Fixed ASCII backdrop. Combines scroll parallax (AC-ISP-8 mini) with a
+ * section-aware character palette + Brain-online offset (AC-ISP-9 advanced).
+ *
+ * `.ascii-backdrop::before` in globals.css paints the character grid; the
+ * view writes `data-section` + `data-brain` so attribute-selector rules
+ * swap the palette and nudge the layer toward the Header Brain indicator.
+ * `AsciiBackdropView` is pure (SSR / node-testable); the scroll controller
+ * skips installing when `prefers-reduced-motion` is ON.
  */
 import { useEffect, type ReactElement } from 'react';
+import { SECTION_TOC_ITEMS } from './section-toc';
+import { deriveBrainStatus, type BrainStatus } from './brain-status-bar-utils';
+import { useRunState } from '@/hooks/useRunStateContext';
+import { useSectionObserver } from '@/hooks/useSectionObserver';
 
 export interface AsciiBackdropControllerDeps {
   readonly reducedMotion: () => boolean;
@@ -43,7 +49,36 @@ export function createAsciiBackdropController(deps: AsciiBackdropControllerDeps)
   };
 }
 
+export interface AsciiBackdropViewProps {
+  readonly activeSection: string | null;
+  readonly brainStatus: BrainStatus;
+}
+
+/**
+ * Pure view. `activeSection` falls back to `hero` so CSS always has a
+ * concrete palette key — matches the pre-scroll reading experience where the
+ * top of the page is Hero.
+ */
+export function AsciiBackdropView(props: AsciiBackdropViewProps): ReactElement {
+  const section = props.activeSection ?? 'hero';
+  return (
+    <div
+      className="ascii-backdrop"
+      aria-hidden="true"
+      data-section={section}
+      data-brain={props.brainStatus}
+    />
+  );
+}
+
+// Module-level tuple so useSectionObserver gets a stable reference.
+const SECTION_IDS: readonly string[] = SECTION_TOC_ITEMS.map((item) => item.id);
+
 export function AsciiBackdrop(): ReactElement {
+  const activeSection = useSectionObserver(SECTION_IDS);
+  const runState = useRunState();
+  const brainStatus = deriveBrainStatus(runState);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     return createAsciiBackdropController({
@@ -56,5 +91,6 @@ export function AsciiBackdrop(): ReactElement {
       caf: window.cancelAnimationFrame.bind(window),
     }).install();
   }, []);
-  return <div className="ascii-backdrop" aria-hidden="true" />;
+
+  return <AsciiBackdropView activeSection={activeSection} brainStatus={brainStatus} />;
 }
