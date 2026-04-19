@@ -26,6 +26,7 @@
  */
 import { useCallback, useEffect, useState, type MouseEvent, type ReactElement } from 'react';
 import type { RunState } from '@/hooks/useRun-state';
+import { useRunState } from '@/hooks/useRunStateContext';
 import { LogsTab } from '@/components/footer-drawer-tabs/logs-tab';
 import { ArtifactsTab } from '@/components/footer-drawer-tabs/artifacts-tab';
 import { ConsoleTab } from '@/components/footer-drawer-tabs/console-tab';
@@ -33,7 +34,25 @@ import { ConsoleTab } from '@/components/footer-drawer-tabs/console-tab';
 export type FooterDrawerTab = 'logs' | 'artifacts' | 'console';
 
 export interface FooterDrawerProps {
-  readonly runState: RunState;
+  /**
+   * Optional explicit RunState override. When omitted (the production
+   * path from `app/page.tsx`), the drawer subscribes to the merged
+   * RunStateContext via `useRunState()` so it sees both:
+   *   - useRun-published state (launch / order / heartbeat runs), and
+   *   - BrainChat mirror extras (logs + artifacts pushed through the
+   *     RunState mirror API from `useBrainChat`).
+   *
+   * UAT bug context: before this change the drawer only accepted
+   * `runState` via props. `page.tsx` passed `hookResult.state` from
+   * `useRun()` — which never observes the brain-chat SSE run — so the
+   * Logs / Artifacts / Console tabs stayed empty during the Memind demo
+   * even though BrainPanel's inner transcript clearly streamed pills
+   * and text.
+   *
+   * The prop is kept (optional) so unit tests and SSR fixtures can pin
+   * a deterministic RunState without standing up a full provider tree.
+   */
+  readonly runState?: RunState;
   /** Optional initial open state; defaults to false. */
   readonly initialOpen?: boolean;
   /** Optional initial tab; defaults to `'logs'`. */
@@ -87,7 +106,11 @@ export function FooterDrawer(props: FooterDrawerProps): ReactElement {
   const [open, setOpen] = useState<boolean>(props.initialOpen ?? false);
   const [tab, setTab] = useState<FooterDrawerTab>(props.defaultTab ?? 'logs');
 
-  const { runState } = props;
+  // Hooks must run unconditionally, so always subscribe to the context and
+  // let the explicit prop override win when present. Outside a provider the
+  // hook returns IDLE_STATE — the same fallback the provider uses.
+  const contextRunState = useRunState();
+  const runState = props.runState ?? contextRunState;
 
   // Global `D` toggle. Mount once on the client. The pure helper above
   // handles the activeElement guard.

@@ -54,7 +54,13 @@ interface RunStateContextValue {
   readonly resetMirror: () => void;
 }
 
-const RunStateContext = createContext<RunStateContextValue | null>(null);
+/**
+ * Exported so integration tests can stand up a minimal context fixture
+ * without running the full provider (our vitest config is node-only and
+ * has no jsdom, so effect-driven setState cannot be exercised). Callers
+ * in application code should use `<RunStateProvider>` instead.
+ */
+export const RunStateContext = createContext<RunStateContextValue | null>(null);
 
 /**
  * Pure merge kernel. Combines the published RunState snapshot with the

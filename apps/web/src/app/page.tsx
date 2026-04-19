@@ -265,7 +265,16 @@ export default function HomePage(): ReactElement {
         runState={hookResult.state}
         initialDraft={brainDraft}
       />
-      <FooterDrawer runState={hookResult.state} />
+      {/*
+       * FooterDrawer intentionally receives no `runState` prop so it
+       * subscribes to the merged RunStateContext via `useRunState()`.
+       * That context mirrors BrainChat SSE events (logs + artifacts)
+       * in addition to the useRun-published state — without this the
+       * Memind demo's Logs / Artifacts / Console tabs stay empty while
+       * BrainPanel is actively streaming. See
+       * `hooks/useRunStateContext.tsx` docblock for the mirror contract.
+       */}
+      <FooterDrawer />
       {tweakActive && <TweaksPanel tweaks={tweaks} setTweak={setTweak} />}
     </div>
   );
