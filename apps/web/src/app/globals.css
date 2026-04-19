@@ -1483,6 +1483,17 @@ code,
   text-underline-offset: 2px;
 }
 
+/* UAT fix: inline meme-image thumbnail inside an artifact row. Sized to
+   match the row height so it drops into the ev-dot slot cleanly. */
+.artifact-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-default);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .console-pane {
   display: flex;
   flex-direction: column;
@@ -1495,6 +1506,103 @@ code,
   align-items: baseline;
   font-family: var(--font-mono);
   font-size: 13px;
+}
+
+/* ---------- LOGS DRAWER (left-side slide-in, replaces bottom footer) ---------- */
+/*
+ * Collapsed: only the 32px handle is visible on the left edge; the body
+ * width is 0 so it takes no horizontal space. Expanded (`.open`): the
+ * body animates to 360px. Handle always stays clickable.
+ */
+.logs-drawer {
+  position: fixed;
+  top: 56px; /* sits below TopBar */
+  left: 0;
+  bottom: 0;
+  z-index: 280;
+  display: flex;
+  flex-direction: row;
+  pointer-events: auto;
+}
+.logs-drawer-handle {
+  width: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border-default);
+  cursor: pointer;
+  padding: 16px 4px;
+  color: var(--fg-tertiary);
+  transition:
+    background 200ms,
+    color 200ms;
+}
+.logs-drawer-handle:hover {
+  background: var(--bg-surface);
+  color: var(--accent);
+}
+.logs-drawer-handle-icon {
+  font-size: 12px;
+  color: var(--fg-secondary);
+}
+.logs-drawer-handle-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--fg-tertiary);
+  text-transform: uppercase;
+}
+.logs-drawer-body {
+  width: 0;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-default);
+  transition: width 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+.logs-drawer.open .logs-drawer-body {
+  width: 360px;
+}
+.logs-drawer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+}
+.logs-drawer-tab {
+  flex: 1;
+  padding: 10px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--fg-tertiary);
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 200ms,
+    border-color 200ms;
+}
+.logs-drawer-tab:hover {
+  color: var(--fg-secondary);
+}
+.logs-drawer-tab.active {
+  color: var(--fg-emphasis);
+  border-bottom-color: var(--accent);
+}
+.logs-drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px;
 }
 
 /* ---------- TWEAKS PANEL ---------- */
