@@ -27,7 +27,15 @@ import { Ch4Brain } from '../ch4-brain.js';
 
 const PERSONAS = ['GLITCHY', 'CULTIST', 'DEGEN', 'SHILLER'] as const;
 const PERSONA_VOICES = ['glitch voice', 'cult voice', 'degen voice', 'shill voice'] as const;
-const SOON_CHANNELS = ['TELEGRAM', 'DISCORD', 'ON-CHAIN MSG'] as const;
+// UAT 2026-04-20 (round 3): channels switched from wordmarks to icon
+// glyphs. The aria-label carries the human name (e.g. "Telegram (coming
+// soon)") and the visible glyph is in the `.future-icon` span.
+const SOON_CHANNEL_ARIA = [
+  'Telegram (coming soon)',
+  'Discord (coming soon)',
+  'On-chain message (coming soon)',
+] as const;
+const LIVE_X_ICON = '\u{1D54F}';
 
 describe('<Ch4Brain>', () => {
   it('renders all four persona labels', () => {
@@ -44,15 +52,17 @@ describe('<Ch4Brain>', () => {
     }
   });
 
-  it('renders all three soon channel labels + the live X channel (UAT issue #7)', () => {
+  it('renders 4 channel ports (X live + 3 soon) as icon glyphs with aria labels', () => {
     const html = renderToStaticMarkup(<Ch4Brain p={1} />);
-    for (const label of SOON_CHANNELS) {
-      expect(html).toContain(label);
+    // Every soon channel surfaces its human name in aria-label; the
+    // visible glyph lives in `.future-icon` span (icon chosen per channel).
+    for (const aria of SOON_CHANNEL_ARIA) {
+      expect(html).toContain(`aria-label="${aria}"`);
     }
-    // X ships as a live port — label present and tagged "live".
-    expect(html).toMatch(/class="future-label"[^>]*>X<\/div>/);
-    // 4 channel ports total (X + 3 soon), 3 of them carry "soon" sub tags
-    // and 1 carries "live".
+    // X ships as a live port — aria is live, icon is double-struck X.
+    expect(html).toContain('aria-label="X (live)"');
+    expect(html).toContain(LIVE_X_ICON);
+    // 4 channel ports total; 3 soon, 1 live.
     const allSubs = html.match(/class="future-sub">(?:soon|live)<\/div>/g) ?? [];
     expect(allSubs).toHaveLength(4);
     const soonCount = (html.match(/class="future-sub">soon<\/div>/g) ?? []).length;

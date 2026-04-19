@@ -737,11 +737,24 @@ body:has(.logs-drawer.open) .toc {
   align-items: center;
   justify-content: center;
 }
+/*
+ * UAT 2026-04-20 (round 3): pin the SVG to a fixed 640×480 px box centered
+ * on the stage so its viewBox coordinates become real CSS pixels. Before
+ * this fix, `preserveAspectRatio="xMidYMid meet"` scaled the SVG to the
+ * (often wider) container, making a line drawn to viewBox (170, 0) land
+ * at CSS ~184px — misaligning the persona glyphs (which use CSS-px
+ * `transform: translate`) with their spoke endpoints. Fixed size eliminates
+ * the coordinate-system mismatch entirely.
+ */
 .brain-lines {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: 50%;
+  top: 50%;
+  width: 640px;
+  height: 480px;
+  margin-left: -320px;
+  margin-top: -240px;
+  overflow: visible;
 }
 .brain-core {
   position: relative;
@@ -799,6 +812,34 @@ body:has(.logs-drawer.open) .toc {
 .future-port {
   margin-top: -18px;
 }
+/*
+ * UAT 2026-04-20 (round 3): channel ports now show an icon glyph, not a
+ * wordmark. Use a larger monospace-agnostic font-size; fall back to the
+ * sans-display stack so emoji / symbol glyphs render cleanly on macOS
+ * + Windows + Linux. Soon channels stay dim, the live X channel gets an
+ * accent circle outline.
+ */
+.future-icon {
+  font-family: var(--font-sans-display);
+  font-size: 32px;
+  line-height: 1;
+  color: var(--fg-tertiary);
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--fg-tertiary);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.future-port--live .future-icon {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  background: rgba(0, 217, 146, 0.1);
+  box-shadow: 0 0 12px rgba(0, 217, 146, 0.25);
+}
+/* Legacy text-label fallback (kept for any caller still passing `.future-label`). */
 .future-label {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -807,8 +848,6 @@ body:has(.logs-drawer.open) .toc {
   padding: 4px 10px;
   border: 1px dashed var(--fg-tertiary);
 }
-/* UAT issue #7 — the X channel ships today, so its port reads as a solid
- * accent chip instead of a dashed "soon" tag. */
 .future-port--live .future-label {
   color: var(--accent);
   border: 1px solid var(--accent);

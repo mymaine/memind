@@ -57,6 +57,8 @@ interface ChannelPort {
   readonly a: number;
   readonly r: number;
   readonly label: string;
+  /** Unicode / emoji glyph rendered instead of the text label (UAT #2). */
+  readonly icon: string;
   readonly status: ChannelStatus;
 }
 
@@ -78,11 +80,18 @@ const PERSONAS: readonly PersonaPort[] = [
 // inside a typical 900-1000px viewport without spilling into the legend
 // row above or the closing CTA below. Persona ring stays outside the
 // brain-core badge but well inside the channel cross.
+// UAT 2026-04-20 (round 3): channel identifiers are icons rather than
+// text so the diagram reads as a symbolic map of delivery surfaces, not a
+// list of wordmarks. `label` stays as an aria label + tooltip surface.
+//   X   → 𝕏  (Unicode Math Double-Struck Capital X, U+1D54F)
+//   TG  → ✈  (paper plane, U+2708)
+//   DC  → ◉  (circled dot, lightweight discord stand-in)
+//   MSG → ⛓  (chain, U+26D3)
 const CHANNELS: readonly ChannelPort[] = [
-  { a: 0, r: 240, label: 'X', status: 'live' },
-  { a: -90, r: 260, label: 'TELEGRAM', status: 'soon' },
-  { a: 90, r: 260, label: 'DISCORD', status: 'soon' },
-  { a: 180, r: 240, label: 'ON-CHAIN MSG', status: 'soon' },
+  { a: 0, r: 240, label: 'X', icon: '\u{1D54F}', status: 'live' },
+  { a: -90, r: 260, label: 'Telegram', icon: '\u2708', status: 'soon' },
+  { a: 90, r: 260, label: 'Discord', icon: '\u25C9', status: 'soon' },
+  { a: 180, r: 240, label: 'On-chain message', icon: '\u26D3', status: 'soon' },
 ];
 
 const RING_RADII = [60, 120, 180, 240] as const;
@@ -232,8 +241,12 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
                 transform: `translate(${x}px, ${y}px)`,
                 opacity: appear * (live ? 0.95 : 0.6),
               }}
+              aria-label={`${c.label} (${live ? 'live' : 'coming soon'})`}
+              title={c.label}
             >
-              <div className="future-label">{c.label}</div>
+              <div className="future-icon" aria-hidden>
+                {c.icon}
+              </div>
               <div className="future-sub">{live ? 'live' : 'soon'}</div>
             </div>
           );
