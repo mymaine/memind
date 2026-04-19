@@ -139,7 +139,22 @@ body {
   border-radius: var(--radius-default);
 }
 
-/* Scrollbar (log panels) */
+/*
+ * Hide the page-level scrollbar (UAT 2026-04-20) while keeping scroll
+ * behaviour intact. The scrollytelling stage still advances on wheel /
+ * trackpad / keyboard input — only the visual scrollbar is gone so the
+ * cinematic edges read clean. Interior scrollers (log panels, drawers)
+ * keep their own 8px scrollbar via the rule block below.
+ */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+
+/* Scrollbar (log panels + interior drawers) */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
