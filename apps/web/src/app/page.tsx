@@ -29,6 +29,16 @@
  */
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Ch1Hero } from '@/components/chapters/ch1-hero';
+import { Ch2Problem } from '@/components/chapters/ch2-problem';
+import { Ch3Solution } from '@/components/chapters/ch3-solution';
+import { Ch4Brain } from '@/components/chapters/ch4-brain';
+import { Ch5Launch } from '@/components/chapters/ch5-launch';
+import { Ch6Shill } from '@/components/chapters/ch6-shill';
+import { Ch7Heartbeat } from '@/components/chapters/ch7-heartbeat';
+import { Ch8TakeRate } from '@/components/chapters/ch8-take-rate';
+import { Ch9SKU } from '@/components/chapters/ch9-sku';
+import { Ch10Phase } from '@/components/chapters/ch10-phase';
+import { Ch11Evidence } from '@/components/chapters/ch11-evidence';
 import { Header } from '@/components/header';
 import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
@@ -84,6 +94,16 @@ function makePlaceholderComp(label: string): StickyStageChapter['Comp'] {
 // placeholder for any chapter whose real component has shipped.
 const REAL_COMPS: Partial<Record<string, StickyStageChapter['Comp']>> = {
   hero: Ch1Hero,
+  problem: Ch2Problem,
+  solution: Ch3Solution,
+  'brain-architecture': Ch4Brain,
+  'launch-demo': Ch5Launch,
+  'order-shill': Ch6Shill,
+  'heartbeat-demo': Ch7Heartbeat,
+  'take-rate': Ch8TakeRate,
+  'sku-matrix': Ch9SKU,
+  'phase-map': Ch10Phase,
+  evidence: Ch11Evidence,
 };
 
 const CHAPTERS: readonly StickyStageChapter[] = CHAPTER_META.map((m, idx) => ({
