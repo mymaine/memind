@@ -275,6 +275,31 @@ code,
   align-items: center;
   gap: 18px;
 }
+/*
+ * GitHub jump-off anchor at the far-right of the TopBar. Icon-only
+ * footprint keeps it from competing with the brain status dot — reads
+ * fg-tertiary by default, accent on hover/focus, 32px hit target.
+ */
+.topbar-github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--fg-tertiary);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition:
+    color 160ms,
+    border-color 160ms,
+    background 160ms;
+}
+.topbar-github:hover,
+.topbar-github:focus-visible {
+  color: var(--accent);
+  border-color: var(--border-default);
+  background: var(--bg-elevated);
+}
 .topbar-progress {
   display: inline-flex;
   align-items: center;

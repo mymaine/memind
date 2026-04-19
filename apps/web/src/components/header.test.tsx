@@ -48,6 +48,15 @@ describe('<HeaderView /> TopBar', () => {
     expect(out).toMatch(/01\s*\/\s*11/);
   });
 
+  it('renders a GitHub jump-off anchor at the far-right of the TopBar', () => {
+    const out = render();
+    expect(out).toMatch(/class="topbar-github"/);
+    expect(out).toContain('https://github.com/mymaine/memind');
+    expect(out).toMatch(/target="_blank"/);
+    expect(out).toMatch(/rel="noopener noreferrer"/);
+    expect(out).toMatch(/aria-label="View source on GitHub"/);
+  });
+
   it('renders the zero-padded counter for a later chapter (03/11 at idx=2)', () => {
     const out = render({ activeIdx: 2, total: 11 });
     expect(out).toMatch(/03\s*\/\s*11/);
