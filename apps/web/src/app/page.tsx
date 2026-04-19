@@ -27,7 +27,7 @@
  * RunStateProvider still lives in layout.tsx, so the TopBar's embedded
  * <BrainIndicator /> reads run state through context.
  */
-import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from 'react';
 import { Ch1Hero } from '@/components/chapters/ch1-hero';
 import { Ch2Problem } from '@/components/chapters/ch2-problem';
 import { Ch3Solution } from '@/components/chapters/ch3-solution';
@@ -45,12 +45,14 @@ import { Header } from '@/components/header';
 import { ScanlinesOverlay } from '@/components/scanlines-overlay';
 import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
+import { TweaksPanel, TWEAK_DEFAULTS, type TweaksState } from '@/components/tweaks-panel';
 import { Watermark } from '@/components/watermark';
 import { useActiveChapter } from '@/hooks/useActiveChapter';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useRun } from '@/hooks/useRun';
 import { usePublishRunState } from '@/hooks/useRunStateContext';
 import { useScrollY } from '@/hooks/useScrollY';
+import { useTweakMode } from '@/hooks/useTweakMode';
 import {
   CHAPTER_META,
   SLOT_VH,
@@ -154,10 +156,27 @@ export default function HomePage(): ReactElement {
 
   const scrollY = useScrollY();
   const { activeIdx, progress } = useActiveChapter(scrollY, vh, CHAPTERS.length);
-  // System-level `prefers-reduced-motion: reduce` (AC-MSR-14). Forwarded
-  // to <StickyStage /> so the cross-fade engine is short-circuited and
-  // the active chapter renders with p=1 + no transform/filter.
-  const reducedMotion = useReducedMotion();
+  // System-level `prefers-reduced-motion: reduce` (AC-MSR-14). Merged
+  // with the Tweaks panel override below — if either source asks for
+  // reduced motion, <StickyStage /> short-circuits to the final state.
+  const systemReducedMotion = useReducedMotion();
+
+  // Tweaks state (AC-MSR-12). The panel is only mounted when
+  // `useTweakMode()` reports true (parent posted `__activate_edit_mode`
+  // or the URL carries `?edit=1`); the tweaks state itself lives here
+  // so the rest of the page (scanlines overlay, accent CSS var, the
+  // stage's reducedMotion prop) can react to it even when the panel
+  // is hidden.
+  const tweakActive = useTweakMode();
+  const [tweaks, setTweaks] = useState<TweaksState>(TWEAK_DEFAULTS);
+  const setTweak = useCallback(<K extends keyof TweaksState>(k: K, v: TweaksState[K]): void => {
+    setTweaks((prev) => ({ ...prev, [k]: v }));
+  }, []);
+  const reducedMotion = systemReducedMotion || tweaks.reduceMotion;
+  // Applied to the root element as a CSS variable so the ported
+  // `--accent` reference (TopBar, watermark-title, chapter accents)
+  // picks up the swatch change live.
+  const accentStyle: CSSProperties = { ['--accent' as never]: tweaks.accent };
 
   const slotPx = SLOT_VH * vh;
   const totalScrollH = CHAPTERS.length * slotPx + vh;
@@ -208,7 +227,7 @@ export default function HomePage(): ReactElement {
   const currentTitle = CHAPTERS[activeIdx]?.title ?? '';
 
   return (
-    <>
+    <div style={accentStyle}>
       <Header
         activeIdx={activeIdx}
         total={CHAPTERS.length}
@@ -218,13 +237,13 @@ export default function HomePage(): ReactElement {
       />
       <SectionToc activeIdx={activeIdx} onJump={onJump} />
       {/*
-       * CRT scanlines overlay (AC-MSR-13). Enabled by default per the
+       * CRT scanlines overlay (AC-MSR-13). On by default per the
        * design-handoff TWEAK_DEFAULTS.scanlines=true, but suppressed
-       * whenever reduced-motion is on — the flicker of the repeating
-       * gradient stacks poorly with the motion-sensitivity the OS
-       * flag is signalling. Tweaks-panel overrides land in AC-MSR-12.
+       * whenever reduced-motion is on (OS or Tweaks panel) — the
+       * flicker of the repeating gradient stacks poorly with
+       * motion-sensitivity.
        */}
-      <ScanlinesOverlay enabled={!reducedMotion} />
+      <ScanlinesOverlay enabled={tweaks.scanlines && !reducedMotion} />
       <div className="scroll-slot" style={{ height: totalScrollH }}>
         <StickyStage
           chapters={CHAPTERS}
@@ -242,6 +261,7 @@ export default function HomePage(): ReactElement {
         initialDraft={brainDraft}
       />
       <FooterDrawer runState={hookResult.state} />
-    </>
+      {tweakActive && <TweaksPanel tweaks={tweaks} setTweak={setTweak} />}
+    </div>
   );
 }
