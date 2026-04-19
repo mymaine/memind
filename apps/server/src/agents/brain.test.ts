@@ -84,6 +84,28 @@ describe('BRAIN_SYSTEM_PROMPT', () => {
     expect(BRAIN_SYSTEM_PROMPT).toContain('/lore');
     expect(BRAIN_SYSTEM_PROMPT).toContain('/heartbeat');
   });
+
+  // BRAIN-P6 Task 5: verify (not rewrite) the slash-rule wiring that
+  // AC-BRAIN-14 relies on. These assertions are deliberately redundant with
+  // the cases above — their point is to pin the *slash → tool* mapping so a
+  // future refactor of the prompt cannot silently break the client-side
+  // slash dispatch that already hard-codes this contract.
+
+  it('instructs the agent that a leading-slash message is an explicit command', () => {
+    // The client-side dispatcher and the server prompt must agree that `/`
+    // is a sigil the agent has to honour without asking clarifying questions.
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/If the user message starts with\s+`\//);
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/without asking|dispatch immediately/i);
+  });
+
+  it('wires each slash command to the correct persona-invoke tool', () => {
+    // The exact wiring lines appear inside SLASH COMMAND HANDLING. We pin
+    // each line explicitly so a prompt refactor keeps the mapping intact.
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/\/launch[^\n]*invoke_creator/);
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/\/order[^\n]*invoke_shiller/);
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/\/lore[^\n]*invoke_narrator/);
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/\/heartbeat[^\n]*invoke_heartbeat_tick/);
+  });
 });
 
 // ─── runBrainAgent wiring ───────────────────────────────────────────────────
