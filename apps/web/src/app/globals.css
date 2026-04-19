@@ -483,12 +483,16 @@ body {
   line-height: 1.6;
   white-space: pre;
   overflow: hidden;
-  transform: translate3d(var(--brain-offset-x, 0px), calc(var(--scroll-y, 0) * -0.05px), 0);
-  will-change: transform;
+  /* Post-scrollytelling rebuild: the backdrop is completely static. No
+     scroll parallax, no transform. The sparse starfield aesthetic lives
+     on whatever viewport the user is looking at; when the user scrolls,
+     sticky-pinned scenes slide across it, not the other way round. */
+  transform: translate3d(var(--brain-offset-x, 0px), 0, 0);
 }
 
 .ascii-backdrop[data-brain='online'] {
-  --brain-offset-x: 12px;
+  --brain-offset-x: 8px;
+  transition: --brain-offset-x 600ms var(--ease-out);
 }
 
 /* ---------- Dev Logs Drawer (AC-P4.7-5a) ---------- */
@@ -606,6 +610,5 @@ body {
      toggled the OS preference. */
   .ascii-backdrop-grid {
     transform: none !important;
-    will-change: auto !important;
   }
 }
