@@ -39,6 +39,7 @@ import { Ch8TakeRate } from '@/components/chapters/ch8-take-rate';
 import { Ch9SKU } from '@/components/chapters/ch9-sku';
 import { Ch10Phase } from '@/components/chapters/ch10-phase';
 import { Ch11Evidence } from '@/components/chapters/ch11-evidence';
+import { FooterDrawer } from '@/components/footer-drawer';
 import { Header } from '@/components/header';
 import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
@@ -164,6 +165,7 @@ export default function HomePage(): ReactElement {
         <StickyStage chapters={CHAPTERS} scrollY={scrollY} vh={vh} />
       </div>
       <Watermark activeIdx={activeIdx} total={CHAPTERS.length} title={currentTitle} />
+      <FooterDrawer runState={hookResult.state} />
     </>
   );
 }
