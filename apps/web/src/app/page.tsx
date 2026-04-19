@@ -40,8 +40,8 @@ import { Ch9SKU } from '@/components/chapters/ch9-sku';
 import { Ch10Phase } from '@/components/chapters/ch10-phase';
 import { Ch11Evidence } from '@/components/chapters/ch11-evidence';
 import { BrainPanel } from '@/components/brain-panel';
-import { FooterDrawer } from '@/components/footer-drawer';
 import { Header } from '@/components/header';
+import { LogsDrawer } from '@/components/logs-drawer';
 import { ScanlinesOverlay } from '@/components/scanlines-overlay';
 import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
@@ -266,15 +266,15 @@ export default function HomePage(): ReactElement {
         initialDraft={brainDraft}
       />
       {/*
-       * FooterDrawer intentionally receives no `runState` prop so it
-       * subscribes to the merged RunStateContext via `useRunState()`.
-       * That context mirrors BrainChat SSE events (logs + artifacts)
-       * in addition to the useRun-published state — without this the
-       * Memind demo's Logs / Artifacts / Console tabs stay empty while
-       * BrainPanel is actively streaming. See
+       * LogsDrawer (formerly FooterDrawer) intentionally receives no
+       * `runState` prop so it subscribes to the merged RunStateContext
+       * via `useRunState()`. That context mirrors BrainChat SSE events
+       * (logs + artifacts) in addition to the useRun-published state —
+       * without this the Memind demo's Logs / Artifacts / Console tabs
+       * stay empty while BrainPanel is actively streaming. See
        * `hooks/useRunStateContext.tsx` docblock for the mirror contract.
        */}
-      <FooterDrawer />
+      <LogsDrawer />
       {tweakActive && <TweaksPanel tweaks={tweaks} setTweak={setTweak} />}
     </div>
   );
