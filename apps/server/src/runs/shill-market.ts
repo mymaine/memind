@@ -178,9 +178,15 @@ export function createRealCreatorPaymentPhase(
         `realCreatorPayment: /shill/${tokenAddr} returned ${String(response.status)}: ${snippet}`,
       );
     }
-    const paymentHeader = response.headers.get('X-Payment-Response');
+    // x402 v2 servers emit the settlement envelope as `PAYMENT-RESPONSE`;
+    // some deployments prefix it with `X-`. Try both — `headers.get` is
+    // case-insensitive but not prefix-tolerant. Mirrors the x-fetch-lore tool.
+    const paymentHeader =
+      response.headers.get('PAYMENT-RESPONSE') ?? response.headers.get('X-PAYMENT-RESPONSE');
     if (paymentHeader === null || paymentHeader === '') {
-      throw new Error(`realCreatorPayment: /shill/${tokenAddr} missing X-Payment-Response header`);
+      throw new Error(
+        `realCreatorPayment: /shill/${tokenAddr} missing PAYMENT-RESPONSE header — x402 did not settle`,
+      );
     }
     const settlement = decodePaymentResponseHeader(paymentHeader);
     const bodyJson = (await response.json()) as { orderId?: unknown };
