@@ -1,90 +1,117 @@
 /**
- * Red tests for `<BrainChatSuggestions />` (BRAIN-P4 Task 4 / AC-BRAIN-9).
+ * Tests for `<BrainChatSuggestions />` (BRAIN-P4 Task 4 / AC-BRAIN-9).
  *
- * Renders 3-4 scope-aware suggestion chips when the chat transcript is empty.
- * The chip copy is driven by a pure `chipsForScope(scope)` helper; tests
- * cover the scope → copy mapping + the onPick wiring.
- *
- * Three cases from the brief:
- *   1. scope='launch' surfaces launch-flavoured prompts
- *   2. scope='order' surfaces order-flavoured prompts
- *   3. clicking a chip invokes onPick with the chip text (wiring contract)
+ * Each chip now carries a short `label` + a pool of `prompts`; clicking a
+ * chip calls `onPick` with a random member of the pool so the button row
+ * stays compact while the prompt library can be long + wild. Tests cover
+ *   1. scope → chip mapping (label semantics + non-empty pools)
+ *   2. the short label surfaces in markup while the (long) prompts don't
+ *   3. `pickRandomPrompt` always returns a member of the pool
+ *   4. onPick wiring contract (string from the clicked chip's pool)
  */
 import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { BrainChatSuggestions, chipsForScope } from './brain-chat-suggestions.js';
+import { BrainChatSuggestions, chipsForScope, pickRandomPrompt } from './brain-chat-suggestions.js';
 
-describe('chipsForScope() — scope → copy mapping', () => {
-  it('scope=launch returns launch-themed chips', () => {
+describe('chipsForScope() — scope → chip mapping', () => {
+  it('scope=launch returns launch-themed chips with non-empty pools', () => {
     const chips = chipsForScope('launch');
     expect(chips.length).toBeGreaterThanOrEqual(3);
-    // At least one chip must mention the core launch verb.
-    expect(chips.some((c) => /launch|deploy|meme/i.test(c))).toBe(true);
+    expect(chips.some((c) => /launch|deploy|meme/i.test(c.label))).toBe(true);
+    for (const c of chips) {
+      expect(c.prompts.length).toBeGreaterThan(0);
+    }
   });
 
-  it('scope=order returns order-themed chips (mentions shill / order)', () => {
+  it('scope=order returns order-themed chips (label mentions shill/order/pitch)', () => {
     const chips = chipsForScope('order');
     expect(chips.length).toBeGreaterThanOrEqual(3);
-    expect(chips.some((c) => /shill|order|pitch/i.test(c))).toBe(true);
+    expect(chips.some((c) => /shill|order|pitch/i.test(c.label))).toBe(true);
+    for (const c of chips) {
+      expect(c.prompts.length).toBeGreaterThan(0);
+    }
   });
 
   it('scope=heartbeat returns heartbeat-themed chips', () => {
     const chips = chipsForScope('heartbeat');
     expect(chips.length).toBeGreaterThanOrEqual(3);
-    expect(chips.some((c) => /heartbeat|tick|autonomous/i.test(c))).toBe(true);
-  });
-
-  it('scope=global returns a mixed chip set (>=3)', () => {
-    const chips = chipsForScope('global');
-    expect(chips.length).toBeGreaterThanOrEqual(3);
-  });
-});
-
-describe('<BrainChatSuggestions /> render', () => {
-  it('scope=launch renders launch chip text into the markup', () => {
-    const out = renderToStaticMarkup(
-      <BrainChatSuggestions scope="launch" onPick={() => undefined} />,
-    );
-    const chips = chipsForScope('launch');
-    for (const chip of chips) {
-      expect(out).toContain(chip);
+    expect(chips.some((c) => /heartbeat|tick|autonomous/i.test(c.label))).toBe(true);
+    for (const c of chips) {
+      expect(c.prompts.length).toBeGreaterThan(0);
     }
   });
 
-  it('scope=order renders order chip text into the markup', () => {
+  it('scope=global returns a mixed chip set (>=3) with non-empty pools', () => {
+    const chips = chipsForScope('global');
+    expect(chips.length).toBeGreaterThanOrEqual(3);
+    for (const c of chips) {
+      expect(c.prompts.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('<BrainChatSuggestions /> render — labels surface, prompts stay hidden', () => {
+  it('scope=launch renders each chip LABEL into the markup', () => {
+    const out = renderToStaticMarkup(
+      <BrainChatSuggestions scope="launch" onPick={() => undefined} />,
+    );
+    for (const chip of chipsForScope('launch')) {
+      expect(out).toContain(chip.label);
+    }
+  });
+
+  it('scope=order renders each chip LABEL into the markup', () => {
     const out = renderToStaticMarkup(
       <BrainChatSuggestions scope="order" onPick={() => undefined} />,
     );
-    const chips = chipsForScope('order');
-    for (const chip of chips) {
-      expect(out).toContain(chip);
+    for (const chip of chipsForScope('order')) {
+      expect(out).toContain(chip.label);
+    }
+  });
+
+  it('does NOT leak the (long) prompt pool entries into the rendered markup', () => {
+    // Pins the core contract of the new chip shape: only the short label
+    // is visible on the button; prompts stay in-memory until click. A
+    // future refactor that accidentally renders prompts under the label
+    // would trip this test.
+    const out = renderToStaticMarkup(
+      <BrainChatSuggestions scope="launch" onPick={() => undefined} />,
+    );
+    for (const chip of chipsForScope('launch')) {
+      for (const prompt of chip.prompts) {
+        expect(out).not.toContain(prompt);
+      }
+    }
+  });
+});
+
+describe('pickRandomPrompt() — random selector', () => {
+  it('always returns a member of the chip prompt pool', () => {
+    for (const chip of chipsForScope('launch')) {
+      for (let i = 0; i < 25; i++) {
+        expect(chip.prompts).toContain(pickRandomPrompt(chip));
+      }
     }
   });
 });
 
 describe('<BrainChatSuggestions /> onPick wiring — JSDOM-free stand-in', () => {
-  it('chipsForScope result can drive onPick simulations without rendering', () => {
-    // The node environment has no click dispatch; we exercise the wiring
-    // contract by calling onPick with each chip directly — this documents
-    // that onPick receives the chip text verbatim (no intermediate
-    // transformation) and is invoked once per chip click.
+  it('invokes onPick with a prompt from the clicked chip pool (per-chip)', () => {
+    // The node env has no click dispatch; mimic the button onClick inline.
+    // Contract: onPick receives a non-empty string that is a verbatim
+    // member of the clicked chip's prompt pool.
     const onPick = vi.fn<(text: string) => void>();
-    for (const chip of chipsForScope('launch')) {
-      onPick(chip);
+    const chips = chipsForScope('launch');
+    for (const chip of chips) {
+      const text = pickRandomPrompt(chip);
+      onPick(text);
+      expect(chip.prompts).toContain(text);
+      expect(text.length).toBeGreaterThan(0);
     }
-    expect(onPick).toHaveBeenCalledTimes(chipsForScope('launch').length);
-    // Every invocation carries a non-empty string.
-    for (const call of onPick.mock.calls) {
-      expect(typeof call[0]).toBe('string');
-      expect(call[0]!.length).toBeGreaterThan(0);
-    }
+    expect(onPick).toHaveBeenCalledTimes(chips.length);
   });
 
   it('renders <button type="button"> per chip so the client shell can wire onClick', () => {
-    // The wiring contract: each chip is a real <button> element so the
-    // client runtime attaches a native click handler. Asserting on the
-    // button tag guarantees the component isn't accidentally shipping a
-    // <div role="button"> (which misses keyboard-a11y by default).
     const out = renderToStaticMarkup(
       <BrainChatSuggestions scope="launch" onPick={() => undefined} />,
     );
