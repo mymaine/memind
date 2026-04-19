@@ -17,6 +17,7 @@ import { registerX402Routes } from './x402/index.js';
 import { registerAgentRoutes } from './agents/routes.js';
 import { LoreStore } from './state/lore-store.js';
 import { AnchorLedger } from './state/anchor-ledger.js';
+import { ShillOrderStore } from './state/shill-order-store.js';
 import { RunStore } from './runs/store.js';
 import { registerRunRoutes } from './runs/routes.js';
 
@@ -40,6 +41,11 @@ const runStore = new RunStore();
 // AC3 layer 1 anchor ledger — one shared instance so the Narrator phase
 // records commitments and any subsequent read endpoint can surface them.
 const anchorLedger = new AnchorLedger();
+// Shill-market order queue — shared between the x402 /shill/:tokenAddr
+// endpoint (producer) and the shill-market orchestrator (consumer). Dashboard
+// runs must see the same instance so POST /api/runs { kind: 'shill-market' }
+// does not 500 out at the routes guard.
+const shillOrderStore = new ShillOrderStore();
 
 // Anthropic client. Uses the same key resolution the demos use so POST
 // /api/runs fails fast if neither key is configured.
@@ -50,9 +56,16 @@ const anthropic = new Anthropic({
 });
 
 registerHealthRoutes(app);
-registerX402Routes(app, config, { loreStore });
+registerX402Routes(app, config, { loreStore, shillOrderStore });
 registerAgentRoutes(app);
-registerRunRoutes(app, { config, anthropic, runStore, loreStore, anchorLedger });
+registerRunRoutes(app, {
+  config,
+  anthropic,
+  runStore,
+  loreStore,
+  anchorLedger,
+  shillOrderStore,
+});
 
 app.listen(config.port, () => {
   console.info(`[server] listening on :${config.port}`);
