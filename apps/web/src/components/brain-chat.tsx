@@ -27,6 +27,8 @@
  */
 import {
   useCallback,
+  useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
@@ -84,6 +86,24 @@ export function BrainChat({
   const [slashError, setSlashError] = useState<string | null>(null);
 
   const palette = useSlashPalette(draft, scope);
+
+  // UAT fix #3: auto-scroll the transcript to the bottom on every new event
+  // so the final Markdown answer is always visible without the reader having
+  // to scroll past the (now-compact) tool-use log. We re-run on the serialised
+  // event-count signature so a streaming delta into an existing assistant
+  // turn also triggers the scroll (turns.length alone would miss those).
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const scrollSignature = active.turns
+    .map((t) => `${t.id}:${t.content.length.toString()}:${(t.brainEvents ?? []).length.toString()}`)
+    .join('|');
+  useEffect(() => {
+    const node = transcriptRef.current;
+    if (node === null) return;
+    // `scrollTop = scrollHeight` snaps to the bottom; smooth behaviour looks
+    // better during long streams but browsers that disable smooth scroll
+    // (reduce-motion, tests) still land on the correct position.
+    node.scrollTop = node.scrollHeight;
+  }, [scrollSignature]);
 
   const canSubmit =
     draft.trim() !== '' && active.status !== 'sending' && active.status !== 'streaming';
@@ -217,6 +237,8 @@ export function BrainChat({
     >
       {/* Transcript — empty state vs populated */}
       <div
+        ref={transcriptRef}
+        data-testid="brain-chat-transcript"
         aria-live="polite"
         className="flex max-h-[480px] min-h-[180px] flex-col gap-3 overflow-y-auto"
       >

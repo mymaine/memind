@@ -152,6 +152,27 @@ describe('<BrainChat /> — initialDraft seed (AC-MSR-7)', () => {
   });
 });
 
+describe('<BrainChat /> — UAT fix #3 (auto-scroll transcript)', () => {
+  it('marks the transcript scroll container with a stable testid', () => {
+    // The transcript container receives a `ref` + effect that scrolls to
+    // bottom on every event. We expose a testid so e2e / future unit tests
+    // can target it without relying on class fragments.
+    const out = renderToStaticMarkup(
+      <BrainChat
+        scope="launch"
+        controller={makeController({
+          turns: [{ id: 'a1', role: 'assistant', content: 'hi', brainEvents: [] }],
+        })}
+      />,
+    );
+    expect(out).toMatch(/data-testid="brain-chat-transcript"/);
+    // Overflow-y-auto is what gives the element room to scroll; a future
+    // refactor that drops the scroll container would silently regress the
+    // UAT fix, so we pin the style token.
+    expect(out).toMatch(/overflow-y-auto/);
+  });
+});
+
 describe('<BrainChat /> — slash hint (BRAIN-P6 AC-BRAIN-15)', () => {
   it('shows "Type / for commands" hint under suggestions when transcript empty', () => {
     // The hint lives underneath the suggestion chips in the empty-state
