@@ -25,17 +25,21 @@ interface Ch7HeartbeatProps {
   readonly p: number;
 }
 
-// Decision log sequence driven by scroll progress. Cadence matches the
-// Heartbeat production default (60s between ticks).
+// Decision log mirrors the real Heartbeat runner: each tick either
+// calls `check_token_status`, then picks exactly one of `post_to_x`,
+// `extend_lore`, or `idle`. The 8-row log replays that ×2 across the
+// scroll so the EKG has something to synchronise against. No fictional
+// tools (`read mentions`, `check liquidity`, `sentiment reject`) are
+// listed — those were aspirational and are not in heartbeat-runner.ts.
 const DECISIONS: readonly string[] = [
-  'read mentions',
-  'check liquidity',
-  'draft reply',
-  'price-probe',
-  'reject (sentiment low)',
-  'reschedule shill',
-  'mint reply',
+  'check token status',
+  'draft tweet',
+  'post to X',
   'sleep 60s',
+  'check token status',
+  'extend lore ch.2',
+  'sleep 60s',
+  'idle (no signal)',
 ];
 
 // Raw EKG points from chapters.jsx line 390 — left alone so the pulse

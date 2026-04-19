@@ -30,6 +30,32 @@ function onClass(base: string, active: boolean): string {
   return active ? `${base} on` : base;
 }
 
+// Inline wallet glyph — a crypto wallet silhouette (billfold + clasp +
+// card slot) rendered in currentColor so it picks up the accent palette
+// driving the rest of the equation card. Replaces a stray Mac Command
+// character (U+2318) that was mistakenly used as a wallet stand-in.
+function WalletIcon(): ReactElement {
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      width="38"
+      height="38"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="3.5" y="8" width="25" height="17.5" rx="2" />
+      <path d="M3.5 12.5h21a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-21" />
+      <circle cx="22" cy="16.5" r="1.5" fill="currentColor" stroke="none" />
+      <path d="M7 8V6.5a1.5 1.5 0 0 1 1.8-1.47l14 2.4" />
+    </svg>
+  );
+}
+
 export function Ch3Solution({ p }: Ch3SolutionProps): ReactElement {
   const step = clamp(p / 0.7) * 4;
 
@@ -60,8 +86,8 @@ export function Ch3Solution({ p }: Ch3SolutionProps): ReactElement {
         </div>
         <div className={onClass('eq-op', step >= 1.9)}>+</div>
         <div className={onClass('eq-part', step >= 2.4)}>
-          <div className="eq-card">
-            <span className="wallet-glyph">{'\u2318'}</span>
+          <div className="eq-card" style={{ color: 'var(--accent)' }}>
+            <WalletIcon />
           </div>
           <Mono dim>wallet</Mono>
         </div>
@@ -77,6 +103,12 @@ export function Ch3Solution({ p }: Ch3SolutionProps): ReactElement {
       </div>
       <div className="ch-solution-foot">
         <Mono>&gt; it thinks. it talks. it pays. it shills itself.</Mono>
+        <div style={{ marginTop: 10 }}>
+          <Mono dim>
+            &gt; not another launchpad — the{' '}
+            <span style={{ color: 'var(--accent)' }}>ecosystem flywheel</span> for four.meme.
+          </Mono>
+        </div>
       </div>
     </div>
   );

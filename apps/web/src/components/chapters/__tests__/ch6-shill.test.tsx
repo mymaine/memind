@@ -19,10 +19,15 @@ describe('<Ch6Shill>', () => {
     const html = renderToStaticMarkup(<Ch6Shill p={0} />);
     const matches = html.match(/class="tweet-card"/g) ?? [];
     expect(matches).toHaveLength(0);
-    // The two static chat lines still mount (opacity is driven by inline
-    // style, not conditional rendering).
-    expect(html).toContain('/shill 3 tweets, 4 hours apart');
-    expect(html).toContain('scheduling 3 drops');
+    // 2026-04-20 fact correction: the real slash command is `/order`
+    // (brain.ts:51). The brain response reflects the real $0.01 USDC
+    // price on Base Sepolia (x402/config.ts:56), not a scheduled batch.
+    expect(html).toContain('/order 0x4E39..74444');
+    expect(html).toContain('paying 0.01 USDC on Base Sepolia');
+    // Regression guards: kill the old fictional copy.
+    expect(html).not.toContain('/shill 3 tweets');
+    expect(html).not.toContain('scheduling 3 drops');
+    expect(html).not.toContain('0.03 USDC');
   });
 
   it('at p=0.2 only the first tweet card is rendered (t=0.15 crossed)', () => {
@@ -75,5 +80,23 @@ describe('<Ch6Shill>', () => {
     expect(html).toMatch(
       /class="demo-side-label">broadcasting<span class="demo-side-dots"[^>]*><\/span>/,
     );
+  });
+
+  it('tweet cards carry a subtle `sample` badge so scripted copy never reads as live', () => {
+    // 2026-04-20: the three tweet cards are scripted placeholders. A low-
+    // contrast "sample" badge lands top-right of every card so evidence
+    // readers know these are illustrative, not drawn from a real run.
+    const html = renderToStaticMarkup(<Ch6Shill p={1} />);
+    const badges = html.match(/class="tweet-sample-badge mono"/g) ?? [];
+    expect(badges).toHaveLength(3);
+  });
+
+  it('side-panel spec cites the real x402 endpoint + $0.01 USDC settlement on Base', () => {
+    const html = renderToStaticMarkup(<Ch6Shill p={0.3} />);
+    expect(html).toContain('POST /shill/:addr');
+    expect(html).toContain('$0.01 USDC');
+    expect(html).toContain('base sepolia');
+    // Regression: the old "3 tweets / 4h cadence" spec rows are gone.
+    expect(html).not.toMatch(/<span[^>]*>cadence<\/span>/);
   });
 });

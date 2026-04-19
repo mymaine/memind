@@ -34,17 +34,30 @@ describe('<Ch7Heartbeat>', () => {
     const html = renderToStaticMarkup(<Ch7Heartbeat p={0.5} />);
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(7);
-    // First 7 decisions present; eighth ("sleep 60s") not yet.
-    expect(html).toContain('read mentions');
-    expect(html).toContain('mint reply');
-    expect(html).not.toContain('sleep 60s');
+    // 2026-04-20: the decision list mirrors the real Heartbeat runner
+    // (check_token_status / post_to_x / extend_lore / idle). The 8-row
+    // log repeats those ×2 so the EKG has something to synchronise
+    // against — no fictional `read mentions` / `mint reply` tools.
+    expect(html).toContain('check token status');
+    expect(html).toContain('draft tweet');
+    expect(html).toContain('post to X');
+    // The final `idle (no signal)` row needs tick 8 → not visible at p=0.5.
+    expect(html).not.toContain('idle (no signal)');
+    // Regression: make sure the old fictional copy is gone.
+    expect(html).not.toContain('read mentions');
+    expect(html).not.toContain('mint reply');
+    expect(html).not.toContain('reject (sentiment low)');
   });
 
   it('at p=1 all eight decision rows are rendered (ticks capped by array length)', () => {
     const html = renderToStaticMarkup(<Ch7Heartbeat p={1} />);
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(8);
+    // `sleep 60s` shows up twice (the heartbeat cadence loops), and
+    // `idle (no signal)` only lands on the final tick.
     expect(html).toContain('sleep 60s');
+    expect(html).toContain('idle (no signal)');
+    expect(html).toContain('extend lore ch.2');
   });
 
   it('at p=0.5 the EKG polyline stroke-dashoffset resolves to 500 (1000 - p*1000)', () => {

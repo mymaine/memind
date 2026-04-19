@@ -1,16 +1,16 @@
 /**
- * Tests for <Ch2Problem /> — second chapter of the scrollytelling narrative
- * (memind-scrollytelling-rebuild AC-MSR-9 ch2).
+ * Tests for <Ch2Problem /> — the "after the filter" chapter.
  *
- * Ports the interior-progress contract from the design handoff:
+ * 2026-04-20 rebuild: the prior draft counted up to a fictional 32,140
+ * (one-off October 2025 spike conflated with daily reality). The new
+ * copy counts up to 351 — the l0k1 Dune dashboard's real four.meme
+ * daily launch rate — and spreads four alive cells across the 384-cell
+ * graveyard so the 3% survival curve reads visually.
  *
- *   - Count-up: `Math.floor(lerp(0, 32140, clamp(p/0.6)))`, rendered via
- *     `n.toLocaleString()`.
- *   - Graveyard grid: 32 cols × 12 rows = 384 cells, each `.grave-cell`.
- *     Cell index 47 is "alive" (accent `●`); the rest render dim `·`.
- *   - Aside: "most will die in silence" comment + sleep-mood mascot.
- *
- * Rendered via `renderToStaticMarkup` to match every other chapter test.
+ *   - Count-up: `Math.floor(lerp(0, 351, clamp(p/0.6)))`.
+ *   - Graveyard grid: 384 cells; indices 47 / 183 / 241 / 309 are alive.
+ *   - Aside: "four.meme filtered the spam" comment + sleep mascot +
+ *     Dune source link.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -29,9 +29,11 @@ describe('<Ch2Problem>', () => {
     expect(html).toMatch(/class="ch-headline"[^>]*>\s*<span[^>]*>0<\/span>/);
   });
 
-  it('at p=0.6 the count-up reaches 32,140 (toLocaleString formatted)', () => {
+  it('at p=0.6 the count-up reaches 351 (real four.meme daily rate, Dune-verified)', () => {
     const html = renderToStaticMarkup(<Ch2Problem p={0.6} />);
-    expect(html).toContain('32,140');
+    expect(html).toContain('>351<');
+    // Regression: the old fabricated 32,140 number must be gone.
+    expect(html).not.toContain('32,140');
   });
 
   it('renders exactly 384 graveyard cells (32 cols × 12 rows)', () => {
@@ -41,17 +43,19 @@ describe('<Ch2Problem>', () => {
     expect(matches.length).toBe(384);
   });
 
-  it('cell #47 is alive — accent color, `●` glyph, and grave-cell--alive modifier', () => {
+  it('four alive cells carry the grave-cell--alive modifier (3% survival curve)', () => {
     const html = renderToStaticMarkup(<Ch2Problem p={0.3} />);
-    // UAT issue #5 — the alive cell now carries the `grave-cell--alive`
-    // modifier so it picks up the CSS pulse + glow animation. Assert the
-    // modifier lands on exactly one cell and still renders the ● glyph
-    // with accent color.
+    // Four scattered alive cells carry the pulse modifier — they map
+    // to the four ALIVE_INDICES (47 / 183 / 241 / 309) in the component.
     const aliveMatches = html.match(/class="grave-cell grave-cell--alive"/g) ?? [];
-    expect(aliveMatches).toHaveLength(1);
-    expect(html).toMatch(
-      /class="grave-cell grave-cell--alive"[^>]*color:var\(--accent\)[^>]*>\u25cf<\/span>/,
-    );
+    expect(aliveMatches).toHaveLength(4);
+    // Every alive cell still renders the ● glyph with accent color.
+    const aliveGlyphCount = (
+      html.match(
+        /class="grave-cell grave-cell--alive"[^>]*color:var\(--accent\)[^>]*>\u25cf<\/span>/g,
+      ) ?? []
+    ).length;
+    expect(aliveGlyphCount).toBe(4);
     // Sanity — the dim glyph is also present (lots of them).
     expect(html).toContain('\u00b7');
   });
@@ -74,15 +78,21 @@ describe('<Ch2Problem>', () => {
     const dimMatches = [...html.matchAll(/class="grave-cell"[^>]*style="opacity:([0-9.]+)/g)].map(
       (m) => Number(m[1]),
     );
-    expect(dimMatches.length).toBeGreaterThan(380);
+    // 384 total cells minus 4 alive = 380 dim cells.
+    expect(dimMatches.length).toBe(380);
     const avg = dimMatches.reduce((s, v) => s + v, 0) / dimMatches.length;
     expect(avg).toBeLessThan(0.05);
   });
 
-  it('renders the "most will die in silence" aside and the sleep-mood mascot', () => {
+  it('renders the "filtered the spam" aside + the sleep mascot + the Dune source link', () => {
     const html = renderToStaticMarkup(<Ch2Problem p={0.5} />);
-    expect(html).toContain('most will die in silence');
+    expect(html).toContain('four.meme filtered the spam');
+    // Core thesis: creator walks away at hour 0.
+    expect(html).toContain('creator walks away');
     // Sleep-mood glyph sits next to the aside copy.
     expect(html).toMatch(/data-mood="sleep"/);
+    // Dune dashboard source link — honest data attribution.
+    expect(html).toContain('dune.com/l0k1/fourmeme-insights');
+    expect(html).toContain('https://dune.com/l0k1/fourmeme-insights');
   });
 });

@@ -50,20 +50,32 @@ describe('<Ch3Solution>', () => {
     expect(html).toMatch(/class="eq-part eq-final"(?!\s+on)/);
   });
 
-  it('renders the MEMIND final card with think-mood brain + wallet glyph', () => {
+  it('renders the MEMIND final card with think-mood brain + wallet SVG', () => {
     const html = renderToStaticMarkup(<Ch3Solution p={1} />);
     expect(html).toContain('MEMIND');
     // Think-mood brain glyph sits inside the accent card.
     expect(html).toMatch(/data-mood="think"/);
-    // Wallet glyph is the ⌘ command symbol.
-    expect(html).toMatch(/class="wallet-glyph"[^>]*>\u2318</);
+    // Wallet slot used to paint the Mac Command glyph (U+2318). 2026-04-20
+    // swap: inline SVG of an actual wallet (billfold silhouette + card
+    // slot + clasp). The regression asserts the SVG shape — a rounded
+    // rect for the billfold and a filled circle for the card accent —
+    // is present, AND that the old Command-key Unicode is gone.
+    expect(html).toMatch(/<svg[^>]*viewBox="0 0 32 32"/);
+    expect(html).toMatch(/<rect[^>]*rx="2"/);
+    expect(html).toMatch(/<circle[^>]*fill="currentColor"/);
+    expect(html).not.toContain('\u2318');
   });
 
-  it('renders the headline + foot tagline', () => {
+  it('renders the headline + foot tagline + ecosystem-flywheel framing', () => {
     const html = renderToStaticMarkup(<Ch3Solution p={0.5} />);
     expect(html).toContain('what if every token had a');
     expect(html).toContain('brain');
     expect(html).toContain('it thinks. it talks. it pays. it shills itself.');
+    // 2026-04-20 strategic framing: align the project with four.meme's
+    // post-spam governance direction instead of reading as a rival
+    // launchpad. The "ecosystem flywheel" line is load-bearing copy.
+    expect(html).toContain('ecosystem flywheel');
+    expect(html).toContain('four.meme');
   });
 
   it('MEMIND final card ships glow treatment, not a flat neon slab (UAT issue #6)', () => {

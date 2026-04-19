@@ -244,8 +244,10 @@ code,
   gap: 10px;
 }
 .brand-mark {
-  width: 24px;
-  height: 22px;
+  /* UAT 2026-04-20: bump the TopBar mascot from 22px to a more legible
+   * 32px. The 56px TopBar still has headroom for the larger glyph. */
+  width: 36px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -622,6 +624,29 @@ body:has(.logs-drawer.open) .toc {
 .ch-problem-aside {
   padding-top: 20px;
 }
+/*
+ * Data-source caption between the headline and the graveyard grid.
+ * Lives outside `.ch-problem-aside` so the sleep mascot below cannot
+ * visually shadow the underlined link — the old layout parked the Dune
+ * attribution next to the glyph and UAT 2026-04-20 flagged it as hard
+ * to read.
+ */
+.ch-problem-source {
+  margin-top: -24px;
+  margin-bottom: 28px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: var(--fg-tertiary);
+}
+.ch-problem-source a {
+  color: var(--fg-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ch-problem-source a:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
 
 /* ---------- CH 3 SOLUTION ---------- */
 .ch-solution .ch-headline {
@@ -755,6 +780,13 @@ body:has(.logs-drawer.open) .toc {
   margin-top: -240px;
   overflow: visible;
 }
+/*
+ * brain-core: the center-stage mascot + label stack. Previously painted
+ * a literal 1px border + green fill so the badge read like a clipped
+ * rectangle hovering over the radial rings. UAT 2026-04-20 asked us to
+ * drop the box entirely — the Persona glyph already anchors the eye,
+ * and removing the border lets the ring geometry breathe.
+ */
 .brain-core {
   position: relative;
   z-index: 2;
@@ -762,10 +794,12 @@ body:has(.logs-drawer.open) .toc {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 18px 28px;
-  border: 1px solid var(--accent);
-  background: rgba(0, 217, 146, 0.06);
-  box-shadow: 0 0 40px rgba(0, 217, 146, 0.15);
+  padding: 8px 10px;
+  /* UAT 2026-04-20: hard-remove the accent-green rectangle. The text
+   * labels + central pixel glyph already carry the hierarchy. */
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 .brain-core-label {
   font-family: var(--font-mono);
@@ -991,9 +1025,27 @@ body:has(.logs-drawer.open) .toc {
   font-size: 12px;
 }
 .tweet-card {
+  position: relative;
   border: 1px solid var(--border-default);
   background: var(--bg-elevated);
   padding: 12px 14px;
+}
+/*
+ * Small "sample" badge anchored to the top-right corner of a scripted
+ * tweet card. Deliberately understated (tertiary color, 9px font) so it
+ * does not distract from the copy but keeps the chapter honest about
+ * which tweets are scripted vs. drawn from a real run.
+ */
+.tweet-sample-badge {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  color: var(--fg-tertiary);
+  text-transform: uppercase;
+  opacity: 0.55;
+  pointer-events: none;
 }
 .tweet-head {
   display: flex;
@@ -1139,6 +1191,97 @@ body:has(.logs-drawer.open) .toc {
   padding-top: 20px;
   border-top: 1px dashed var(--border-default);
 }
+/*
+ * Right-column meta cell for each revenue-mix bar: pricing hint stacked
+ * above a compact status chip (live / next / planned / future). The
+ * chip colors mirror the SKU card status badges in Ch9 so evidence
+ * reads consistently across both business chapters.
+ */
+.biz-bar-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+.biz-bar-status {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-default);
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+}
+.biz-bar-status-live {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.biz-bar-status-next {
+  color: var(--chain-bnb);
+  border-color: var(--chain-bnb);
+}
+.biz-bar-status-planned {
+  color: var(--fg-tertiary);
+  border-color: var(--border-default);
+}
+.biz-bar-status-future {
+  color: var(--fg-tertiary);
+  border-style: dashed;
+  opacity: 0.75;
+}
+/*
+ * Take-rate projection block: four adoption milestones shown as a 5-col
+ * row (when · adoption · daily · ARR · footnote). Sits below the biz-grid
+ * and fades in after the revenue-mix bars finish animating so the
+ * `$3.20` headline lands first, then the roadmap numbers explain it.
+ */
+.biz-projection {
+  margin-top: 44px;
+  padding-top: 24px;
+  border-top: 1px dashed var(--border-default);
+  transition: opacity 240ms ease-out;
+}
+.biz-projection-head {
+  margin-bottom: 14px;
+}
+.biz-projection-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.biz-projection-row {
+  display: grid;
+  /*
+   * Column recipe: the adoption column carried the widest label
+   * (`+ BRAIN.PRO · ALPHA FEED`) and wrapped to two lines at 160px.
+   * Widen to 220px and `nowrap` every cell so the row always reads as
+   * a single horizontal line.
+   */
+  grid-template-columns: 80px 220px 110px 110px 1fr;
+  align-items: baseline;
+  gap: 18px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  transition:
+    opacity 240ms ease-out,
+    transform 240ms ease-out;
+}
+.biz-projection-row > * {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.biz-projection-row:last-child {
+  border-bottom: none;
+}
+.biz-projection-note {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-default);
+  font-size: 11px;
+}
 
 /* ---------- CH 9 SKU ---------- */
 .sku-grid {
@@ -1188,7 +1331,20 @@ body:has(.logs-drawer.open) .toc {
   color: var(--chain-bnb);
   border-color: var(--chain-bnb);
 }
-/* sku-status chip: honest `live` vs `planned` badge next to the tier chip */
+/* Two new tiers: `sub` = recurring subscription, `market` = two-sided
+ * take rate. Colors keep to the chain palette so the matrix stays
+ * visually consistent across all five cards. */
+.sku-tier-sub {
+  color: var(--chain-ipfs);
+  border-color: var(--chain-ipfs);
+}
+.sku-tier-market {
+  color: var(--fg-secondary);
+  border-color: var(--fg-secondary);
+}
+/* sku-status chip: honest `live` / `next` / `planned` / `future` badge
+ * next to the tier chip. `next` = buildable this sprint, `future` =
+ * dashed so roadmap items read as aspirational. */
 .sku-status {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -1202,10 +1358,51 @@ body:has(.logs-drawer.open) .toc {
   color: var(--accent);
   border-color: var(--accent);
 }
+.sku-status-next {
+  color: var(--chain-bnb);
+  border-color: var(--chain-bnb);
+}
 .sku-status-planned {
   color: var(--fg-tertiary);
   border-color: var(--border-default);
   border-style: dashed;
+}
+.sku-status-future {
+  color: var(--fg-tertiary);
+  border-color: var(--border-default);
+  border-style: dashed;
+  opacity: 0.7;
+}
+/*
+ * 3+2 SKU layout (UAT 2026-04-20). Row 1 is the near-term trio the
+ * creator touches today (shill / bundle / brain retainer); row 2
+ * centres the long-horizon demand-side + marketplace pair so the grid
+ * reads as one symmetric block instead of a lopsided 2+2+1 cascade.
+ */
+.sku-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 32px;
+}
+.sku-row {
+  display: grid;
+  gap: 18px;
+}
+.sku-row-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.sku-row-2-center {
+  /* Mirror the centre tile of row 1 by pegging the two cards to the
+   * same max width as a row-3 child (roughly 1/3 of the stage minus
+   * the 36px of internal gap) and centring the pair. */
+  grid-template-columns: repeat(2, minmax(0, calc((100% - 72px) / 3)));
+  justify-content: center;
+}
+.sku-footnote {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-default);
 }
 .sku-name {
   font-family: var(--font-mono);
@@ -1319,6 +1516,91 @@ body:has(.logs-drawer.open) .toc {
   margin-top: 36px;
   font-family: var(--font-mono);
 }
+/*
+ * Swarm dialogue theatre — the Phase-3 preview. Two mascots flank a
+ * vertical bubble column; each bubble fades up as its scroll threshold
+ * crosses. Left/right/center bubble alignment is driven by the speaker
+ * so FROG speaks from the left, PEPE from the right, and the x402
+ * settlement line lands center-stage.
+ */
+.swarm-stage {
+  margin-top: 56px;
+  padding-top: 32px;
+  border-top: 1px dashed var(--border-default);
+  transition: opacity 300ms ease-out;
+}
+.swarm-caption {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.swarm-theatre {
+  display: grid;
+  grid-template-columns: 140px 1fr 140px;
+  align-items: center;
+  gap: 24px;
+}
+.swarm-actor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.swarm-actor-right {
+  /* Mirror the right actor so the two glyphs face each other across
+   * the bubble column instead of both walking the same direction. */
+  transform: scaleX(-1);
+}
+.swarm-actor-right .mono {
+  /* Un-flip the label so the token name reads correctly. */
+  transform: scaleX(-1);
+}
+.swarm-bubbles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 170px;
+  justify-content: center;
+}
+.swarm-bubble {
+  padding: 10px 14px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  max-width: 440px;
+  font-size: 13px;
+  line-height: 1.45;
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+.swarm-bubble-left {
+  align-self: flex-start;
+  border-radius: 2px 10px 10px 10px;
+}
+.swarm-bubble-right {
+  align-self: flex-end;
+  border-radius: 10px 2px 10px 10px;
+}
+.swarm-bubble-center {
+  align-self: center;
+  border-style: dashed;
+  border-radius: 10px;
+}
+.swarm-bubble-speaker {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.swarm-bubble-text {
+  display: block;
+  color: var(--fg-secondary);
+}
+.swarm-tagline {
+  margin-top: 24px;
+  text-align: center;
+  letter-spacing: 1px;
+}
 
 /* ---------- CH 11 EVIDENCE ---------- */
 .ch-evidence .ch-headline {
@@ -1326,24 +1608,118 @@ body:has(.logs-drawer.open) .toc {
   letter-spacing: -2px;
   margin-bottom: 32px;
 }
-.ev-grid {
+/* Top row: meme cover on the left, tabbed evidence column on the right. */
+.ev-layout {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 36px;
+  grid-template-columns: 240px 1fr;
+  gap: 28px;
+  align-items: start;
 }
-.ev-col {
+.ev-meme {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.ev-col-head {
+.ev-meme-frame {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+.ev-meme-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ev-meme-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 6px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--fg-tertiary);
+  border: 1px solid var(--border-default);
+}
+.ev-meme-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ev-meme-symbol {
+  color: var(--fg-emphasis);
+  font-size: 16px;
+  letter-spacing: 1.5px;
+}
+.ev-meme-hint {
+  color: var(--fg-tertiary);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+
+/* Tabs + evidence rows. */
+.ev-tabs-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ev-tabs {
+  display: flex;
+  gap: 8px;
   padding-bottom: 8px;
   border-bottom: 1px dashed var(--border-default);
-  margin-bottom: 4px;
 }
+.ev-tab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.ev-tab:hover {
+  color: var(--fg-emphasis);
+}
+.ev-tab-active {
+  background: rgba(255, 255, 255, 0.03);
+}
+.ev-tab-panels {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+}
+.ev-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  top: 0;
+  left: 0;
+  right: 0;
+  transition: opacity 0.2s ease;
+}
+
 .ev-pill {
   display: grid;
-  grid-template-columns: 8px 60px 1fr 160px 160px 20px;
+  /*
+   * Column recipe (UAT 2026-04-20): label used to flex-fill which pushed
+   * the block column to ~140px and forced `BSC MAINNET · 2026-04-18` to
+   * wrap. The label now caps at `minmax(120px, 1fr)` with ellipsis so
+   * the block column can claim a stable 200px and render on one line.
+   */
+  grid-template-columns: 8px 60px minmax(120px, 1fr) 160px 200px 52px 20px;
   align-items: center;
   gap: 14px;
   padding: 12px 16px;
@@ -1351,7 +1727,22 @@ body:has(.logs-drawer.open) .toc {
   background: var(--bg-surface);
   font-family: var(--font-mono);
   font-size: 12px;
-  transition: all 200ms;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+.ev-pill-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+.ev-pill-link:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg-surface));
+}
+.ev-pill-link:hover .ev-hash {
+  color: var(--fg-emphasis);
 }
 .ev-pill-eng {
   grid-template-columns: 1fr 160px;
@@ -1366,15 +1757,38 @@ body:has(.logs-drawer.open) .toc {
 }
 .ev-label {
   color: var(--fg-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .ev-hash {
   color: var(--fg-secondary);
+  text-transform: none;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 .ev-block {
   color: var(--fg-tertiary);
+  /* Force the BSC MAINNET · 2026-04-18 / IPFS · Pinata strings onto a
+   * single line so the row never wraps to two lines. */
+  white-space: nowrap;
+}
+.ev-sample {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--fg-tertiary);
+  text-align: right;
 }
 .ev-check {
   color: var(--accent);
+  text-align: right;
+}
+.ev-eng {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 28px;
 }
 .ev-closing {
   margin-top: 32px;
@@ -1384,6 +1798,17 @@ body:has(.logs-drawer.open) .toc {
   display: flex;
   gap: 20px;
   align-items: center;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------- DRAWER SHARED BITS ---------- */

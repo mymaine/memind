@@ -50,7 +50,7 @@ export function HeaderView(props: HeaderViewProps): ReactElement {
       <div className="topbar-brand">
         <span className="brand-mark">
           <PixelHumanGlyph
-            size={22}
+            size={32}
             mood="idle"
             primaryColor="var(--accent)"
             accentColor="var(--chain-bnb)"

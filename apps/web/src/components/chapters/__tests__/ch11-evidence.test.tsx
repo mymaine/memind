@@ -1,21 +1,25 @@
 /**
- * Tests for <Ch11Evidence /> — closing-evidence chapter of the
- * scrollytelling narrative (memind-scrollytelling-rebuild AC-MSR-9 ch11).
+ * Tests for <Ch11Evidence /> — rebuilt 2026-04-20 around a chain-partitioned
+ * tab view + a clickable hash-link model.
  *
- * Ports the interior-progress contract from the design handoff, with two
- * spec-mandated deltas:
+ * Contract (new):
  *
- *   1. On-chain pills MUST integrate real `runState.artifacts`. When the
- *      run has shipped >= 5 artifacts, the first 5 are rendered through
- *      `mapArtifactToEvidenceRow`. Otherwise we fall back to a 5-row
- *      FALLBACK table anchored on actual 2026-04-18 launch hashes.
- *   2. Engineering rows: brain.tick row reads `60s · autonomous` — no
- *      model or provider name leaked. The `194 kB` bundle number is
- *      replaced with the static `≤ 230 kB budget` string (avoids drifting
- *      with every build).
+ *   1. Four tabs — BNB / BASE / IPFS / X — each surface up to 5 rows.
+ *      A tab shows real artifacts first (routed by `tabForArtifact`) and
+ *      pads the tail with `FALLBACK_ONCHAIN_TABS[tab]` so every tab
+ *      always looks populated.
+ *   2. Each row is an `<a>` with `href` to the matching explorer
+ *      (BscScan / Basescan / Pinata / Twitter), `target="_blank"`, and
+ *      `rel="noopener noreferrer"`. Heartbeat rows are the one exception
+ *      — they carry no external URL and render as `<div>`.
+ *   3. The meme-image cover (left-column card) pulls from the latest
+ *      `meme-image` artifact; a placeholder SVG + `sample` badge lands
+ *      when no real image is present.
+ *   4. Engineering rows (PixelHumanGlyph / bundle / brain.tick) still
+ *      surface under the main evidence block.
  *
- * Ch11 is the only chapter that reads context, so tests that touch the
- * hook wrap the component in <RunStateProvider> + a publish helper.
+ * Ch11 reads `useRunState`, so the mock pattern from the previous
+ * revision is preserved.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -23,17 +27,11 @@ import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import type { RunState } from '@/hooks/useRun-state';
 import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS, IDLE_STATE } from '@/hooks/useRun-state';
 
-// `renderToStaticMarkup` does not run React effects, so the usual
-// <RunStateProvider>+usePublishRunState seed pattern never reaches the
-// subtree on the first render. Mock the hook so each test can swap in
-// whatever state it needs before importing the component.
 const mockUseRunState = vi.fn<() => RunState>();
 vi.mock('@/hooks/useRunStateContext', () => ({
   useRunState: () => mockUseRunState(),
 }));
 
-// Must be imported AFTER the mock call so the component picks up the
-// mocked module.
 const { Ch11Evidence, mapArtifactToEvidenceRow } = await import('../ch11-evidence.js');
 
 function makeRunning(artifacts: Artifact[], logs: LogEvent[] = []): RunState {
@@ -52,115 +50,55 @@ beforeEach(() => {
   mockUseRunState.mockReturnValue(IDLE_STATE);
 });
 
-describe('<Ch11Evidence> fallback behaviour', () => {
-  it('when runState has < 5 artifacts, renders all 5 fallback pills', () => {
+describe('<Ch11Evidence> tab shell', () => {
+  it('renders exactly four tabs — BNB / BASE / IPFS / X', () => {
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    // Fallback hashes anchored on actual 2026-04-18 launch data.
-    expect(html).toContain('0x4E39d254..74444');
-    expect(html).toContain('0x760ff53f..760c9b');
-    expect(html).toContain('bafkrei..peq4');
-    expect(html).toContain('0xa812..9fc4');
-    expect(html).toContain('bafkrei..abcd');
-    // 5 ev-pill rows (plus 3 eng rows = 8 total pills). Use a filter to
-    // strip `ev-pill-eng` from the count.
-    const onchainPills = html.match(/class="ev-pill"[^>]/g) ?? [];
-    expect(onchainPills.length).toBe(5);
+    const tabs = html.match(/class="ev-tab(?: ev-tab-active)?"/g) ?? [];
+    expect(tabs.length).toBe(4);
+    // First render defaults to BNB being the active tab.
+    expect(html).toMatch(/class="ev-tab ev-tab-active"[^>]*>BNB</);
+    expect(html).toContain('>BASE<');
+    expect(html).toContain('>IPFS<');
+    expect(html).toContain('>X<');
   });
 
-  it('renders the MEMIND wordmark + sunglasses glyph in the closing card', () => {
+  it('each tab panel renders at most 5 rows (total DOM rows = 20 across hidden panels)', () => {
+    // Non-active tab panels stay in the DOM (opacity:0, pointer-events:none)
+    // so the cross-fade is purely CSS. Total row count across all four
+    // panels is 4 × 5 = 20 when every tab is at capacity.
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    expect(html).toContain('MEMIND');
-    expect(html).toMatch(/data-mood="sunglasses"/);
-    expect(html).toContain('open the demo');
-    expect(html).toContain('see the code');
+    const rows = html.match(/class="ev-pill ev-pill-link"/g) ?? [];
+    expect(rows.length).toBe(20);
   });
 
-  it('"see the code" renders as an external link to the repo (UAT issue #1)', () => {
-    // UAT: the two closing CTAs must be clickable. `see the code` opens a
-    // new tab to the repo on GitHub. Assert the <a> with target=_blank +
-    // rel=noopener exists; URL precise host is not the assertion target
-    // (URL is configurable at deploy), but it MUST be an absolute http(s).
+  it('every evidence row is an <a> with target=_blank + rel=noopener (clickable hash)', () => {
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    expect(html).toMatch(/<a[^>]*href="https?:\/\/[^"]*github[^"]*"[^>]*target="_blank"/);
-    expect(html).toMatch(/rel="noopener noreferrer"/);
-  });
-
-  it('"open the demo" renders a button (clickable target for scroll-to-top)', () => {
-    // UAT: clicking `open the demo` loops back to Ch1 so the user can
-    // re-watch or start a new run. SSR asserts the button is present; the
-    // onClick handler runs at runtime only (jsdom-less vitest can't fire it).
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    expect(html).toMatch(/<button[^>]*class="cta cta-primary"[^>]*>[^<]*open the demo/);
+    // Count all <a class="ev-pill ev-pill-link" ...> occurrences — each
+    // MUST carry target="_blank" and rel="noopener noreferrer".
+    const links =
+      html.match(
+        /<a class="ev-pill ev-pill-link" href="[^"]+" target="_blank" rel="noopener noreferrer"/g,
+      ) ?? [];
+    expect(links.length).toBe(20);
   });
 });
 
 describe('<Ch11Evidence> real-data binding', () => {
-  it('when runState has 0 artifacts, renders all 5 fallback pills (unchanged baseline)', () => {
-    // Already covered by the fallback-behaviour suite above; asserted here
-    // again alongside the new padding cases so the 0-artifact branch sits
-    // next to the 2/5 mixed branch for easy comparison.
+  it('empty runState still fills every tab with 5 sample rows', () => {
     mockUseRunState.mockReturnValue(makeRunning([]));
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    const onchainPills = html.match(/class="ev-pill"[^>]/g) ?? [];
-    expect(onchainPills.length).toBe(5);
-    expect(html).toContain('0x4E39d254..74444');
+    // Every row carries the sample mono badge when no real data exists.
+    const sampleBadges = html.match(/class="ev-sample mono">sample</g) ?? [];
+    expect(sampleBadges.length).toBe(20);
   });
 
-  it('when runState has 2 real artifacts, renders 2 real + 3 fallback pills (UAT 2026-04-20)', () => {
-    // UAT fix: pre-fix the threshold was >=5, so any real run under 5
-    // artifacts silently rendered 100% fallback hashes, undercutting the
-    // live-demo story. Post-fix: real artifacts come first, fallback pads
-    // the tail so the grid is always 5 pills but reads as "mostly real".
+  it('real artifacts route to the matching tab + win the first slot', () => {
     const realArtifacts: Artifact[] = [
       {
         kind: 'bsc-token',
         chain: 'bsc-mainnet',
         address: '0x1111111111111111111111111111111111111111',
         explorerUrl: 'https://bscscan.com/token/0x1111111111111111111111111111111111111111',
-      },
-      {
-        kind: 'token-deploy-tx',
-        chain: 'bsc-mainnet',
-        txHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
-        explorerUrl: 'https://bscscan.com/tx/0x2222',
-      },
-    ];
-    mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    // Both real hashes present.
-    expect(html).toContain('0x11111111..1111');
-    expect(html).toContain('0x22222222..2222');
-    // First 3 fallback hashes come after (pad to 5 total).
-    expect(html).toContain('0x4E39d254..74444');
-    expect(html).toContain('0x760ff53f..760c9b');
-    expect(html).toContain('bafkrei..peq4');
-    // The 4th / 5th fallback hashes MUST NOT appear — we only pad 3.
-    expect(html).not.toContain('0xa812..9fc4');
-    expect(html).not.toContain('bafkrei..abcd');
-    // Still exactly 5 pills rendered.
-    const onchainPills = html.match(/class="ev-pill"[^>]/g) ?? [];
-    expect(onchainPills.length).toBe(5);
-  });
-
-  it('when runState has >= 5 artifacts, renders the real hashes instead of fallback', () => {
-    const realArtifacts: Artifact[] = [
-      {
-        kind: 'bsc-token',
-        chain: 'bsc-mainnet',
-        address: '0x1111111111111111111111111111111111111111',
-        explorerUrl: 'https://bscscan.com/token/0x1111111111111111111111111111111111111111',
-      },
-      {
-        kind: 'token-deploy-tx',
-        chain: 'bsc-mainnet',
-        txHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
-        explorerUrl: 'https://bscscan.com/tx/0x2222',
-      },
-      {
-        kind: 'lore-cid',
-        cid: 'bafkreirealcidvalue1234567890',
-        gatewayUrl: 'https://pinata.mypinata.cloud/ipfs/bafkreirealcidvalue1234567890',
-        author: 'narrator',
       },
       {
         kind: 'x402-tx',
@@ -171,28 +109,102 @@ describe('<Ch11Evidence> real-data binding', () => {
       },
       {
         kind: 'lore-cid',
-        cid: 'bafkreisecondcidvalue9999',
-        gatewayUrl: 'https://pinata.mypinata.cloud/ipfs/bafkreisecondcidvalue9999',
-        author: 'creator',
+        cid: 'bafkreirealcidvalue1234567890',
+        gatewayUrl: 'https://pinata.mypinata.cloud/ipfs/bafkreirealcidvalue1234567890',
+        author: 'narrator',
       },
     ];
     mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
-    // Real hashes show up (truncated as first10..last4 of the raw value)
+    // All three real hashes render (each in its correct tab panel).
     expect(html).toContain('0x11111111..1111');
-    expect(html).toContain('0x22222222..2222');
+    expect(html).toContain('0x33333333..3333');
     expect(html).toContain('bafkreirea..7890');
-    // Fallback hashes must NOT appear
-    expect(html).not.toContain('0x4E39d254..74444');
-    expect(html).not.toContain('bafkrei..peq4');
+    // BNB / BASE / IPFS tabs each have 1 real row → sample count drops by 3.
+    // X tab still has all 5 samples. Total sample badges = 20 - 3 = 17.
+    const sampleBadges = html.match(/class="ev-sample mono">sample</g) ?? [];
+    expect(sampleBadges.length).toBe(17);
+  });
+
+  it('each tab still fills to 5 rows even when only one real artifact routes to it', () => {
+    const realArtifacts: Artifact[] = [
+      {
+        kind: 'bsc-token',
+        chain: 'bsc-mainnet',
+        address: '0x1111111111111111111111111111111111111111',
+        explorerUrl: 'https://bscscan.com/token/0x1111111111111111111111111111111111111111',
+      },
+    ];
+    mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const rows = html.match(/class="ev-pill ev-pill-link"/g) ?? [];
+    expect(rows.length).toBe(20);
+    // The real BNB artifact is present; the remaining 4 BNB rows come
+    // from FALLBACK_ONCHAIN_TABS.bnb.
+    expect(html).toContain('0x11111111..1111');
   });
 });
 
-describe('<Ch11Evidence> engineering row fact corrections', () => {
+describe('<Ch11Evidence> meme cover', () => {
+  it('no meme-image artifact → placeholder SVG + sample badge', () => {
+    mockUseRunState.mockReturnValue(makeRunning([]));
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    // Placeholder is an inline data: SVG URL so we don't need next.config
+    // domain allow-listing.
+    expect(html).toMatch(/class="ev-meme-frame"/);
+    expect(html).toMatch(/src="data:image\/svg\+xml/);
+    expect(html).toMatch(/class="ev-meme-badge mono"[^>]*>sample</);
+  });
+
+  it('real meme-image artifact → real <img src> + no sample badge on the cover', () => {
+    const realArtifacts: Artifact[] = [
+      {
+        kind: 'meme-image',
+        cid: 'bafkreimemeimgrealcidvaluerealcidvalue1234',
+        gatewayUrl: 'https://pinata.mypinata.cloud/ipfs/bafkreimemeimgrealcidvaluerealcidvalue1234',
+        status: 'ok',
+        prompt: 'a glitchy frog staring at the moon',
+      },
+    ];
+    mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    // The cover `<img>` carries class="ev-meme-img" AND an https://
+    // Pinata source. Assert each separately since attribute order is not
+    // guaranteed by renderToStaticMarkup.
+    expect(html).toMatch(/<img[^>]*class="ev-meme-img"/);
+    expect(html).toContain(
+      'src="https://pinata.mypinata.cloud/ipfs/bafkreimemeimgrealcidvaluerealcidvalue1234"',
+    );
+    // The cover card loses its `sample` badge when a real image is shown.
+    expect(html).not.toMatch(/class="ev-meme-badge mono"[^>]*>sample</);
+  });
+});
+
+describe('<Ch11Evidence> closing card', () => {
+  it('renders the MEMIND wordmark + sunglasses glyph', () => {
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    expect(html).toContain('MEMIND');
+    expect(html).toMatch(/data-mood="sunglasses"/);
+    expect(html).toContain('open the demo');
+    expect(html).toContain('see the code');
+  });
+
+  it('"see the code" renders as an external GitHub link', () => {
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    expect(html).toMatch(/<a[^>]*href="https?:\/\/[^"]*github[^"]*"[^>]*target="_blank"/);
+    expect(html).toMatch(/rel="noopener noreferrer"/);
+  });
+
+  it('"open the demo" renders a button', () => {
+    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    expect(html).toMatch(/<button[^>]*class="cta cta-primary"[^>]*>[^<]*open the demo/);
+  });
+});
+
+describe('<Ch11Evidence> engineering rows', () => {
   it('brain.tick row reads "60s · autonomous" with no model or provider leak', () => {
     const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
     expect(html).toContain('60s \u00b7 autonomous');
-    // Regression guard: no LLM model or provider identifier may appear.
     expect(html).not.toMatch(/claude|sonnet|opus|haiku|gpt|openrouter|anthropic/i);
   });
 

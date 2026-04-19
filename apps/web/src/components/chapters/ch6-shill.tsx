@@ -71,11 +71,13 @@ export function Ch6Shill({ p }: Ch6ShillProps): ReactElement {
           <div className="demo-chat-body">
             <div className="demo-line demo-line-user" style={{ opacity: clamp(p * 10) }}>
               <span className="demo-who">YOU</span>
-              <span className="demo-text">/shill 3 tweets, 4 hours apart</span>
+              <span className="demo-text">{'/order 0x4E39..74444 "glitchy one-liner"'}</span>
             </div>
             <div className="demo-line demo-line-brain" style={{ opacity: clamp((p - 0.08) * 10) }}>
               <span className="demo-who">BRAIN</span>
-              <span className="demo-text">{'scheduling 3 drops \u2014 cost 0.03 USDC.'}</span>
+              <span className="demo-text">
+                {'paying 0.01 USDC on Base Sepolia \u2014 shiller posting from an aged X acct.'}
+              </span>
             </div>
             {TWEETS.map((tw, i) => {
               const visible = p > tw.t;
@@ -90,6 +92,9 @@ export function Ch6Shill({ p }: Ch6ShillProps): ReactElement {
                     transform: `translateY(${(1 - fresh) * 8}px)`,
                   }}
                 >
+                  <span className="tweet-sample-badge mono" aria-hidden>
+                    sample
+                  </span>
                   <div className="tweet-head">
                     <span className="mono" style={{ color: 'var(--accent)' }}>
                       @pepesupreme_ai
@@ -119,12 +124,18 @@ export function Ch6Shill({ p }: Ch6ShillProps): ReactElement {
           <AnimatedLabel base="broadcasting" />
           <div className="demo-side-spec">
             <div className="spec-row">
-              <Mono dim>tweets</Mono>
-              <Mono>3</Mono>
+              <Mono dim>endpoint</Mono>
+              <Mono>POST /shill/:addr</Mono>
             </div>
             <div className="spec-row">
-              <Mono dim>cadence</Mono>
-              <Mono>4h</Mono>
+              <Mono dim>cost</Mono>
+              <Mono>$0.01 USDC</Mono>
+            </div>
+            <div className="spec-row">
+              <Mono dim>settle</Mono>
+              <span className="mono" style={{ color: 'var(--chain-base)' }}>
+                base sepolia
+              </span>
             </div>
             <div className="spec-row">
               <Mono dim>persona</Mono>

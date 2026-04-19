@@ -1,14 +1,16 @@
 /**
- * Tests for <Ch9SKU /> — SKU matrix chapter of the scrollytelling narrative.
+ * Tests for <Ch9SKU /> — rebuilt 2026-04-20 around a five-SKU, 2+2+1
+ * time-oriented matrix.
  *
- * Interior-progress contract:
+ * Contract:
  *
- *   - Four SKU cards (SHILL.ORDER live + BRAIN.BASIC / BRAIN.PRO /
- *     PERSONA.MINT planned) appear staggered. Each card uses
- *     `appear = clamp((p - i*0.1) * 2)` for opacity + a 0.94 -> 1.0 scale
- *     via `lerp(0.94, 1, appear)`.
- *   - Tier class: bundle / free / pro / item.
- *   - Status class: live (SHILL.ORDER only) / planned (the other three).
+ *   - Five SKU cards (SKU-01 through SKU-05) in a `.sku-matrix` with
+ *     three rows: live+next · planned×2 · future×1. The solo `future`
+ *     row carries the `sku-row-solo` modifier class so it centres.
+ *   - Tier classes: `item` / `bundle` / `pro` / `sub` / `market`.
+ *     Status classes: `live` / `next` / `planned` / `future`.
+ *   - Each card reveals via `appear = clamp((p - i*0.1) * 2)` — at p=0
+ *     every card lands at opacity:0.
  *
  * vitest runs without jsdom; render via `renderToStaticMarkup` + regex.
  */
@@ -17,58 +19,88 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Ch9SKU } from '../ch9-sku.js';
 
 describe('<Ch9SKU>', () => {
-  it('renders exactly four SKU cards with their codes', () => {
+  it('renders exactly five SKU cards with their codes', () => {
     const html = renderToStaticMarkup(<Ch9SKU p={1} />);
     const cards = html.match(/class="sku-card"/g) ?? [];
-    expect(cards.length).toBe(4);
-    expect(html).toContain('SKU-01');
-    expect(html).toContain('SKU-02');
-    expect(html).toContain('SKU-03');
-    expect(html).toContain('SKU-04');
+    expect(cards.length).toBe(5);
+    for (const code of ['SKU-01', 'SKU-02', 'SKU-03', 'SKU-04', 'SKU-05']) {
+      expect(html).toContain(code);
+    }
   });
 
   it('at p=0 every card has opacity:0 (first card too, since (0-0)*2 = 0)', () => {
     const html = renderToStaticMarkup(<Ch9SKU p={0} />);
     const opacities = html.match(/class="sku-card"[^>]*style="opacity:0/g) ?? [];
-    expect(opacities.length).toBe(4);
+    expect(opacities.length).toBe(5);
   });
 
-  it('applies the correct tier class to each card (bundle / free / pro / item)', () => {
+  it('applies the correct tier class to each card (item / bundle / pro / sub / market)', () => {
     const html = renderToStaticMarkup(<Ch9SKU p={1} />);
-    expect(html).toContain('sku-tier sku-tier-bundle');
-    expect(html).toContain('sku-tier sku-tier-free');
-    expect(html).toContain('sku-tier sku-tier-pro');
     expect(html).toContain('sku-tier sku-tier-item');
+    expect(html).toContain('sku-tier sku-tier-bundle');
+    expect(html).toContain('sku-tier sku-tier-pro');
+    expect(html).toContain('sku-tier sku-tier-sub');
+    expect(html).toContain('sku-tier sku-tier-market');
+    // Regression: the old `free` tier is gone — BRAIN.BASIC was cut.
+    expect(html).not.toContain('sku-tier sku-tier-free');
   });
 
-  it('marks SHILL.ORDER as live and the other three as planned', () => {
+  it('status chips surface one live + one next + two planned + one future', () => {
     const html = renderToStaticMarkup(<Ch9SKU p={1} />);
-    // Exactly one live chip + three planned chips.
-    const liveCount = (html.match(/class="sku-status sku-status-live"/g) ?? []).length;
-    const plannedCount = (html.match(/class="sku-status sku-status-planned"/g) ?? []).length;
-    expect(liveCount).toBe(1);
-    expect(plannedCount).toBe(3);
-    // data-sku-status attribute is the stable test hook.
+    const live = (html.match(/class="sku-status sku-status-live"/g) ?? []).length;
+    const next = (html.match(/class="sku-status sku-status-next"/g) ?? []).length;
+    const planned = (html.match(/class="sku-status sku-status-planned"/g) ?? []).length;
+    const future = (html.match(/class="sku-status sku-status-future"/g) ?? []).length;
+    expect(live).toBe(1);
+    expect(next).toBe(1);
+    expect(planned).toBe(2);
+    expect(future).toBe(1);
+    // data-sku-status attributes match.
     expect(html).toContain('data-sku-status="live"');
-    const plannedAttrs = (html.match(/data-sku-status="planned"/g) ?? []).length;
-    expect(plannedAttrs).toBe(3);
+    expect(html).toContain('data-sku-status="next"');
+    expect(html).toContain('data-sku-status="future"');
   });
 
-  it('renders the live SHILL.ORDER price at the real /shill endpoint rate', () => {
+  it('surfaces the real dynamic shill pricing instead of the old flat $0.01', () => {
     const html = renderToStaticMarkup(<Ch9SKU p={1} />);
-    expect(html).toContain('$0.01 / order');
-    // Old fabricated prices MUST be gone so the chapter does not undersell
-    // or overstate what is actually shipped.
-    expect(html).not.toContain('$4.99/mo');
-    expect(html).not.toContain('$1.20');
-    expect(html).not.toContain('$6.40');
+    expect(html).toContain('$0.005 \u2013 $5 / order');
+    expect(html).toContain('$9.99 one-time');
+    expect(html).toContain('$49 / month retainer');
+    expect(html).toContain('$19 / month');
+    expect(html).toContain('20% of GMV');
+    // Regression: old flat pricing gone.
+    expect(html).not.toContain('$0.01 / order');
   });
 
-  it('renders the four SKU product names', () => {
+  it('renders the five SKU product names', () => {
     const html = renderToStaticMarkup(<Ch9SKU p={1} />);
-    expect(html).toContain('SHILL.ORDER');
-    expect(html).toContain('BRAIN.BASIC');
-    expect(html).toContain('BRAIN.PRO');
-    expect(html).toContain('PERSONA.MINT');
+    for (const name of ['SHILL.ORDER', 'LAUNCH.BOOST', 'BRAIN.PRO', 'ALPHA.FEED', 'KOL.MARKET']) {
+      expect(html).toContain(name);
+    }
+    // Regression: deprecated SKUs are gone.
+    expect(html).not.toContain('BRAIN.BASIC');
+    expect(html).not.toContain('PERSONA.MINT');
+  });
+
+  it('arranges the cards in a 3+2 symmetric matrix (UAT 2026-04-20)', () => {
+    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    // Exactly two rows: a `.sku-row-3` trio of near-term SKUs on top
+    // and a `.sku-row-2-center` duo of long-horizon SKUs centred below.
+    // The old 2+2+1 layout (with `.sku-row-solo`) is gone.
+    const rows = html.match(/class="sku-row[^"]*"/g) ?? [];
+    expect(rows.length).toBe(2);
+    expect(html).toContain('sku-row sku-row-3');
+    expect(html).toContain('sku-row sku-row-2-center');
+    expect(html).not.toContain('sku-row-solo');
+  });
+
+  it('ships an honest footnote about the billing rails being the last mile', () => {
+    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    expect(html).toMatch(/class="sku-footnote"/);
+    expect(html).toContain('billing rails');
+    expect(html).toContain('last mile');
+    // UAT 2026-04-20: non-live SKU pricing MUST be flagged as a highly
+    // conservative estimate so judges cannot read it as promised revenue.
+    expect(html).toContain('highly conservative estimate');
   });
 });

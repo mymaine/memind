@@ -64,11 +64,41 @@ describe('<Ch10Phase>', () => {
     expect(html).toMatch(/shipped 2026-04-20/);
   });
 
-  it('renders the two bottom glyphs (walk-left tertiary + walk-right accent)', () => {
+  it('at p=0.5 the swarm stage has mounted its two mascots with token labels', () => {
     const html = renderToStaticMarkup(<Ch10Phase p={0.5} />);
-    expect(html).toMatch(/data-mood="walk-left"/);
-    expect(html).toMatch(/data-mood="walk-right"/);
-    // The wrapper sits inside .phase-glyphs.
-    expect(html).toMatch(/class="phase-glyphs"/);
+    // 2026-04-20: the old bottom glyph pair (walk-left / walk-right)
+    // was replaced by a swarm dialogue theatre — two negotiating brains
+    // anchor the Phase-3 preview.
+    expect(html).toMatch(/class="swarm-stage"/);
+    expect(html).toMatch(/class="swarm-actor swarm-actor-left"/);
+    expect(html).toMatch(/class="swarm-actor swarm-actor-right"/);
+    expect(html).toContain('$FROG.brain');
+    expect(html).toContain('$PEPE.brain');
+    // Regression: the old phase-glyphs row is gone.
+    expect(html).not.toMatch(/class="phase-glyphs"/);
+  });
+
+  it('swarm dialogue fades bubbles in with scripted thresholds', () => {
+    // At p=0.45 the stage itself is starting to fade in but no bubble
+    // thresholds have crossed yet (first bubble lands at t=0.5).
+    const early = renderToStaticMarkup(<Ch10Phase p={0.45} />);
+    const earlyBubbles = early.match(/class="swarm-bubble swarm-bubble-/g) ?? [];
+    expect(earlyBubbles).toHaveLength(0);
+    // At p=1 all four bubbles have surfaced — FROG opens, PEPE counters,
+    // FROG closes, then the x402 system line lands centre.
+    const full = renderToStaticMarkup(<Ch10Phase p={1} />);
+    const fullBubbles = full.match(/class="swarm-bubble swarm-bubble-/g) ?? [];
+    expect(fullBubbles).toHaveLength(4);
+    expect(full).toContain('gm. 500 USDC for 3 shills this weekend?');
+    expect(full).toContain('x402 handshake');
+    expect(full).toContain('tweets deploy');
+  });
+
+  it('closes with the ecosystem-flywheel tagline that frames the whole chapter', () => {
+    const html = renderToStaticMarkup(<Ch10Phase p={1} />);
+    expect(html).toMatch(/class="swarm-tagline"/);
+    expect(html).toContain('ecosystem flywheel');
+    expect(html).toContain('brains pay brains');
+    expect(html).toContain('four.meme grows');
   });
 });

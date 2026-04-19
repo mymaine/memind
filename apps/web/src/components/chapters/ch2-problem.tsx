@@ -1,22 +1,21 @@
 'use client';
 
 /**
- * <Ch2Problem> — second chapter of the Memind scrollytelling narrative
- * (memind-scrollytelling-rebuild AC-MSR-9 ch2).
+ * <Ch2Problem> — second chapter of the Memind scrollytelling narrative.
  *
- * Interior progress `p ∈ [0, 1]` drives three synchronous micro-animations:
+ * Narrative pivot (2026-04-20): the prior draft counted up to `32,140`
+ * which conflated a one-time October 2025 spam spike with daily reality.
+ * Real four.meme throughput today is ~351 launches/day (source: the
+ * l0k1 Dune dashboard linked in the footer). Counting up to 351 misses
+ * the real story — four.meme already filtered the spam, but 97% of the
+ * survivors still die inside 48h because creators mint-and-walk. That
+ * is the hook Ch3 resolves.
  *
- *   - Count-up: `n = floor(lerp(0, 32140, clamp(p/0.6)))`, rendered via
- *     `toLocaleString()` so the ticker reads `32,140` at p ≥ 0.6.
- *   - Graveyard grid: 32 cols × 12 rows = 384 dim dots, each `.grave-cell`.
- *     Cell index 47 is the lone "alive" accent marker (`●`); the rest fade
- *     further as `p` passes 0.3.
- *   - Aside: sleep-mood mascot paired with the "most will die in silence"
- *     comment — the counterpoint that motivates Ch3.
- *
- * Outer shell + CSS classes (`.ch-problem`, `.ch-problem-body`,
- * `.graveyard-grid`, `.grave-cell`, `.ch-problem-aside`, `.ch-sub-line`)
- * already live in `app/globals.css`.
+ * Interior progress `p ∈ [0, 1]` drives:
+ *   - Count-up: `n = floor(lerp(0, 351, clamp(p/0.6)))`.
+ *   - Graveyard grid: 32×12 = 384 dim dots kept as-is — the visual
+ *     metric is "a sea of dim cells, a handful alive", not literal count.
+ *   - Aside: sleep mascot + "creator walks away at hour 0" line.
  */
 import type { ReactElement } from 'react';
 import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
@@ -30,33 +29,39 @@ interface Ch2ProblemProps {
 const COLS = 32;
 const ROWS = 12;
 const TOTAL_CELLS = COLS * ROWS;
-const ALIVE_INDEX = 47;
+// Spread a handful of alive cells across the grid so the visual reads
+// "three percent survive" rather than "one lucky seed". Indices picked
+// to sit in different quadrants (top-left, center, right, bottom).
+const ALIVE_INDICES = new Set<number>([47, 183, 241, 309]);
 
 export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
-  const n = Math.floor(lerp(0, 32140, clamp(p / 0.6)));
-  // UAT issue #5 — accelerate the dim-majority decay so once the scroll
-  // passes the 0.3 → 0.7 window, the graveyard majority fades almost to
-  // black, leaving the alive cell as the dominant visual. Old curve only
-  // dropped 60%; new curve drops ~92% so the contrast punches through.
+  const n = Math.floor(lerp(0, 351, clamp(p / 0.6)));
   const fadeStage = clamp((p - 0.3) / 0.4);
   const fadeMul = 1 - fadeStage * 0.92;
 
   return (
     <div className="ch ch-problem">
-      <Label n={2}>the graveyard</Label>
+      <Label n={2}>after the filter</Label>
       <BigHeadline size={104}>
         <span style={{ color: 'var(--fg-tertiary)' }}>{n.toLocaleString()}</span>
-        <span className="ch-sub-line"> meme coins in a single peak day (2025-10).</span>
+        <span className="ch-sub-line"> four.meme launches / day — 97% die inside 48h.</span>
       </BigHeadline>
+      <div className="ch-problem-source">
+        <a
+          className="mono"
+          href="https://dune.com/l0k1/fourmeme-insights"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {'source \u00b7 dune.com/l0k1/fourmeme-insights \u00b7 2026-04-20 \u2197'}
+        </a>
+      </div>
       <div className="ch-problem-body">
         <div className="graveyard-grid">
           {Array.from({ length: TOTAL_CELLS }, (_, i) => {
-            const alive = i === ALIVE_INDEX;
+            const alive = ALIVE_INDICES.has(i);
             const fade = (i * 13) % 100;
             const opacity = alive ? 1 : lerp(0.08, 0.28, fade / 100) * fadeMul;
-            // Alive cell picks up a dedicated modifier class whose CSS
-            // animation (globals.css `grave-alive-pulse`) drives the
-            // breathing + accent glow that the UAT asked for.
             const className = alive ? 'grave-cell grave-cell--alive' : 'grave-cell';
             return (
               <span
@@ -73,18 +78,25 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
           })}
         </div>
         <div className="ch-problem-aside">
-          <Mono dim>{'// most will die in silence.'}</Mono>
+          <Mono dim>{'// four.meme filtered the spam.'}</Mono>
           <br />
-          <Mono>no community. no shill. no mind.</Mono>
-          <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <Mono>the survivors still die at hour 0 — because the creator walks away.</Mono>
+          <div
+            style={{
+              marginTop: 24,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
             <PixelHumanGlyph
-              size={64}
+              size={56}
               mood="sleep"
               primaryColor="var(--fg-tertiary)"
               accentColor="var(--fg-tertiary)"
             />
             <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
-              tokens.sleeping
+              creator.offline
             </span>
           </div>
         </div>

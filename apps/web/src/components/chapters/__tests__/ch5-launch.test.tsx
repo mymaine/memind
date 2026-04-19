@@ -40,9 +40,14 @@ describe('<Ch5Launch>', () => {
     expect(matches).toHaveLength(4);
     expect(html).toContain('/launch PEPESUPREME');
     expect(html).toContain('drafting metadata');
-    expect(html).toContain('uploading to IPFS');
-    expect(html).toContain('calling factory on BNB Chain');
-    // t=0.62 chain line should NOT appear yet.
+    // 2026-04-20: the scripted IPFS line now references the real Run #3
+    // CID (QmWoMk..TVX7) and the factory line is scoped to BSC.
+    expect(html).toContain('pinning lore ch.1 to IPFS');
+    expect(html).toContain('QmWoMk..TVX7');
+    expect(html).toContain('calling four.meme factory on BSC');
+    // t=0.62 chain line should NOT appear yet. The real deploy-tx hash
+    // (0x760f..760c9b) replaces the old placeholder 0x4f2a..c8d1.
+    expect(html).not.toContain('0x760f..760c9b');
     expect(html).not.toContain('0x4f2a..c8d1');
   });
 
@@ -50,7 +55,14 @@ describe('<Ch5Launch>', () => {
     const html = renderToStaticMarkup(<Ch5Launch p={0.9} />);
     const matches = html.match(/class="demo-line demo-line-/g) ?? [];
     expect(matches).toHaveLength(6);
-    expect(html).toContain('$PEPESUPREME is live');
+    // Final brain confirmation: honest copy, no fictional "wallet funded
+    // w/ 0.05 BNB" — that transfer never existed in deployer.ts.
+    expect(html).toContain('$PEPESUPREME is live on BSC mainnet');
+    expect(html).toContain('brain online');
+    expect(html).not.toContain('wallet funded');
+    // The chain row surfaces the real 2026-04-18 deploy tx.
+    expect(html).toContain('0x760f..760c9b');
+    expect(html).toContain('gas \u2248 0.05 BNB');
   });
 
   it('renders the side-panel spec rows with PEPESUPREME and 1,000,000,000 supply', () => {
@@ -59,7 +71,10 @@ describe('<Ch5Launch>', () => {
     expect(html).toContain('1,000,000,000');
     expect(html).toContain('glitchy');
     expect(html).toContain('BNB');
-    expect(html).toContain('~0.05 BNB gas');
+    // Cost row now states ~$0.05 BNB gas (prefixed with $ sign).
+    expect(html).toContain('~$0.05 BNB gas');
+    // Time row added to reflect the real ~67s Creator run.
+    expect(html).toContain('~67s');
     expect(html).toMatch(/class="spec-row"/);
   });
 

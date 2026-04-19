@@ -31,24 +31,30 @@ type ScriptedLine = {
   readonly color?: string;
 };
 
-// Ported verbatim from chapters.jsx lines 253-261.
+// Fact-checked against BrainPanel slash-command wiring + deployer.ts:
+//   - `/launch <theme>` is the real command (brain.ts:50).
+//   - IPFS CID below mirrors Phase-2 Run #3 (real QmWoMk...TVX7).
+//   - Deploy tx shown is the real 2026-04-18 BSC mainnet launch
+//     (`0x760f..760c9b` — same hash used in README evidence table).
+//   - "wallet funded w/ 0.05 BNB" was fictional; replaced with the
+//     honest gas settlement line (deployer pays ~$0.05 BNB gas).
 const LINES: readonly ScriptedLine[] = [
   { t: 0.0, who: 'user', text: '/launch PEPESUPREME \u2014 1B supply, glitchy persona' },
   { t: 0.2, who: 'brain', text: 'drafting metadata...' },
   {
     t: 0.33,
     who: 'brain',
-    text: 'uploading to IPFS \u00b7 bafybeigdy...',
+    text: 'pinning lore ch.1 to IPFS \u00b7 QmWoMk..TVX7',
     color: 'var(--chain-ipfs)',
   },
-  { t: 0.48, who: 'brain', text: 'calling factory on BNB Chain...', color: 'var(--chain-bnb)' },
+  { t: 0.48, who: 'brain', text: 'calling four.meme factory on BSC...', color: 'var(--chain-bnb)' },
   {
     t: 0.62,
     who: 'chain',
-    text: '0x4f2a..c8d1 \u00b7 block #42,803,214',
+    text: '0x760f..760c9b \u00b7 gas \u2248 0.05 BNB',
     color: 'var(--chain-bnb)',
   },
-  { t: 0.78, who: 'brain', text: '\u2713 $PEPESUPREME is live. wallet funded w/ 0.05 BNB.' },
+  { t: 0.78, who: 'brain', text: '\u2713 $PEPESUPREME is live on BSC mainnet. brain online.' },
 ];
 
 function whoLabel(who: ScriptedLine['who']): string {
@@ -128,7 +134,11 @@ export function Ch5Launch({ p }: Ch5LaunchProps): ReactElement {
             </div>
             <div className="spec-row">
               <Mono dim>cost</Mono>
-              <Mono>~0.05 BNB gas</Mono>
+              <Mono>~$0.05 BNB gas</Mono>
+            </div>
+            <div className="spec-row">
+              <Mono dim>time</Mono>
+              <Mono>~67s</Mono>
             </div>
           </div>
         </div>

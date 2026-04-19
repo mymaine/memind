@@ -143,6 +143,14 @@ const CHANNELS: readonly ChannelPort[] = [
 
 const RING_RADII = [60, 120, 180, 240] as const;
 const PERSONA_RADIUS = 170;
+// UAT 2026-04-20: the 8 spokes used to run edge-to-edge from the brain
+// core into the centre of every persona / channel port, clipping the
+// pixel glyphs and the channel icons. These gaps reserve breathing room
+// at both ends — spoke starts outside the brain-core mascot and stops
+// before the port icon — so nothing overlaps.
+const BRAIN_CORE_R = 60;
+const PERSONA_SPOKE_GAP = 36;
+const CHANNEL_SPOKE_GAP = 34;
 
 function polar(angleDeg: number, radius: number): { readonly x: number; readonly y: number } {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -201,17 +209,21 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
               strokeOpacity={lerp(0.15, 0.6, clamp(pulse * 1.2 - i * 0.1))}
             />
           ))}
-          {/* Persona spokes — one line per persona, length tracks pulse. */}
+          {/* Persona spokes — one line per persona. Spoke runs from the
+           * brain-core perimeter to a point short of the persona glyph,
+           * interpolated by `len` so the draw animation still feels
+           * progressive. */}
           {PERSONAS.map((pp, i) => {
-            const { x, y } = polar(pp.a, PERSONA_RADIUS);
+            const start = polar(pp.a, BRAIN_CORE_R);
+            const end = polar(pp.a, PERSONA_RADIUS - PERSONA_SPOKE_GAP);
             const len = clamp(pulse * 1.4 - i * 0.08);
             return (
               <line
                 key={pp.label}
-                x1="0"
-                y1="0"
-                x2={x * len}
-                y2={y * len}
+                x1={start.x}
+                y1={start.y}
+                x2={start.x + (end.x - start.x) * len}
+                y2={start.y + (end.y - start.y) * len}
                 stroke={pp.color}
                 strokeWidth="1.2"
                 strokeOpacity={0.7}
@@ -219,19 +231,20 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
             );
           })}
           {/* Channel spokes — dashed for soon channels, solid accent for
-           * the live X channel (UAT issue #7). Appear after persona pulse
-           * settles. */}
+           * the live X channel (UAT issue #7). Same two-ended gap as the
+           * persona ring so the brand icons sit clear of the line. */}
           {CHANNELS.map((c, i) => {
-            const { x, y } = polar(c.a, c.r);
+            const start = polar(c.a, BRAIN_CORE_R);
+            const end = polar(c.a, c.r - CHANNEL_SPOKE_GAP);
             const len = clamp((pulse - 0.4) * 2 - i * 0.1);
             const live = c.status === 'live';
             return (
               <line
                 key={c.label}
-                x1="0"
-                y1="0"
-                x2={x * len}
-                y2={y * len}
+                x1={start.x}
+                y1={start.y}
+                x2={start.x + (end.x - start.x) * len}
+                y2={start.y + (end.y - start.y) * len}
                 stroke={live ? 'var(--accent)' : 'var(--fg-tertiary)'}
                 strokeWidth={live ? '1.4' : '1'}
                 strokeDasharray={live ? undefined : '3 5'}
