@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import type { MessageParam } from '@anthropic-ai/sdk/resources/messages/messages.js';
 import type { AgentTool, AnyAgentTool, ChatMessage, LogEvent } from '@hack-fourmeme/shared';
 import { type ToolRegistry } from '../tools/registry.js';
 import {
@@ -118,17 +119,25 @@ export interface RunBrainAgentParams {
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
 /**
- * Fold a chat transcript into the single `userInput` string that
- * `runAgentLoop` expects. The latest user turn goes in last verbatim; earlier
- * turns are labelled with their role so the model treats them as context
- * rather than authoritative instructions.
+ * Map the public `ChatMessage` transcript into Anthropic's native
+ * `MessageParam[]` shape so the Brain's LLM loop sees the conversation as
+ * real multi-turn state, not a folded string.
  *
- * This is the minimum viable context-fold for BRAIN-P2. BRAIN-P3 may switch
- * to Anthropic's native multi-turn `messages` param once the orchestrator
- * learns how to bubble persona events through an SSE stream that outlives
- * multiple LLM turns.
+ * UAT fix (2026-04-20): prior to this change the Brain flattened the full
+ * transcript into a single `[user] foo\n[assistant] bar\n[user] baz`
+ * userInput string. Anthropic parsed that as one quoted block, so second
+ * and subsequent sends often lost the prior turns' factual content (the
+ * reported "brain forgets the token I just launched" bug). Feeding the
+ * messages through the runtime's `initialMessages` path hands Anthropic a
+ * proper chain of user / assistant turns, so tool_use outputs from earlier
+ * turns (deployed addresses, CIDs, tweet URLs) stay addressable on
+ * follow-ups.
+ *
+ * Contract: the final turn MUST have `role="user"`; the runtime enforces
+ * this too but we surface a clear error here so the blame lands on the
+ * caller (HTTP layer / CLI) rather than the runtime.
  */
-function foldMessagesIntoUserInput(messages: ReadonlyArray<ChatMessage>): string {
+export function toAnthropicMessages(messages: ReadonlyArray<ChatMessage>): MessageParam[] {
   if (messages.length === 0) {
     throw new Error('runBrainAgent: messages array must not be empty');
   }
@@ -136,16 +145,7 @@ function foldMessagesIntoUserInput(messages: ReadonlyArray<ChatMessage>): string
   if (!last || last.role !== 'user') {
     throw new Error('runBrainAgent: the final chat message must have role="user"');
   }
-
-  if (messages.length === 1) {
-    return last.content;
-  }
-
-  const history = messages
-    .slice(0, -1)
-    .map((m) => `[${m.role}] ${m.content}`)
-    .join('\n');
-  return `${history}\n\n[user] ${last.content}`;
+  return messages.map((m) => ({ role: m.role, content: m.content }));
 }
 
 /**
@@ -185,14 +185,14 @@ export async function runBrainAgent(params: RunBrainAgentParams): Promise<AgentL
     registry.register(tool as unknown as AnyAgentTool);
   }
 
-  const userInput = foldMessagesIntoUserInput(messages);
+  const initialMessages = toAnthropicMessages(messages);
 
   return runAgentLoopImpl({
     client,
     model,
     registry,
     systemPrompt: BRAIN_SYSTEM_PROMPT,
-    userInput,
+    initialMessages,
     agentId: BRAIN_AGENT_ID,
     ...(maxTurns !== undefined ? { maxTurns } : {}),
     ...(onLog !== undefined ? { onLog } : {}),

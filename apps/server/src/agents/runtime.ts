@@ -28,7 +28,32 @@ export interface RunAgentLoopParams {
   model: string;
   registry: ToolRegistry;
   systemPrompt: string;
-  userInput: string;
+  /**
+   * Single user turn convenience seed. Callers that only run a single-shot
+   * agent (Creator / Narrator / Market-maker / Heartbeat) pass the prompt
+   * here and the loop seeds `messages` with one `{role: 'user', content}`
+   * entry. Multi-turn callers should use `initialMessages` instead (the
+   * Brain's conversational surface needs the full `[user, assistant, user]`
+   * chain so the LLM sees real conversation history via the Anthropic
+   * messages API — not a folded-string pseudo-history).
+   *
+   * Exactly one of `userInput` / `initialMessages` must be provided. Passing
+   * both is a caller bug (the loop throws early so drift surfaces fast).
+   */
+  userInput?: string;
+  /**
+   * Multi-turn conversation seed. When present, the loop skips the
+   * single-shot `userInput` path and uses this message list as-is for the
+   * first Anthropic `messages.stream` call. The final message MUST have
+   * `role: 'user'` (the loop appends its own assistant + tool-result turns
+   * as the conversation advances).
+   *
+   * UAT fix (2026-04-20): fixes the "brain forgets prior turns" bug. The
+   * previous implementation folded the prior transcript into a single user
+   * string (`[user] foo\n[assistant] bar\n[user] baz`), which the model
+   * treated as a quoted block rather than authoritative conversation state.
+   */
+  initialMessages?: ReadonlyArray<MessageParam>;
   /** Hard ceiling on tool_use rounds. Throws when exceeded. Default: 12. */
   maxTurns?: number;
   /** Stream every loop action (turn start, tool invoke, error, final) to caller. */
@@ -107,6 +132,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
     registry,
     systemPrompt,
     userInput,
+    initialMessages,
     maxTurns = DEFAULT_MAX_TURNS,
     onLog,
     onToolUseStart,
@@ -115,6 +141,22 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
     agentId = 'creator',
     maxTokens = DEFAULT_MAX_TOKENS,
   } = params;
+
+  // Input-shape contract: exactly one of the two seeding paths must be set.
+  // Passing neither (or both) is a caller bug that would otherwise manifest
+  // as an empty / duplicated prompt only after the first Anthropic call.
+  if (userInput === undefined && (initialMessages === undefined || initialMessages.length === 0)) {
+    throw new Error('runAgentLoop: supply either `userInput` or a non-empty `initialMessages`');
+  }
+  if (userInput !== undefined && initialMessages !== undefined && initialMessages.length > 0) {
+    throw new Error('runAgentLoop: pass `userInput` OR `initialMessages`, not both');
+  }
+  if (initialMessages !== undefined && initialMessages.length > 0) {
+    const last = initialMessages[initialMessages.length - 1];
+    if (!last || last.role !== 'user') {
+      throw new Error('runAgentLoop: the final entry in `initialMessages` must have role="user"');
+    }
+  }
 
   const trace: LogEvent[] = [];
   const toolCalls: ToolCallTrace[] = [];
@@ -129,14 +171,21 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
     if (onLog) onLog(full);
   };
 
-  const messages: MessageParam[] = [{ role: 'user', content: userInput }];
+  // Seed the mutable messages array with either the single-shot user prompt
+  // (legacy single-agent callers) or the full multi-turn chain (Brain meta-
+  // agent). `initialMessages` is copied so the caller's array is never
+  // mutated when the loop appends assistant / tool_result turns.
+  const messages: MessageParam[] =
+    initialMessages !== undefined && initialMessages.length > 0
+      ? [...initialMessages]
+      : [{ role: 'user', content: userInput as string }];
   const anthropicTools = registry.toAnthropicTools();
 
   emit({
     tool: 'runtime',
     level: 'info',
     message: `loop start (model=${model}, tools=${anthropicTools.length}, maxTurns=${maxTurns})`,
-    meta: { userInput },
+    meta: userInput !== undefined ? { userInput } : { seedTurns: messages.length },
   });
 
   for (let turn = 0; turn < maxTurns; turn++) {

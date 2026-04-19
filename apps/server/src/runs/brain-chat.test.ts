@@ -264,6 +264,48 @@ describe('runBrainChat', () => {
     expect(snapshot!.logs.some((l) => l.agent === 'creator')).toBe(true);
   });
 
+  // ─── Multi-turn context regression (UAT 2026-04-20) ────────────────────
+  //
+  // User-reported bug: "the Brain replied to my first message, but on the
+  // second message it forgot what token I just launched." Root cause was
+  // that `runBrainAgent` folded the transcript into a single userInput
+  // string; with the fix it now forwards the full chain to the runtime so
+  // Anthropic sees real multi-turn history. This test pins that the
+  // orchestrator hands `runBrainAgent` the complete `messages` array on
+  // every call — it is not the runtime contract but the ingress point the
+  // server HTTP route touches.
+  // ---------------------------------------------------------------------
+  it('forwards the complete multi-turn transcript to runBrainAgent (UAT 2026-04-20)', async () => {
+    const record = runStore.create('brain-chat');
+    const messages: ChatMessage[] = [
+      { role: 'user', content: '/launch a BNB 2026 meme' },
+      {
+        role: 'assistant',
+        content:
+          'Deployed HBNB2026-CHAIN at 0xabcdef0123456789abcdef0123456789abcdef01. Tx 0x0123...',
+      },
+      { role: 'user', content: 'what was the token address you just gave me?' },
+    ];
+
+    const spy = vi.fn(async (_params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+      return fakeLoopResult();
+    });
+
+    await runBrainChat(buildDeps(record.runId, messages, spy));
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const call = spy.mock.calls[0]?.[0];
+    expect(call).toBeDefined();
+    // The orchestrator must pass all three turns through to the Brain
+    // agent. If this array were sliced, the prior assistant reply would be
+    // invisible to the LLM on turn 2 and the "brain forgets context" bug
+    // would return.
+    expect(call!.messages).toHaveLength(3);
+    expect(call!.messages).toEqual(messages);
+    expect(call!.messages[1]?.role).toBe('assistant');
+    expect(call!.messages[1]?.content).toContain('HBNB2026-CHAIN');
+  });
+
   it('emits status=error when messages array is empty (schema rejection)', async () => {
     const record = runStore.create('brain-chat');
     const messages: ChatMessage[] = [];
