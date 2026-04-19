@@ -74,18 +74,19 @@ const PERSONAS: readonly PersonaPort[] = [
 ];
 
 // Cross layout: X top, TELEGRAM left, DISCORD right, ON-CHAIN MSG bottom.
-// Sits outside the persona ring (radius 310-330 vs persona 220) so the
-// labels never occlude the 4 persona port glyphs. X is the only port with
-// status 'live' — from Phase 3 our SHILLER persona actually tweets.
+// UAT 2026-04-20: radii shrunk from 310-330 / 220 so the whole stage fits
+// inside a typical 900-1000px viewport without spilling into the legend
+// row above or the closing CTA below. Persona ring stays outside the
+// brain-core badge but well inside the channel cross.
 const CHANNELS: readonly ChannelPort[] = [
-  { a: 0, r: 310, label: 'X', status: 'live' },
-  { a: -90, r: 330, label: 'TELEGRAM', status: 'soon' },
-  { a: 90, r: 330, label: 'DISCORD', status: 'soon' },
-  { a: 180, r: 310, label: 'ON-CHAIN MSG', status: 'soon' },
+  { a: 0, r: 240, label: 'X', status: 'live' },
+  { a: -90, r: 260, label: 'TELEGRAM', status: 'soon' },
+  { a: 90, r: 260, label: 'DISCORD', status: 'soon' },
+  { a: 180, r: 240, label: 'ON-CHAIN MSG', status: 'soon' },
 ];
 
-const RING_RADII = [80, 160, 240, 320] as const;
-const PERSONA_RADIUS = 220;
+const RING_RADII = [60, 120, 180, 240] as const;
+const PERSONA_RADIUS = 170;
 
 function polar(angleDeg: number, radius: number): { readonly x: number; readonly y: number } {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -126,7 +127,11 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
         </span>
       </div>
       <div className="brain-stage">
-        <svg className="brain-lines" viewBox="-400 -280 800 560">
+        <svg
+          className="brain-lines"
+          viewBox="-320 -240 640 480"
+          preserveAspectRatio="xMidYMid meet"
+        >
           {/* Radial rings — grow stroke opacity as the pulse rolls out. */}
           {RING_RADII.map((r, i) => (
             <circle

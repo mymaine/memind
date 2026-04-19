@@ -714,16 +714,25 @@ body:has(.logs-drawer.open) .toc {
 
 /* ---------- CH 4 BRAIN ---------- */
 .ch-brain {
-  display: grid;
-  /* UAT issue #7 — label, legend, brain-stage (3 rows instead of 2). */
-  grid-template-rows: auto auto 1fr;
+  display: flex;
+  flex-direction: column;
+  /* Legend sits above the stage with a clear gap so persona labels never
+   * collide with the descriptive caption (UAT 2026-04-20). */
+  gap: 18px;
   width: 100%;
   height: 100%;
+  align-items: stretch;
 }
 .brain-stage {
   position: relative;
   width: 100%;
-  height: 100%;
+  /* Give the port cross enough vertical room to fully render. The channel
+   * cross spans ±240px from centre (480px tall) and persona ring reaches
+   * ±170px; min-height 520 keeps CULTIST/DEGEN away from the legend row
+   * above without pushing the chapter off-screen. The stage still grows
+   * to fill the remaining slot when the viewport allows. */
+  min-height: 520px;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
