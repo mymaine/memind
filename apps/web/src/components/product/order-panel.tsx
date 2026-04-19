@@ -153,10 +153,12 @@ interface IdleFormProps {
   readonly tokenAddr: string;
   readonly tokenSymbol: string;
   readonly creatorBrief: string;
+  readonly includeFourMemeUrl: boolean;
   readonly validation: FormValidation;
   readonly onTokenAddrChange: (v: string) => void;
   readonly onTokenSymbolChange: (v: string) => void;
   readonly onCreatorBriefChange: (v: string) => void;
+  readonly onIncludeFourMemeUrlChange: (v: boolean) => void;
   readonly onSubmit: (e: FormEvent) => void;
 }
 
@@ -165,10 +167,12 @@ function IdleForm(props: IdleFormProps): ReactElement {
     tokenAddr,
     tokenSymbol,
     creatorBrief,
+    includeFourMemeUrl,
     validation,
     onTokenAddrChange,
     onTokenSymbolChange,
     onCreatorBriefChange,
+    onIncludeFourMemeUrlChange,
     onSubmit,
   } = props;
   const disabled = !validation.ok;
@@ -225,6 +229,51 @@ function IdleForm(props: IdleFormProps): ReactElement {
             {creatorBrief.length.toString()}/{CREATOR_BRIEF_MAX.toString()}
           </span>
         </label>
+
+        <fieldset className="flex flex-col gap-2">
+          <legend className={LABEL_CLASS}>Tweet mode</legend>
+          <label className="flex items-start gap-2 text-[13px]">
+            <input
+              type="radio"
+              name="tweetMode"
+              value="safe"
+              checked={!includeFourMemeUrl}
+              onChange={() => {
+                onIncludeFourMemeUrlChange(false);
+              }}
+            />
+            <span>
+              <span className="block font-medium text-fg-primary">Safe mode (recommended)</span>
+              <span className="block text-fg-tertiary">
+                Tweet body only — no URL, no raw address. Works during X&apos;s 7-day crypto-address
+                cooldown.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-[13px]">
+            <input
+              type="radio"
+              name="tweetMode"
+              value="with-url"
+              checked={includeFourMemeUrl}
+              onChange={() => {
+                onIncludeFourMemeUrlChange(true);
+              }}
+            />
+            <span>
+              <span className="block font-medium text-fg-primary">
+                With four.meme click-through URL
+              </span>
+              <span className="block text-fg-tertiary">
+                Appends https://four.meme/token/&lt;addr&gt; so readers land on the sponsor page.{' '}
+                <strong>
+                  Blocked by X during the 7-day cooldown after OAuth token regeneration
+                </strong>{' '}
+                — use once the cooldown clears.
+              </span>
+            </span>
+          </label>
+        </fieldset>
 
         {validation.reason !== null ? (
           <p
@@ -433,6 +482,12 @@ export function OrderPanel({
   const [tokenAddr, setTokenAddr] = useState<string>(initialTokenAddr);
   const [tokenSymbol, setTokenSymbol] = useState<string>(initialSymbol);
   const [creatorBrief, setCreatorBrief] = useState<string>(initialBrief);
+  // Tweet-mode toggle (2026-04-19). Defaults to safe mode (URL-free tweet)
+  // because demo-day falls inside X's 7-day post-OAuth cooldown — any
+  // URL-bearing post would be blocked. The `with-url` option stays available
+  // for judges / post-cooldown flows: the sponsor click-through path was the
+  // original design and the radio keeps that story visible in the UI.
+  const [includeFourMemeUrl, setIncludeFourMemeUrl] = useState<boolean>(false);
 
   const validation = useMemo<FormValidation>(
     () => validateForm(tokenAddr, tokenSymbol, creatorBrief),
@@ -457,14 +512,18 @@ export function OrderPanel({
       e.preventDefault();
       if (!validation.ok) return;
       // Only forward optional fields when the user actually provided them —
-      // keeps the server's zod-parsed params object minimal.
-      const params: Record<string, string> = { tokenAddr };
+      // keeps the server's zod-parsed params object minimal. For the tweet-
+      // mode toggle, only attach when the user opted into the URL path;
+      // safe mode is the route-layer default so we skip the key to keep the
+      // payload quiet.
+      const params: Record<string, string | boolean> = { tokenAddr };
       if (tokenSymbol.length > 0) params.tokenSymbol = tokenSymbol;
       if (creatorBrief.length > 0) params.creatorBrief = creatorBrief;
+      if (includeFourMemeUrl) params.includeFourMemeUrl = true;
       const input: CreateRunRequest = { kind: 'shill-market', params };
       await startRun(input);
     },
-    [validation, tokenAddr, tokenSymbol, creatorBrief, startRun],
+    [validation, tokenAddr, tokenSymbol, creatorBrief, includeFourMemeUrl, startRun],
   );
 
   const containerClass = `${SECTION_CLASS} ${className ?? ''}`.trim();
@@ -477,10 +536,12 @@ export function OrderPanel({
           tokenAddr={tokenAddr}
           tokenSymbol={tokenSymbol}
           creatorBrief={creatorBrief}
+          includeFourMemeUrl={includeFourMemeUrl}
           validation={validation}
           onTokenAddrChange={setTokenAddr}
           onTokenSymbolChange={setTokenSymbol}
           onCreatorBriefChange={setCreatorBrief}
+          onIncludeFourMemeUrlChange={setIncludeFourMemeUrl}
           onSubmit={(e) => {
             void onSubmit(e);
           }}

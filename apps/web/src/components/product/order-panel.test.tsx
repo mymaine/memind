@@ -230,6 +230,38 @@ describe('<OrderPanel /> static markup', () => {
     expect(out).toContain(custom);
   });
 
+  it('renders the tweet-mode radio group with safe mode pre-selected by default', () => {
+    const out = renderToStaticMarkup(<OrderPanel runController={idleController()} />);
+    // Legend + both labels must be rendered so the form is discoverable.
+    expect(out).toMatch(/Tweet mode/i);
+    expect(out).toMatch(/Safe mode/i);
+    expect(out).toMatch(/four\.meme click-through URL/i);
+    // Radio group contract: two radios sharing the `tweetMode` name.
+    expect(out).toMatch(/type="radio"[^>]*name="tweetMode"[^>]*value="safe"/);
+    expect(out).toMatch(/type="radio"[^>]*name="tweetMode"[^>]*value="with-url"/);
+    // Safe mode is the default pre-selection (production safe-during-cooldown
+    // posture). React SSR emits `checked=""` as a boolean attribute; it may
+    // appear before or after `value="safe"` in the rendered <input>. We
+    // check both orderings explicitly so the assertion is attribute-order
+    // agnostic.
+    expect(/value="safe"[^>]*checked=""/.test(out) || /checked=""[^>]*value="safe"/.test(out)).toBe(
+      true,
+    );
+    // The with-url radio must NOT carry `checked=""` in the default render.
+    expect(
+      /value="with-url"[^>]*checked=""/.test(out) || /checked=""[^>]*value="with-url"/.test(out),
+    ).toBe(false);
+  });
+
+  it('radios become disabled while the run is processing', () => {
+    const out = renderToStaticMarkup(<OrderPanel runController={processingController()} />);
+    // In processing state the OrderPanel swaps to the read-only ProcessingView
+    // which no longer mounts the radio group — it's form-level state, not
+    // run-level. The negative assertion locks that in so we don't
+    // accidentally start re-rendering the radios mid-run.
+    expect(out).not.toMatch(/name="tweetMode"/);
+  });
+
   it('invalid token address disables the Order Shill submit button', () => {
     const out = renderToStaticMarkup(
       <OrderPanel runController={idleController()} initialTokenAddr="0xdeadbeef" />,
