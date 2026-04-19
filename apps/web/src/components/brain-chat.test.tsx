@@ -127,3 +127,15 @@ describe('<BrainChat /> — no controller (SSR fallback)', () => {
     expect(out).toMatch(/<textarea\b/);
   });
 });
+
+describe('<BrainChat /> — slash hint (BRAIN-P6 AC-BRAIN-15)', () => {
+  it('shows "Type / for commands" hint under suggestions when transcript empty', () => {
+    // The hint lives underneath the suggestion chips in the empty-state
+    // block. We assert the literal copy surfaces so the user knows the
+    // shortcut is available.
+    const out = renderToStaticMarkup(
+      <BrainChat scope="launch" controller={makeController({ turns: [] })} />,
+    );
+    expect(out).toMatch(/type\s*\/\s*for commands/i);
+  });
+});
