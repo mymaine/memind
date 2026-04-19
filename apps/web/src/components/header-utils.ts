@@ -4,43 +4,37 @@
  * useScrollProgress / useScrollReveal — controller logic sits in plain TS,
  * the React shell only plumbs state.
  *
- * Supports AC-P4.7-1 (shared Header: sticky / three nav entries /
- * scroll-blur at > 80px).
+ * Post-immersive-single-page P1 Task 3 / AC-ISP-4: the Header menu is
+ * slimmed to a single primary nav entry (Home). The former Market +
+ * Evidence anchors were dropped — section jumps are owned by the sticky
+ * <SectionToc /> on `md+` and the slim Header nav on sub-md.
  */
 
 /**
- * `route` entries match the current pathname exactly. `anchor` entries point
- * at a section that is duplicated across multiple scenes (Evidence renders on
- * both `/` and `/market`), so their "active" semantics are any-of rather
- * than exact-match — see isActiveNavItem.
+ * `route` entries match the current pathname exactly. The type keeps the
+ * `anchor` kind available for future nav entries without introducing a
+ * breaking change, but no anchor entries ship today.
  */
 export interface NavItem {
-  readonly href: '/' | '/market' | '/#evidence' | '/market#evidence';
+  readonly href: '/';
   readonly label: string;
   readonly kind: 'route' | 'anchor';
 }
 
-export const NAV_ITEMS: readonly NavItem[] = [
-  { href: '/', label: 'Home', kind: 'route' },
-  { href: '/market', label: 'Market', kind: 'route' },
-  { href: '/#evidence', label: 'Evidence', kind: 'anchor' },
-] as const;
+export const NAV_ITEMS: readonly NavItem[] = [{ href: '/', label: 'Home', kind: 'route' }] as const;
 
 /**
  * Decide whether a nav entry should show the active accent underline.
  *
- * - `route` kind: the pathname must exactly equal `href` (so `/market` does
- *   not keep Home highlighted and future `/foo` does not light either).
- * - `anchor` kind: the Evidence anchor exists on both `/` and `/market`, so
- *   the entry is considered active whenever the viewer is on either of those
- *   routes. usePathname() strips the hash, so we ignore it here too.
+ * - `route` kind: the pathname must exactly equal `href`.
+ * - `anchor` kind: reserved for future use — currently returns false because
+ *   no anchor entries are registered.
  */
 export function isActiveNavItem(item: NavItem, pathname: string): boolean {
   if (item.kind === 'route') {
     return pathname === item.href;
   }
-  // anchor — Evidence lives on both Home and Market scenes.
-  return pathname === '/' || pathname === '/market';
+  return false;
 }
 
 /**

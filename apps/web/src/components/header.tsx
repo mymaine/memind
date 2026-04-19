@@ -1,26 +1,28 @@
 'use client';
 
 /**
- * Shared sticky Header (AC-P4.7-1).
+ * Shared sticky Header.
  *
  * Split into two pieces so the logic is testable without a browser:
  *   - <HeaderView /> is a pure presentational component driven by props
- *     (pathname, scrolled, brandName, navItems, githubUrl). It is what the
- *     unit tests render via renderToStaticMarkup.
- *   - <Header /> is the client shell: calls usePathname() and
- *     useScrollProgress(80) to wire the view to live browser state.
+ *     (pathname, scrolled, brandName, navItems, githubUrl, runState,
+ *     brainModalOpen, onOpenBrainModal). It is what the unit tests render
+ *     via renderToStaticMarkup.
+ *   - <Header /> is the client shell: calls usePathname() +
+ *     useScrollProgress(80) to wire live browser state and owns the Brain
+ *     modal open flag.
  *
  * The left side carries the <PixelHumanGlyph mood='idle' /> brand mark —
  * a pixel-art chibi with breathing idle animation — next to the BRAND_NAME
- * wordmark. The Header context pins the mood to `idle` and never changes
- * it; mood-driven variants live on the Hero / Mascot surfaces instead.
- * The right side hosts three nav links (Home / Market / Evidence) and a
- * GitHub icon link. Nothing here touches CSS — all styling is Tailwind v4
- * tokens already registered in globals.css.
+ * wordmark. The right side hosts the slim primary nav (Home only, per
+ * AC-ISP-4), a <BrainIndicator /> (AC-ISP-6) and a GitHub icon link.
  */
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useScrollProgress } from '@/hooks/useScrollProgress';
+import { useRunState } from '@/hooks/useRunStateContext';
+import type { RunState } from '@/hooks/useRun-state';
 import { BRAND_NAME } from '@/lib/narrative-copy';
 import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
 import {
@@ -29,6 +31,8 @@ import {
   isActiveNavItem,
   type NavItem,
 } from '@/components/header-utils';
+import { BrainIndicatorView } from '@/components/brain-indicator';
+import { BrainDetailModal } from '@/components/brain-detail-modal';
 
 // Author profile — clicking the Header GitHub icon lands on the author's
 // public profile where evaluators can find this repo + every downstream
@@ -42,15 +46,27 @@ export interface HeaderViewProps {
   readonly brandName: string;
   readonly navItems: readonly NavItem[];
   readonly githubUrl: string;
+  readonly runState: RunState;
+  readonly brainModalOpen: boolean;
+  readonly onOpenBrainModal: () => void;
 }
 
 /**
  * Pure presentational header — no browser APIs, no hooks. Consumers
- * (including tests) pass the current pathname + scrolled flag as props so
- * the output is fully deterministic.
+ * (including tests) pass the current pathname + scrolled flag + run state
+ * as props so the output is fully deterministic.
  */
 export function HeaderView(props: HeaderViewProps): React.ReactElement {
-  const { pathname, scrolled, brandName, navItems, githubUrl } = props;
+  const {
+    pathname,
+    scrolled,
+    brandName,
+    navItems,
+    githubUrl,
+    runState,
+    brainModalOpen,
+    onOpenBrainModal,
+  } = props;
   const outer = headerOuterClass(scrolled);
   return (
     <header
@@ -75,7 +91,9 @@ export function HeaderView(props: HeaderViewProps): React.ReactElement {
 
         {/* Primary nav landmark. Nav entries use aria-current="page" when
             the computed active flag is true so screen readers announce the
-            active route without us needing a visible label. */}
+            active route without us needing a visible label. The slim menu
+            carries only Home — section jumps on the immersive surface are
+            owned by the left-side <SectionToc />. */}
         <nav aria-label="Primary" className="ml-auto flex items-center gap-5">
           <ul className="flex items-center gap-5">
             {navItems.map((item) => {
@@ -98,6 +116,16 @@ export function HeaderView(props: HeaderViewProps): React.ReactElement {
               );
             })}
           </ul>
+
+          {/* Brain indicator — opens <BrainDetailModal />. Click state is
+              lifted to the <Header /> shell so the modal can live outside
+              the nav landmark. */}
+          <BrainIndicatorView
+            runState={runState}
+            modalOpen={brainModalOpen}
+            onOpen={onOpenBrainModal}
+          />
+
           <a
             href={githubUrl}
             target="_blank"
@@ -121,17 +149,35 @@ export function HeaderView(props: HeaderViewProps): React.ReactElement {
 /**
  * Client shell that feeds live browser state into <HeaderView />. Kept thin
  * on purpose so the presentational layer stays node-testable.
+ *
+ * Owns the Brain modal open state so the modal mounts alongside the Header
+ * (outside the nav landmark). The <RunStateProvider /> in app/layout.tsx
+ * hoists the run context above this shell; we subscribe with `useRunState`
+ * so the indicator reflects the active persona live.
  */
 export function Header(): React.ReactElement {
   const pathname = usePathname();
   const scrolled = useScrollProgress(80);
+  const runState = useRunState();
+  const [brainModalOpen, setBrainModalOpen] = useState(false);
+
   return (
-    <HeaderView
-      pathname={pathname}
-      scrolled={scrolled}
-      brandName={BRAND_NAME}
-      navItems={NAV_ITEMS}
-      githubUrl={GITHUB_URL_PLACEHOLDER}
-    />
+    <>
+      <HeaderView
+        pathname={pathname}
+        scrolled={scrolled}
+        brandName={BRAND_NAME}
+        navItems={NAV_ITEMS}
+        githubUrl={GITHUB_URL_PLACEHOLDER}
+        runState={runState}
+        brainModalOpen={brainModalOpen}
+        onOpenBrainModal={() => setBrainModalOpen(true)}
+      />
+      <BrainDetailModal
+        open={brainModalOpen}
+        onClose={() => setBrainModalOpen(false)}
+        runState={runState}
+      />
+    </>
   );
 }
