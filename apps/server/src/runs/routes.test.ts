@@ -560,6 +560,83 @@ describe('registerRunRoutes', () => {
     });
   });
 
+  // ─── BRAIN-P3: brain-chat mode dispatch (AC-BRAIN-4) ────────────────────
+  describe('POST /api/runs (brain-chat dispatch)', () => {
+    it('returns 201 + runId and invokes runBrainChatImpl with the messages', async () => {
+      let observedMessages: unknown;
+      let observedRunId: string | undefined;
+      const shillOrderStore = new ShillOrderStore();
+      const fakeBrainChat: RunBrainChatFn = async (deps) => {
+        observedMessages = deps.messages;
+        observedRunId = deps.runId;
+      };
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, {
+        brainChatImpl: fakeBrainChat,
+        shillOrderStore,
+      });
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'brain-chat',
+          params: {
+            messages: [{ role: 'user', content: 'launch a meme about BNB 2026' }],
+          },
+        }),
+      });
+      expect(response.status).toBe(201);
+      const body = (await response.json()) as { runId?: string };
+      expect(typeof body.runId).toBe('string');
+      expect(body.runId).toMatch(/^run_/);
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(observedMessages).toEqual([{ role: 'user', content: 'launch a meme about BNB 2026' }]);
+      expect(observedRunId).toBe(body.runId);
+
+      // GET /api/runs/:id should surface the run state machine progression.
+      const snapshot = await fetch(`${harness.baseUrl}/api/runs/${body.runId!}`);
+      expect(snapshot.status).toBe(200);
+      const snapshotBody = (await snapshot.json()) as { status?: string };
+      expect(['running', 'done']).toContain(snapshotBody.status);
+    });
+
+    it('returns 400 for brain-chat when messages is empty or malformed', async () => {
+      const fakeBrainChat: RunBrainChatFn = async () => {};
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, {
+        brainChatImpl: fakeBrainChat,
+      });
+
+      // Empty messages array — rejected by zod `min(1)`.
+      const emptyRes = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'brain-chat',
+          params: { messages: [] },
+        }),
+      });
+      expect(emptyRes.status).toBe(400);
+      const emptyBody = (await emptyRes.json()) as { error?: string };
+      expect(emptyBody.error).toMatch(/messages/);
+
+      // Malformed role — only 'user' and 'assistant' allowed per chatMessageSchema.
+      const badRoleRes = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'brain-chat',
+          params: {
+            messages: [{ role: 'system', content: 'nope' }],
+          },
+        }),
+      });
+      expect(badRoleRes.status).toBe(400);
+    });
+  });
+
   describe('POST /api/runs concurrency mutex (V2-P1 AC-V2-9)', () => {
     beforeEach(async () => {
       // Long-running fake so the first run stays active while the second
