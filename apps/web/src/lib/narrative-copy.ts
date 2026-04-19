@@ -69,15 +69,18 @@ export const SOLUTION_STEPS = [
  * read as the business ceiling. The on-screen card read is "we deliberately
  * ran the demo at sub-cent settlement to prove x402 micro-payments work;
  * shipped pricing is 100–500x that number, and Shill is just one of four
- * SKUs the same primitive fans out to".
+ * sell-side SKUs the same primitive fans out to".
  *
  * Three layers (rendered as three cards in <VisionScene />):
  *   1. demoFloor    — the literal $0.01 × 5% number that the live demo emits.
  *                     Labelled "floor, not ceiling".
  *   2. realWorld    — marketplace-standard pricing (AI-service $1–5/shill,
  *                     10% take-rate). Conservative assumptions only.
- *   3. multiSkuTam  — four SKUs (Shill + Snipe + LP + Alpha) summed into a
- *                     ~$2M/y agent-commerce primitive GMV.
+ *   3. multiSkuTam  — four sell-side SKUs (Shill + Launch Boost +
+ *                     Community Ops + Alpha Feed) summed into a ~$2M/y
+ *                     agent-commerce primitive GMV. The matrix is sell-side
+ *                     only — rationale lives in
+ *                     docs/decisions/2026-04-19-sku-sell-side-only.md.
  */
 export interface VisionTakerateSkuRow {
   readonly sku: string;
@@ -121,8 +124,8 @@ export const VISION_TAKERATE: VisionTakerate = {
     label: 'Multi-SKU TAM',
     breakdown: [
       { sku: 'Shill', annual: '$584k/y' },
-      { sku: 'Snipe', annual: '$1M/y' },
-      { sku: 'LP Provisioning', annual: '$500k/y' },
+      { sku: 'Launch Boost', annual: '$800k/y' },
+      { sku: 'Community Ops', annual: '$500k/y' },
       { sku: 'Alpha Feed', annual: '$200k/y' },
     ],
     total: '≈ $2M/y agent-commerce primitive GMV',
@@ -130,11 +133,15 @@ export const VISION_TAKERATE: VisionTakerate = {
 };
 
 export interface VisionSku {
-  readonly name: 'Shill' | 'Snipe' | 'LP Provisioning' | 'Alpha Feed';
+  readonly name: 'Shill' | 'Launch Boost' | 'Community Ops' | 'Alpha Feed';
   readonly status: 'shipped' | 'next' | 'roadmap';
   readonly note: string;
 }
 
+// Naming note: the 4-SKU matrix is sell-side only by design. Do not
+// introduce buy-side SKUs here — rationale and the full list of excluded
+// categories are fixed in
+// docs/decisions/2026-04-19-sku-sell-side-only.md.
 export const VISION_SKUS = [
   {
     name: 'Shill',
@@ -142,19 +149,19 @@ export const VISION_SKUS = [
     note: 'Agent Commerce Primitive (this project)',
   },
   {
-    name: 'Snipe',
+    name: 'Launch Boost',
     status: 'next',
-    note: 'Q3 2026',
+    note: 'Scheduled launch-window campaign + sentiment-triggered posts · Q3 2026',
   },
   {
-    name: 'LP Provisioning',
+    name: 'Community Ops',
     status: 'roadmap',
-    note: 'Q3 2026',
+    note: 'Weekly holder digest + on-demand Q&A from lore · Q3 2026',
   },
   {
     name: 'Alpha Feed',
     status: 'roadmap',
-    note: 'Q4 2026',
+    note: 'Curated signal stream for paying readers · Q4 2026',
   },
 ] as const satisfies readonly VisionSku[];
 

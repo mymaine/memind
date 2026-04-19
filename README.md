@@ -1,6 +1,6 @@
 # Shilling Market on Four.meme
 
-> **Agent-to-agent commerce primitive on four.meme**, paid over [x402](https://github.com/coinbase/x402). One Creator agent deploys a real BSC mainnet token and writes its **lore** (the token's AI-generated origin codex, chapter 1). A Narrator agent reads chapter 1 and writes chapter 2 — every chapter served from an x402-paid endpoint so agents pay each other 0.01 USDC to read lore as alpha. A Market-maker agent fetches the lore to drive its decisions. A Shiller agent uses the same lore to draft on-voice tweets that creators pay 0.01 USDC to commission, posted from a real aged X account. **Shill is the first shipped SKU; snipe, LP provisioning, alpha-feed ship on the same rails next.**
+> **Agent-to-agent commerce primitive on four.meme**, paid over [x402](https://github.com/coinbase/x402). One Creator agent deploys a real BSC mainnet token and writes its **lore** (the token's AI-generated origin codex, chapter 1). A Narrator agent reads chapter 1 and writes chapter 2 — every chapter served from an x402-paid endpoint so agents pay each other 0.01 USDC to read lore as alpha. A Market-maker agent fetches the lore to drive its decisions. A Shiller agent uses the same lore to draft on-voice tweets that creators pay 0.01 USDC to commission, posted from a real aged X account. **Shill is the first shipped SKU; Launch Boost, Community Ops, Alpha Feed (all sell-side) ship on the same rails next.**
 
 [![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-716%20green-emerald)](#evidence-on-chain--in-repo) [![Submission](https://img.shields.io/badge/deadline-2026--04--22-red)](#evidence-on-chain--in-repo)
 
@@ -8,7 +8,7 @@
 
 - **The thesis**: memecoins have a discovery problem, not a minting problem. Agents can solve it — if they have a **commerce rail** between them. We built that rail: four agents on one runtime, paying each other in 0.01 USDC increments over x402, trading a commodity called **lore** (AI-generated token world-building).
 - **The loop**: Creator deploys a real BSC mainnet token in **67s** and writes its lore chapter 1 → Narrator extends chapter 2 → Market-maker pays 0.01 USDC on Base Sepolia via x402 to read lore as alpha → Shiller reads the same lore to post an on-voice tweet from a real aged X account when a creator commissions one.
-- **Why this is a primitive, not a feature**: Shill is SKU 1 (shipped today). The same rails — paid x402 endpoints + lore-backed agent decisions + on-chain settlement — scale to snipe, LP provisioning, alpha-feed without redesigning the rail.
+- **Why this is a primitive, not a feature**: Shill is SKU 1 (shipped today). The same rails — paid x402 endpoints + lore-backed agent decisions + on-chain settlement — scale to Launch Boost, Community Ops, Alpha Feed (all sell-side) without redesigning the rail.
 - **4 agents, 9 typed tools, 716 green tests** — x402 integration settles real USDC every `pnpm test`. Shill tweets support a toggleable four.meme click-through URL (default off during X's 7-day post-OAuth cooldown; toggle on post-cooldown for sponsor attribution).
 - **Product-grade dashboard**: 6-scene narrative (Hero → Problem → Solution → Product → Vision → Evidence) on a single sticky Header; engineering detail (logs / timeline / tx pills / architecture) lives in a `D`-to-open Developer Drawer — judge-first up-front, engineer-deep on demand.
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint) · Deadline: 2026-04-22 UTC 15:59
@@ -47,7 +47,7 @@ Every memecoin should have a **soul**, not just a contract address. We give toke
 
 Three observations that make this a **primitive** rather than a one-off app:
 
-1. **Same lore, multiple buyers.** Market-maker and Shiller both pay to read the identical chapter. Add more SKUs (snipe bot, LP optimizer, alpha-feed) and they all share the lore substrate — zero new infrastructure.
+1. **Same lore, multiple buyers.** Market-maker and Shiller both pay to read the identical chapter. Add more sell-side SKUs (Launch Boost, Community Ops, Alpha Feed) and they all share the lore substrate — zero new infrastructure.
 2. **Same rail, multiple payers.** x402 settles from agents (Market-maker paying Narrator) or from humans (Creator paying Shiller) through the exact same EIP-3009 / Base Sepolia USDC flow.
 3. **Same tweet, real click-through.** Shiller tweets lead with `$SYMBOL` and end with `https://four.meme/token/0x...` — every demo tweet is a live backlink to the sponsor surface.
 

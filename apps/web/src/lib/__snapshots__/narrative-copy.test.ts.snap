@@ -91,18 +91,18 @@ exports[`narrative-copy > matches the committed snapshot (any copy change requir
       "status": "shipped",
     },
     {
-      "name": "Snipe",
-      "note": "Q3 2026",
+      "name": "Launch Boost",
+      "note": "Scheduled launch-window campaign + sentiment-triggered posts · Q3 2026",
       "status": "next",
     },
     {
-      "name": "LP Provisioning",
-      "note": "Q3 2026",
+      "name": "Community Ops",
+      "note": "Weekly holder digest + on-demand Q&A from lore · Q3 2026",
       "status": "roadmap",
     },
     {
       "name": "Alpha Feed",
-      "note": "Q4 2026",
+      "note": "Curated signal stream for paying readers · Q4 2026",
       "status": "roadmap",
     },
   ],
@@ -119,12 +119,12 @@ exports[`narrative-copy > matches the committed snapshot (any copy change requir
           "sku": "Shill",
         },
         {
-          "annual": "$1M/y",
-          "sku": "Snipe",
+          "annual": "$800k/y",
+          "sku": "Launch Boost",
         },
         {
           "annual": "$500k/y",
-          "sku": "LP Provisioning",
+          "sku": "Community Ops",
         },
         {
           "annual": "$200k/y",

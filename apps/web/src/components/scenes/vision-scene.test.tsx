@@ -4,8 +4,9 @@
  * Vision is the "why this is a primitive, not a feature" scene. Three
  * sub-blocks share a single 80vh `<section>`:
  *
- *   1. SKU expansion matrix    — 4 cards (Shill / Snipe / LP Provisioning /
- *      Alpha Feed). Only Shill (status='shipped') carries the accent breathing
+ *   1. SKU expansion matrix    — 4 cards (Shill / Launch Boost /
+ *      Community Ops / Alpha Feed, all sell-side per AGENTS.md hard rule
+ *      #2). Only Shill (status='shipped') carries the accent breathing
  *      border; the other three render in a muted variant.
  *   2. Take-rate projection    — three equal-weight cards (demo floor /
  *      real-world pricing / multi-SKU TAM). No bar chart — the prior SVG
@@ -58,7 +59,7 @@ describe('<VisionScene /> structural contract', () => {
     expect(out).toMatch(/<section[^>]+class="[^"]*\bscene\b/);
   });
 
-  it('renders every VISION_SKUS name (Shill / Snipe / LP Provisioning / Alpha Feed)', () => {
+  it('renders every VISION_SKUS name (Shill / Launch Boost / Community Ops / Alpha Feed)', () => {
     const out = render();
     for (const sku of VISION_SKUS) {
       expect(out).toContain(sku.name);
@@ -75,7 +76,7 @@ describe('<VisionScene /> structural contract', () => {
     expect(cls).toMatch(/\bsku-card--shipped\b/);
   });
 
-  it('does NOT mark the non-shipped SKUs (Snipe / LP Provisioning / Alpha Feed) as shipped', () => {
+  it('does NOT mark the non-shipped SKUs (Launch Boost / Community Ops / Alpha Feed) as shipped', () => {
     const out = render();
     for (const sku of VISION_SKUS) {
       if (sku.status === 'shipped') continue;

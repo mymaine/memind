@@ -6,8 +6,10 @@
  * Three sub-blocks stacked vertically inside an 80vh `<section>`:
  *
  *   1. SKU expansion matrix
- *      Four cards (Shill / Snipe / LP Provisioning / Alpha Feed) read from
- *      VISION_SKUS. Only the shipped SKU (Shill) carries the accent
+ *      Four cards (Shill / Launch Boost / Community Ops / Alpha Feed) read
+ *      from VISION_SKUS — all sell-side by design (buy-side SKUs are
+ *      excluded per AGENTS.md hard rule #2). Only the shipped SKU (Shill)
+ *      carries the accent
  *      breathing-border variant `.sku-card--shipped`; the other three render
  *      in a muted (opacity + default border) variant. The breathing keyframe
  *      lives in globals.css as `sku-shipped-breathe`; reduced-motion CSS
@@ -21,7 +23,8 @@
  *                            mistake it for the business ceiling.
  *        · Real-world      — marketplace-standard pricing ($1–5/shill, 10%
  *                            take, 3,200 orders/d → $117k–$584k/y).
- *        · Multi-SKU TAM   — Shill + Snipe + LP + Alpha summed to ~$2M/y GMV.
+ *        · Multi-SKU TAM   — Shill + Launch Boost + Community Ops + Alpha
+ *                            summed to ~$2M/y GMV.
  *      A prior revision shipped a hand-drawn SVG bar chart next to the
  *      numbers; it was removed because it anchored the eye on the $1.6/d
  *      demo-floor figure — exactly the framing this redesign is meant to

@@ -153,7 +153,7 @@ describe('narrative-copy', () => {
     it('lists four SKUs in multi-SKU TAM summing to a ~$2M/y headline', () => {
       expect(VISION_TAKERATE.multiSkuTam.breakdown).toHaveLength(4);
       const skus = VISION_TAKERATE.multiSkuTam.breakdown.map((row) => row.sku);
-      expect(skus).toEqual(['Shill', 'Snipe', 'LP Provisioning', 'Alpha Feed']);
+      expect(skus).toEqual(['Shill', 'Launch Boost', 'Community Ops', 'Alpha Feed']);
       expect(VISION_TAKERATE.multiSkuTam.total).toContain('$2M');
     });
   });
