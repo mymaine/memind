@@ -97,6 +97,54 @@ export function BrainPanel({
     };
   }, [open, onClose]);
 
+  // UAT issue #6: hovering the open panel and scrolling the wheel must NOT
+  // drive the page's StickyStage scroll. The panel is `position: fixed`, so
+  // wheel events that no scrollable descendant consumes bubble straight to
+  // `window` and useScrollY reacts — users saw the narrative advance while
+  // they tried to read the brain transcript. React's synthetic `onWheel`
+  // cannot `preventDefault()` (passive by default), so we attach a native
+  // listener with `{ passive: false }` and swallow deltas that would leak
+  // past the nearest scrollable child.
+  useEffect(() => {
+    const node = asideRef.current;
+    if (node === null) return;
+    const handleWheel = (e: WheelEvent): void => {
+      // Walk up from the event target inside the panel; if we find a
+      // scrollable element that still has room in the requested direction,
+      // let it handle the wheel natively. If we hit a boundary or never
+      // find one, preventDefault so `window` never sees this delta.
+      const target = e.target as Element | null;
+      if (target === null) return;
+      let cursor: Element | null = target;
+      while (cursor !== null && cursor !== node) {
+        if (cursor instanceof HTMLElement) {
+          const style = window.getComputedStyle(cursor);
+          const overflowY = style.overflowY;
+          if (overflowY === 'auto' || overflowY === 'scroll') {
+            const { scrollTop, scrollHeight, clientHeight } = cursor;
+            const hasRoom = scrollHeight > clientHeight + 0.5;
+            if (hasRoom) {
+              const atTop = scrollTop <= 0 && e.deltaY < 0;
+              const atBottom = scrollTop + clientHeight >= scrollHeight - 0.5 && e.deltaY > 0;
+              if (atTop || atBottom) {
+                e.preventDefault();
+              }
+              return;
+            }
+          }
+        }
+        cursor = cursor.parentElement;
+      }
+      // No scrollable descendant absorbed the wheel — stop it at the panel
+      // boundary so the page underneath stays still.
+      e.preventDefault();
+    };
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      node.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
   // Memory meta row: logs.length + artifacts.length both live on RunState
   // regardless of phase, so the empty / idle case falls out naturally.
   const logsCount = runState.logs.length;
