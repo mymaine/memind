@@ -11,6 +11,14 @@ describe('loadConfig', () => {
     process.env = original;
   });
 
+  it('prefers PORT over SERVER_PORT (Railway convention)', () => {
+    const original = { ...process.env };
+    process.env = { PORT: '8080', SERVER_PORT: '4000' };
+    const cfg = loadConfig();
+    expect(cfg.port).toBe(8080);
+    process.env = original;
+  });
+
   it('provides Phase 3 defaults for BSC RPC and heartbeat interval', () => {
     const original = { ...process.env };
     process.env = {};

@@ -7,6 +7,8 @@ const emptyAsUndefined = (v: unknown): unknown =>
   typeof v === 'string' && v.trim() === '' ? undefined : v;
 
 const envSchema = z.object({
+  // Railway/Fly/Heroku convention injects PORT; local dev uses SERVER_PORT.
+  PORT: z.coerce.number().optional(),
   SERVER_PORT: z.coerce.number().default(4000),
 
   ANTHROPIC_API_KEY: z.preprocess(emptyAsUndefined, z.string().min(1).optional()),
@@ -104,7 +106,7 @@ export type AppConfig = {
 export function loadConfig(): AppConfig {
   const env = envSchema.parse(process.env);
   return {
-    port: env.SERVER_PORT,
+    port: env.PORT ?? env.SERVER_PORT,
     anthropic: { apiKey: env.ANTHROPIC_API_KEY },
     openrouter: { apiKey: env.OPENROUTER_API_KEY },
     pinata: { jwt: env.PINATA_JWT },
