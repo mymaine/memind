@@ -12,7 +12,7 @@
  *      with `rel="noopener noreferrer"` (safe target=_blank, see design.md
  *      §9 a11y). Data source: narrative-copy.ts `EVIDENCE_ARTIFACTS`.
  *
- *   2. 3 engineering stats badges (static, no links): "427 tests green",
+ *   2. 3 engineering stats badges (static, no links): e.g. "716 tests green",
  *      "strict TypeScript", "AGPL-3.0 open source" — pulled verbatim from
  *      narrative-copy.ts `STATS_BADGES` so the snapshot test catches drift.
  *

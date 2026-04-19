@@ -80,7 +80,7 @@ exports[`narrative-copy > matches the committed snapshot (any copy change requir
     },
   ],
   "STATS_BADGES": [
-    "692 tests green",
+    "716 tests green",
     "strict TypeScript",
     "AGPL-3.0 open source",
   ],
