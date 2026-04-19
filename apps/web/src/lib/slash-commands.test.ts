@@ -26,9 +26,21 @@ function findCommand(name: string): SlashCommand {
 }
 
 describe('SLASH_COMMANDS registry', () => {
-  it('exposes all seven documented commands with correct kind mapping', () => {
+  it('exposes all eight documented commands with correct kind mapping', () => {
+    // `/clear` is a client-side alias of `/reset` added in UAT 2026-04-20
+    // so ChatGPT muscle-memory users can wipe the transcript with their
+    // expected verb. The dispatcher routes both to the same handler.
     const names = SLASH_COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['heartbeat', 'help', 'launch', 'lore', 'order', 'reset', 'status']);
+    expect(names).toEqual([
+      'clear',
+      'heartbeat',
+      'help',
+      'launch',
+      'lore',
+      'order',
+      'reset',
+      'status',
+    ]);
 
     const serverCmds = SLASH_COMMANDS.filter((c) => c.kind === 'server')
       .map((c) => c.name)
@@ -38,7 +50,7 @@ describe('SLASH_COMMANDS registry', () => {
     const clientCmds = SLASH_COMMANDS.filter((c) => c.kind === 'client')
       .map((c) => c.name)
       .sort();
-    expect(clientCmds).toEqual(['help', 'reset', 'status']);
+    expect(clientCmds).toEqual(['clear', 'help', 'reset', 'status']);
   });
 });
 

@@ -103,6 +103,8 @@ export function dispatchSlashSubmission(args: DispatchSlashSubmissionArgs): Disp
   if (cmd.kind === 'client') {
     switch (cmd.name) {
       case 'reset':
+      case 'clear':
+        // `/clear` is a UAT alias for `/reset` — both drop the transcript.
         reset();
         return { kind: 'client-handled' };
       case 'help':

@@ -20,8 +20,8 @@ describe('deriveSlashPaletteView — open state', () => {
     const view = deriveSlashPaletteView({ input: '/', scope: 'launch', rawActiveIndex: 0 });
     expect(view.open).toBe(true);
     const names = view.candidates.map((c) => c.name).sort();
-    // launch scope sees scoped commands (launch, lore) + client commands visible in every scope (help, reset, status)
-    expect(names).toEqual(['help', 'launch', 'lore', 'reset', 'status']);
+    // launch scope sees scoped commands (launch, lore) + client commands visible in every scope (clear, help, reset, status)
+    expect(names).toEqual(['clear', 'help', 'launch', 'lore', 'reset', 'status']);
     expect(view.activeIndex).toBe(0);
   });
 });

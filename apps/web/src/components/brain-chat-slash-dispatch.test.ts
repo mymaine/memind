@@ -89,6 +89,22 @@ describe('dispatchSlashSubmission — /reset', () => {
   });
 });
 
+describe('dispatchSlashSubmission — /clear (alias of /reset, UAT 2026-04-20)', () => {
+  it('invokes reset() just like /reset so users with ChatGPT muscle memory can clear the transcript', () => {
+    const sh = shim();
+    const res = dispatchSlashSubmission({
+      raw: '/clear',
+      scope: 'launch',
+      turns: [userTurn('u1', 'hi')],
+      reset: sh.reset,
+      appendLocalAssistant: sh.appendLocalAssistant,
+    });
+    expect(res).toEqual({ kind: 'client-handled' });
+    expect(sh.reset).toHaveBeenCalledTimes(1);
+    expect(sh.appendLocalAssistant).not.toHaveBeenCalled();
+  });
+});
+
 describe('dispatchSlashSubmission — server-side valid /launch', () => {
   it('returns server-send so the parent routes the raw message through controller.send', () => {
     const sh = shim();
