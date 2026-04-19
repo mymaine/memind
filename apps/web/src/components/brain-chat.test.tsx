@@ -129,6 +129,29 @@ describe('<BrainChat /> — no controller (SSR fallback)', () => {
   });
 });
 
+describe('<BrainChat /> — initialDraft seed (AC-MSR-7)', () => {
+  it('pre-fills the composer textarea with the provided initialDraft', () => {
+    // BrainPanel injects `initialDraft="/launch "` when the Hero CTA opens
+    // the panel; the textarea value must surface that text so the user
+    // lands on the slash palette's `/launch` candidate row.
+    const out = renderToStaticMarkup(
+      <BrainChat
+        scope="global"
+        controller={makeController({ turns: [] })}
+        initialDraft="/launch "
+      />,
+    );
+    expect(out).toMatch(/<textarea\b[^>]*name="brain-chat-draft"[^>]*>\/launch\s*</);
+  });
+
+  it('omitting initialDraft keeps the textarea empty', () => {
+    const out = renderToStaticMarkup(
+      <BrainChat scope="global" controller={makeController({ turns: [] })} />,
+    );
+    expect(out).toMatch(/<textarea\b[^>]*name="brain-chat-draft"[^>]*><\/textarea>/);
+  });
+});
+
 describe('<BrainChat /> — slash hint (BRAIN-P6 AC-BRAIN-15)', () => {
   it('shows "Type / for commands" hint under suggestions when transcript empty', () => {
     // The hint lives underneath the suggestion chips in the empty-state

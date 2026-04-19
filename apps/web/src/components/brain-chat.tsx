@@ -48,6 +48,15 @@ export interface BrainChatProps {
    */
   readonly controller?: UseBrainChatResult;
   readonly className?: string;
+  /**
+   * Mount-time initial composer draft. Used by BrainPanel so Hero CTAs
+   * (or any future deep-link) can pre-fill the textarea with a slash
+   * command like `/launch ` before the user starts typing. Only honoured
+   * on first mount — subsequent prop changes do NOT overwrite the user's
+   * in-progress edit. Callers that want to reset the draft should remount
+   * the component via a `key` prop.
+   */
+  readonly initialDraft?: string;
 }
 
 const SECTION_CLASS =
@@ -59,14 +68,19 @@ const PRIMARY_BUTTON_CLASS =
 const TEXTAREA_CLASS =
   'min-h-[44px] flex-1 resize-none rounded-[var(--radius-default)] border border-border-default bg-bg-surface px-3 py-2 font-[family-name:var(--font-sans-body)] text-[13px] text-fg-primary outline-none transition-colors placeholder:text-fg-tertiary focus:border-accent disabled:cursor-not-allowed disabled:opacity-60';
 
-export function BrainChat({ scope, controller, className }: BrainChatProps): ReactElement {
+export function BrainChat({
+  scope,
+  controller,
+  className,
+  initialDraft,
+}: BrainChatProps): ReactElement {
   // Always call the hook so the "no controller" branch works without a
   // conditional hook call (React's rules of hooks). When `controller` is
   // supplied, we ignore the hook's state.
   const fallback = useBrainChat(scope);
   const active = controller ?? fallback;
 
-  const [draft, setDraft] = useState<string>('');
+  const [draft, setDraft] = useState<string>(() => initialDraft ?? '');
   const [slashError, setSlashError] = useState<string | null>(null);
 
   const palette = useSlashPalette(draft, scope);
