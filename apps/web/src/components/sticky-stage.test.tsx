@@ -145,3 +145,41 @@ describe('<StickyStage />', () => {
     expect(value).toBeLessThan(0.6);
   });
 });
+
+describe('<StickyStage /> reduced-motion path (AC-MSR-11 / AC-MSR-14)', () => {
+  it('reducedMotion=true renders only the active chapter with p=1 and no transform/filter', () => {
+    // Pick a scrollY that would normally put chapter B mid-hold. In
+    // reduced-motion the stage must short-circuit: render B only, p=1,
+    // no scale/blur/opacity transform so the chapter lands in its final
+    // state. We also pass activeIdx explicitly (consumer-supplied) to
+    // match the wiring in page.tsx.
+    const y = SLOT_PX * 1 + SLOT_PX * 0.5;
+    const html = renderToStaticMarkup(
+      <StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} reducedMotion activeIdx={1} />,
+    );
+    // Only chapter B should be rendered.
+    expect(html).toMatch(/data-chapter="b"/);
+    expect(html).not.toMatch(/data-chapter="a"/);
+    expect(html).not.toMatch(/data-chapter="c"/);
+    // p forwarded as 1.000 (final state).
+    expect(html).toMatch(/data-testid="ch-b" data-p="1\.000"/);
+    // No cross-fade styles — transform/filter must be explicit 'none'.
+    expect(html).toMatch(/data-chapter="b"[^>]*style="[^"]*transform:none/);
+    expect(html).toMatch(/data-chapter="b"[^>]*style="[^"]*filter:none/);
+    // Opacity must land at 1 (final state, not the fade curve value).
+    expect(html).toMatch(/data-chapter="b"[^>]*style="[^"]*opacity:1/);
+  });
+
+  it('reducedMotion=true falls back to deriving activeIdx from scrollY when not supplied', () => {
+    // Without an explicit activeIdx the stage must still resolve to the
+    // chapter under scrollY — same derivation the cross-fade path uses.
+    // scrollY lands inside chapter C's slot (idx 2).
+    const y = SLOT_PX * 2 + SLOT_PX * 0.4;
+    const html = renderToStaticMarkup(
+      <StickyStage chapters={CHAPTERS} scrollY={y} vh={VH} reducedMotion />,
+    );
+    expect(html).toMatch(/data-chapter="c"/);
+    expect(html).not.toMatch(/data-chapter="a"/);
+    expect(html).not.toMatch(/data-chapter="b"/);
+  });
+});

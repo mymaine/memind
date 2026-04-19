@@ -46,6 +46,7 @@ import { SectionToc } from '@/components/section-toc';
 import { StickyStage, type StickyStageChapter } from '@/components/sticky-stage';
 import { Watermark } from '@/components/watermark';
 import { useActiveChapter } from '@/hooks/useActiveChapter';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useRun } from '@/hooks/useRun';
 import { usePublishRunState } from '@/hooks/useRunStateContext';
 import { useScrollY } from '@/hooks/useScrollY';
@@ -152,6 +153,10 @@ export default function HomePage(): ReactElement {
 
   const scrollY = useScrollY();
   const { activeIdx, progress } = useActiveChapter(scrollY, vh, CHAPTERS.length);
+  // System-level `prefers-reduced-motion: reduce` (AC-MSR-14). Forwarded
+  // to <StickyStage /> so the cross-fade engine is short-circuited and
+  // the active chapter renders with p=1 + no transform/filter.
+  const reducedMotion = useReducedMotion();
 
   const slotPx = SLOT_VH * vh;
   const totalScrollH = CHAPTERS.length * slotPx + vh;
@@ -212,7 +217,13 @@ export default function HomePage(): ReactElement {
       />
       <SectionToc activeIdx={activeIdx} onJump={onJump} />
       <div className="scroll-slot" style={{ height: totalScrollH }}>
-        <StickyStage chapters={CHAPTERS} scrollY={scrollY} vh={vh} />
+        <StickyStage
+          chapters={CHAPTERS}
+          scrollY={scrollY}
+          vh={vh}
+          reducedMotion={reducedMotion}
+          activeIdx={activeIdx}
+        />
       </div>
       <Watermark activeIdx={activeIdx} total={CHAPTERS.length} title={currentTitle} />
       <BrainPanel
