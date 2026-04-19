@@ -120,6 +120,20 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
   const toolAgentByIdRef = useRef<Map<string, AgentId>>(new Map());
   const sendingRef = useRef(false);
 
+  // Mirror `state.turns` into a ref so `send()` can read the latest committed
+  // transcript synchronously. React 18 batches state updates and does NOT
+  // guarantee that a `setState(prev => ...)` updater runs synchronously within
+  // the calling scope — the previous pattern (assigning `prev.turns` to an
+  // outer `priorTurns` variable from inside the updater) relied on an eager
+  // bailout path that only fires when there are no other pending updates. In
+  // the Memind demo this silently dropped the whole transcript on every
+  // follow-up send, so the Brain LLM saw just the latest user turn and
+  // "forgot" the token it had just deployed (2026-04-20 UAT regression).
+  const turnsRef = useRef<readonly BrainChatTurn[]>(EMPTY_BRAIN_CHAT_STATE.turns);
+  useEffect(() => {
+    turnsRef.current = state.turns;
+  }, [state.turns]);
+
   // Close any live EventSource on unmount — same leak guard as useRun.
   useEffect(() => {
     return () => {
@@ -152,6 +166,10 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
     sendingRef.current = false;
     activeAssistantIdRef.current = null;
     toolAgentByIdRef.current = new Map();
+    // Clear the ref synchronously so a `send` that fires in the same tick
+    // (e.g. /reset immediately followed by a new command) doesn't replay the
+    // stale transcript.
+    turnsRef.current = EMPTY_BRAIN_CHAT_STATE.turns;
     setState(EMPTY_BRAIN_CHAT_STATE);
   }, []);
 
@@ -172,15 +190,22 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
       activeAssistantIdRef.current = assistantTurn.id;
       toolAgentByIdRef.current = new Map();
 
-      let priorTurns: readonly BrainChatTurn[] = [];
-      setState((prev) => {
-        priorTurns = prev.turns;
-        return {
-          turns: [...prev.turns, userTurn, assistantTurn],
-          status: 'sending',
-          errorMessage: null,
-        };
-      });
+      // Snapshot the prior transcript from the ref BEFORE scheduling the
+      // state update. The ref reflects the latest committed `state.turns`
+      // via the mirror effect above, so we never rely on React invoking the
+      // setState updater synchronously (see the turnsRef comment).
+      const priorTurns = turnsRef.current;
+      // Keep the ref in lockstep with the turns we are about to append so a
+      // rapid back-to-back `send` (before the next commit / effect flush)
+      // still sees the freshly-added pair.
+      turnsRef.current = [...priorTurns, userTurn, assistantTurn];
+
+      setState((prev) => ({
+        ...prev,
+        turns: [...prev.turns, userTurn, assistantTurn],
+        status: 'sending',
+        errorMessage: null,
+      }));
 
       // Build the API payload from the prior transcript + new user turn.
       // We intentionally drop empty-content assistant turns (e.g. the seed
@@ -339,6 +364,9 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
       content,
       brainEvents: [],
     };
+    // Keep the ref in sync so a follow-up `send` in the same tick still
+    // carries this local echo in the transcript payload.
+    turnsRef.current = [...turnsRef.current, synthetic];
     setState((prev) => ({ ...prev, turns: [...prev.turns, synthetic] }));
   }, []);
 
