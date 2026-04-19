@@ -23,9 +23,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
-export function Label({ n, children }: { n: number; children: ReactNode }) {
+export function Label({ n, children }: { n: number; children: ReactNode }): ReactElement {
   return (
     <div className="ch-label">
       <span className="ch-label-num">CH.{String(n).padStart(2, '0')}</span>
@@ -43,7 +43,7 @@ export function BigHeadline({
   children: ReactNode;
   size?: number;
   style?: CSSProperties;
-}) {
+}): ReactElement {
   return (
     <h1 className="ch-headline" style={{ fontSize: size, ...style }}>
       {children}
@@ -51,7 +51,7 @@ export function BigHeadline({
   );
 }
 
-export function Mono({ children, dim }: { children: ReactNode; dim?: boolean }) {
+export function Mono({ children, dim }: { children: ReactNode; dim?: boolean }): ReactElement {
   return (
     <span className="mono" style={dim ? { color: 'var(--fg-tertiary)' } : undefined}>
       {children}
@@ -67,7 +67,7 @@ export function Pill({
   color: string;
   children: ReactNode;
   dot?: boolean;
-}) {
+}): ReactElement {
   return (
     <span className="pill">
       {dot && <span className="pill-dot" style={{ background: color }} />}
@@ -96,7 +96,7 @@ export const fmt = (n: number, d = 2): string => Number(n).toFixed(d);
  * cycles the dot count 0 → 1 → 2 → 3 → 0 every 350ms. Cleanup is handled
  * so the interval does not leak if the parent unmounts.
  */
-export function AnimatedLabel({ base }: { base: string }) {
+export function AnimatedLabel({ base }: { base: string }): ReactElement {
   const [dotCount, setDotCount] = useState(0);
   useEffect(() => {
     const id = setInterval(() => {

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { RunStateProvider } from '@/hooks/useRunStateContext';
 import './globals.css';
 
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     'Shilling Market — a creator-to-agent promotion service on four.meme, paid over x402. Creator pays 0.01 USDC; an AI shiller posts a promotional tweet from its own aged X account.',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }): ReactElement {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body>

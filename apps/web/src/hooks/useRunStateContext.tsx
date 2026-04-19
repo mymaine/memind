@@ -28,7 +28,7 @@
  * and it MUST reflect real live run state for the demo climax to land.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { IDLE_STATE, type RunState } from './useRun-state';
 
 interface RunStateContextValue {
@@ -38,7 +38,7 @@ interface RunStateContextValue {
 
 const RunStateContext = createContext<RunStateContextValue | null>(null);
 
-export function RunStateProvider({ children }: { children: ReactNode }) {
+export function RunStateProvider({ children }: { children: ReactNode }): ReactElement {
   const [runState, setRunState] = useState<RunState>(IDLE_STATE);
   const publish = useCallback((state: RunState) => setRunState(state), []);
   return (
