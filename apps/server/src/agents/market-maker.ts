@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { AgentTool, LogEvent } from '@hack-fourmeme/shared';
+import type { AgentTool, LogEvent, Persona, PersonaRunContext } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import {
   runAgentLoop,
@@ -9,9 +9,14 @@ import {
   type RuntimeToolUseStart,
   type ToolCallTrace,
 } from './runtime.js';
-import type { TokenStatusOutput } from '../tools/token-status.js';
-import type { XFetchLoreOutput } from '../tools/x-fetch-lore.js';
-import type { PostShillForInput, PostShillForOutput } from '../tools/post-shill-for.js';
+import { tokenStatusOutputSchema, type TokenStatusOutput } from '../tools/token-status.js';
+import { xFetchLoreOutputSchema, type XFetchLoreOutput } from '../tools/x-fetch-lore.js';
+import {
+  postShillForInputSchema,
+  postShillForOutputSchema,
+  type PostShillForInput,
+  type PostShillForOutput,
+} from '../tools/post-shill-for.js';
 import { extractJsonObject } from './_json.js';
 
 /**
@@ -357,3 +362,129 @@ export async function runShillerAgent(params: RunShillerAgentParams): Promise<Sh
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Persona adapters — Brain positioning (2026-04-19).
+// ---------------------------------------------------------------------------
+// Two personas share this file: `marketMakerPersona` (a2a mode) and
+// `shillerPersona` (shill mode). Both adapt the existing runners without
+// touching their signatures. `shillerPersona` keeps the dependency-injected
+// `post_shill_for` tool on its `TInput` because the runner is intentionally
+// decoupled from the Anthropic client — the shill flow is deterministic
+// post-payment and does not run a second LLM loop.
+// ---------------------------------------------------------------------------
+
+const toolCallTraceSchema = z.object({
+  name: z.string(),
+  input: z.unknown(),
+  output: z.unknown(),
+  isError: z.boolean(),
+});
+
+export const marketMakerPersonaInputSchema = z.object({
+  tokenAddr: z.string().min(1),
+  loreEndpointUrl: z.string().url(),
+  model: z.string().optional(),
+  maxTurns: z.number().int().positive().optional(),
+});
+export type MarketMakerPersonaInput = z.infer<typeof marketMakerPersonaInputSchema>;
+
+export const marketMakerPersonaOutputSchema = z.object({
+  tokenAddr: z.string(),
+  tokenStatus: tokenStatusOutputSchema,
+  decision: z.enum(DECISION_ENUM),
+  loreFetch: xFetchLoreOutputSchema.optional(),
+  toolCalls: z.array(toolCallTraceSchema),
+});
+export type MarketMakerPersonaOutput = z.infer<typeof marketMakerPersonaOutputSchema>;
+
+export const marketMakerPersona: Persona<MarketMakerPersonaInput, MarketMakerPersonaOutput> = {
+  id: 'market-maker',
+  description:
+    'Market-maker persona (a2a mode) — reads a token via check_token_status and decides whether to pay 0.01 USDC via x402_fetch_lore for the latest lore chapter.',
+  inputSchema: marketMakerPersonaInputSchema,
+  outputSchema: marketMakerPersonaOutputSchema,
+  async run(input, ctx: PersonaRunContext) {
+    const parsed = marketMakerPersonaInputSchema.parse(input);
+    const out = await runMarketMakerAgent({
+      client: ctx.client as Anthropic,
+      registry: ctx.registry as ToolRegistry,
+      tokenAddr: parsed.tokenAddr,
+      loreEndpointUrl: parsed.loreEndpointUrl,
+      ...(parsed.model !== undefined ? { model: parsed.model } : {}),
+      ...(parsed.maxTurns !== undefined ? { maxTurns: parsed.maxTurns } : {}),
+    });
+    return out;
+  },
+};
+
+export const shillerPersonaInputSchema = z.object({
+  /** Injected `post_shill_for` tool — see RunShillerAgentParams.postShillForTool. */
+  postShillForTool: z.custom<AgentTool<PostShillForInput, PostShillForOutput>>(
+    (value) => {
+      if (typeof value !== 'object' || value === null) return false;
+      const t = value as { name?: unknown; execute?: unknown };
+      return t.name === 'post_shill_for' && typeof t.execute === 'function';
+    },
+    { message: 'postShillForTool must be an AgentTool with name="post_shill_for"' },
+  ),
+  orderId: z.string().min(1),
+  tokenAddr: z.string().min(1),
+  tokenSymbol: z.string().optional(),
+  loreSnippet: z.string().min(1),
+  creatorBrief: z.string().optional(),
+  includeFourMemeUrl: z.boolean().optional(),
+});
+export type ShillerPersonaInput = z.input<typeof shillerPersonaInputSchema>;
+
+export const shillerPersonaOutputSchema = z.object({
+  orderId: z.string().min(1),
+  tokenAddr: z.string().min(1),
+  decision: z.enum(['shill', 'skip']),
+  tweetId: z.string().optional(),
+  tweetUrl: z.string().optional(),
+  tweetText: z.string().optional(),
+  postedAt: z.string().optional(),
+  toolCalls: z.array(
+    z.object({
+      name: z.string(),
+      input: z.record(z.unknown()),
+      output: z.record(z.unknown()),
+      isError: z.boolean(),
+    }),
+  ),
+  errorMessage: z.string().optional(),
+});
+export type ShillerPersonaOutput = z.infer<typeof shillerPersonaOutputSchema>;
+
+// `postShillForInputSchema` and `postShillForOutputSchema` are re-exported
+// implicitly through the runtime import; we reference them here so ESLint's
+// unused-import rule sees a usage, matching the existing style.
+void postShillForInputSchema;
+void postShillForOutputSchema;
+
+export const shillerPersona: Persona<ShillerPersonaInput, ShillerPersonaOutput> = {
+  id: 'shiller',
+  description:
+    'Shiller persona (shill mode) — posts an organic-voice tweet for a paid order via the injected post_shill_for tool. Deterministic post-payment; no second LLM loop.',
+  inputSchema: shillerPersonaInputSchema,
+  outputSchema: shillerPersonaOutputSchema,
+  async run(input, ctx: PersonaRunContext) {
+    // Shiller does not route through the Anthropic client or tool registry —
+    // the persona contract still requires a ctx, but both fields are unused.
+    void ctx;
+    const parsed = shillerPersonaInputSchema.parse(input);
+    const out = await runShillerAgent({
+      postShillForTool: parsed.postShillForTool,
+      orderId: parsed.orderId,
+      tokenAddr: parsed.tokenAddr,
+      ...(parsed.tokenSymbol !== undefined ? { tokenSymbol: parsed.tokenSymbol } : {}),
+      loreSnippet: parsed.loreSnippet,
+      ...(parsed.creatorBrief !== undefined ? { creatorBrief: parsed.creatorBrief } : {}),
+      ...(parsed.includeFourMemeUrl !== undefined
+        ? { includeFourMemeUrl: parsed.includeFourMemeUrl }
+        : {}),
+    });
+    return out;
+  },
+};

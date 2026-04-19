@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { LogEvent } from '@hack-fourmeme/shared';
+import { z } from 'zod';
+import type { LogEvent, Persona, PersonaRunContext } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import { runAgentLoop } from './runtime.js';
 
@@ -206,3 +207,84 @@ export class HeartbeatAgent {
     return err instanceof Error ? err.message : String(err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Persona adapter — Brain positioning (2026-04-19).
+// ---------------------------------------------------------------------------
+// `heartbeatPersona.run(...)` constructs a one-shot HeartbeatAgent, runs a
+// single `tick()`, and returns the resulting state snapshot. The long-lived
+// `start()` / `shutdown()` mode remains the preferred entry-point for the
+// actual service process (see apps/server/src/runs/heartbeat-runner.ts);
+// the persona adapter is the uniform contract surface used by the Brain
+// pluggable-persona registry. `intervalMs` is accepted and forwarded so the
+// ctor signature stays uniform with the standalone class, but no timer is
+// ever started by the adapter — shutdown is implicit.
+// ---------------------------------------------------------------------------
+
+export const heartbeatPersonaInputSchema = z.object({
+  model: z.string().min(1),
+  systemPrompt: z.string().min(1),
+  /** See the `z.custom` note on `onLog` below — same reasoning applies. */
+  buildUserInput: z.custom<(ctx: { tickId: string; tickAt: string }) => string>(
+    (v) => typeof v === 'function',
+  ),
+  intervalMs: z.number().int().positive().default(60_000),
+  maxTurnsPerTick: z.number().int().positive().optional(),
+  /**
+   * `onLog` / `buildUserInput` / `runAgentLoopImpl` are typed as z.custom
+   * rather than z.function(): zod's `function()` helper wraps the callback
+   * and re-validates its return value, which would reject our `(e) => void`
+   * callbacks whose real implementation returns whatever `Array.push` does.
+   * `z.custom` performs a minimal runtime check (callable) and preserves
+   * the original function verbatim.
+   */
+  onLog: z.custom<(event: LogEvent) => void>((v) => typeof v === 'function').optional(),
+  runAgentLoopImpl: z.custom<typeof runAgentLoop>((v) => typeof v === 'function').optional(),
+});
+export type HeartbeatPersonaInput = z.input<typeof heartbeatPersonaInputSchema>;
+
+export const heartbeatPersonaOutputSchema = z.object({
+  lastTickAt: z.string().nullable(),
+  lastTickId: z.string().nullable(),
+  successCount: z.number().int().nonnegative(),
+  errorCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  lastError: z.string().nullable(),
+});
+export type HeartbeatPersonaOutput = z.infer<typeof heartbeatPersonaOutputSchema>;
+
+export const heartbeatPersona: Persona<HeartbeatPersonaInput, HeartbeatPersonaOutput> = {
+  id: 'heartbeat',
+  description:
+    'Heartbeat persona — runs exactly one tick of the HeartbeatAgent loop and returns the state snapshot. Long-lived scheduling stays in HeartbeatAgent itself.',
+  inputSchema: heartbeatPersonaInputSchema,
+  outputSchema: heartbeatPersonaOutputSchema,
+  async run(input, ctx: PersonaRunContext) {
+    const parsed = heartbeatPersonaInputSchema.parse(input);
+    const agent = new HeartbeatAgent({
+      client: ctx.client as Anthropic,
+      model: parsed.model,
+      registry: ctx.registry as ToolRegistry,
+      systemPrompt: parsed.systemPrompt,
+      buildUserInput: parsed.buildUserInput as (ctx: { tickId: string; tickAt: string }) => string,
+      intervalMs: parsed.intervalMs,
+      ...(parsed.maxTurnsPerTick !== undefined ? { maxTurnsPerTick: parsed.maxTurnsPerTick } : {}),
+      ...(parsed.onLog !== undefined ? { onLog: parsed.onLog as (e: LogEvent) => void } : {}),
+      ...(parsed.runAgentLoopImpl !== undefined
+        ? { runAgentLoopImpl: parsed.runAgentLoopImpl as typeof runAgentLoop }
+        : {}),
+    });
+    await agent.tick();
+    // Snapshot is a frozen readonly view — clone into a plain object so zod
+    // parse does not reject readonly index signatures.
+    const snapshot = agent.state;
+    return {
+      lastTickAt: snapshot.lastTickAt,
+      lastTickId: snapshot.lastTickId,
+      successCount: snapshot.successCount,
+      errorCount: snapshot.errorCount,
+      skippedCount: snapshot.skippedCount,
+      lastError: snapshot.lastError,
+    };
+  },
+};

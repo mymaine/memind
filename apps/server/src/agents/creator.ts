@@ -1,5 +1,12 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { creatorResultSchema, type CreatorResult, type LogEvent } from '@hack-fourmeme/shared';
+import { z } from 'zod';
+import {
+  creatorResultSchema,
+  type CreatorResult,
+  type LogEvent,
+  type Persona,
+  type PersonaRunContext,
+} from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import {
   runAgentLoop,
@@ -83,3 +90,39 @@ export async function runCreatorAgent(params: RunCreatorAgentParams): Promise<Cr
   const result = creatorResultSchema.parse(json);
   return { result, loop };
 }
+
+// ---------------------------------------------------------------------------
+// Persona adapter — Brain positioning (2026-04-19).
+// ---------------------------------------------------------------------------
+// `creatorPersona` wraps `runCreatorAgent` in the generic `Persona<TInput,
+// TOutput>` contract from `packages/shared/src/persona.ts`. No behaviour
+// change: the adapter's `run(...)` forwards to the same runner the rest of
+// the codebase already uses. Only purpose is to make the "pluggable persona"
+// claim TRUE in code.
+// ---------------------------------------------------------------------------
+
+export const creatorPersonaInputSchema = z.object({
+  theme: z.string().min(1),
+  model: z.string().optional(),
+  maxTurns: z.number().int().positive().optional(),
+});
+export type CreatorPersonaInput = z.infer<typeof creatorPersonaInputSchema>;
+
+export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
+  id: 'creator',
+  description:
+    'Creator persona — turns a user theme into a live BSC-mainnet meme token with on-chain lore via the narrative → image → deployer → lore tool chain.',
+  inputSchema: creatorPersonaInputSchema,
+  outputSchema: creatorResultSchema,
+  async run(input, ctx: PersonaRunContext) {
+    const parsed = creatorPersonaInputSchema.parse(input);
+    const { result } = await runCreatorAgent({
+      client: ctx.client as Anthropic,
+      registry: ctx.registry as ToolRegistry,
+      theme: parsed.theme,
+      ...(parsed.model !== undefined ? { model: parsed.model } : {}),
+      ...(parsed.maxTurns !== undefined ? { maxTurns: parsed.maxTurns } : {}),
+    });
+    return result;
+  },
+};

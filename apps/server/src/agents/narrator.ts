@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
+import { z } from 'zod';
+import type { Artifact, LogEvent, Persona, PersonaRunContext } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { LoreStore } from '../state/lore-store.js';
 import { type AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
@@ -266,3 +267,77 @@ export async function runNarratorAgent(
     toolCalls: loop.toolCalls,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Persona adapter — Brain positioning (2026-04-19).
+// ---------------------------------------------------------------------------
+// `narratorPersona` wraps `runNarratorAgent` in the generic `Persona<TInput,
+// TOutput>` contract. The runner's `store` dependency is threaded through
+// the persona `TInput` (rather than the shared `PersonaRunContext`) because
+// only the Narrator needs it; keeping the context uniform is a hard rule
+// from the Persona interface. Output schema omits the `toolCalls` trace —
+// callers that need it still use `runNarratorAgent` directly.
+// ---------------------------------------------------------------------------
+
+export const narratorPersonaInputSchema = z.object({
+  tokenAddr: z.string().min(1),
+  tokenName: z.string().min(1),
+  tokenSymbol: z.string().min(1),
+  previousChapters: z.array(z.string()).optional(),
+  targetChapterNumber: z.number().int().positive().optional(),
+  model: z.string().optional(),
+  maxTurns: z.number().int().positive().optional(),
+});
+export type NarratorPersonaInput = z.input<typeof narratorPersonaInputSchema>;
+
+export const narratorPersonaOutputSchema = z.object({
+  tokenAddr: z.string(),
+  chapterNumber: z.number().int().positive(),
+  ipfsHash: z.string(),
+  ipfsUri: z.string(),
+  chapterText: z.string(),
+});
+export type NarratorPersonaOutput = z.infer<typeof narratorPersonaOutputSchema>;
+
+export const narratorPersona: Persona<NarratorPersonaInput, NarratorPersonaOutput> = {
+  id: 'narrator',
+  description:
+    'Narrator persona — extends a token lore timeline by calling extend_lore exactly once and upserting the chapter into the injected LoreStore.',
+  inputSchema: narratorPersonaInputSchema,
+  outputSchema: narratorPersonaOutputSchema,
+  async run(input, ctx: PersonaRunContext) {
+    const parsed = narratorPersonaInputSchema.parse(input);
+    // The LoreStore is a process-wide singleton, so the adapter reads it off
+    // the context's escape-hatch slot rather than demanding the caller pass
+    // it on every run payload. Type-narrowed locally.
+    const store = ctx.store as LoreStore | undefined;
+    if (!store) {
+      throw new Error(
+        'narratorPersona.run: PersonaRunContext.store is required (LoreStore instance)',
+      );
+    }
+    const out = await runNarratorAgent({
+      client: ctx.client as Anthropic,
+      registry: ctx.registry as ToolRegistry,
+      store,
+      tokenAddr: parsed.tokenAddr,
+      tokenName: parsed.tokenName,
+      tokenSymbol: parsed.tokenSymbol,
+      ...(parsed.previousChapters !== undefined
+        ? { previousChapters: parsed.previousChapters }
+        : {}),
+      ...(parsed.targetChapterNumber !== undefined
+        ? { targetChapterNumber: parsed.targetChapterNumber }
+        : {}),
+      ...(parsed.model !== undefined ? { model: parsed.model } : {}),
+      ...(parsed.maxTurns !== undefined ? { maxTurns: parsed.maxTurns } : {}),
+    });
+    return {
+      tokenAddr: out.tokenAddr,
+      chapterNumber: out.chapterNumber,
+      ipfsHash: out.ipfsHash,
+      ipfsUri: out.ipfsUri,
+      chapterText: out.chapterText,
+    };
+  },
+};
