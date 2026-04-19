@@ -20,6 +20,7 @@ import { AnchorLedger } from './state/anchor-ledger.js';
 import { ShillOrderStore } from './state/shill-order-store.js';
 import { RunStore } from './runs/store.js';
 import { registerRunRoutes } from './runs/routes.js';
+import { createRealCreatorPaymentPhase } from './runs/shill-market.js';
 
 // OpenRouter Anthropic-compatible gateway — same endpoint the demo CLIs use.
 // Centralised here so the long-lived HTTP server holds a single Anthropic
@@ -58,6 +59,18 @@ const anthropic = new Anthropic({
 registerHealthRoutes(app);
 registerX402Routes(app, config, { loreStore, shillOrderStore });
 registerAgentRoutes(app);
+// Dashboard shill-market runs get a real `@x402/fetch` payment phase so the
+// settlement artifact carries a genuine Base Sepolia USDC tx hash. Falls back
+// gracefully to the stub if `AGENT_WALLET_PRIVATE_KEY` is not set — the
+// orchestrator's own default is the stub, so missing key == stub behaviour.
+const agentPrivateKey = config.wallets.agent.privateKey;
+const shillCreatorPaymentImpl =
+  agentPrivateKey !== undefined && agentPrivateKey.startsWith('0x')
+    ? createRealCreatorPaymentPhase({
+        agentPrivateKey: agentPrivateKey as `0x${string}`,
+        serverPort: config.port,
+      })
+    : undefined;
 registerRunRoutes(app, {
   config,
   anthropic,
@@ -65,6 +78,7 @@ registerRunRoutes(app, {
   loreStore,
   anchorLedger,
   shillOrderStore,
+  ...(shillCreatorPaymentImpl !== undefined ? { shillCreatorPaymentImpl } : {}),
 });
 
 app.listen(config.port, () => {

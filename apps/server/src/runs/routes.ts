@@ -23,7 +23,11 @@ import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
-import { runShillMarketDemo, type RunShillMarketDemoArgs } from './shill-market.js';
+import {
+  runShillMarketDemo,
+  type CreatorPaymentPhaseFn,
+  type RunShillMarketDemoArgs,
+} from './shill-market.js';
 
 /**
  * Default Phase 2 validated BSC mainnet demo token — mirrors the CLI
@@ -85,6 +89,14 @@ export interface RegisterRunRoutesDeps {
   runHeartbeatDemoImpl?: RunHeartbeatDemoFn;
   /** Test hook — overrides the real `runShillMarketDemo`. */
   runShillMarketDemoImpl?: RunShillMarketDemoFn;
+  /**
+   * Optional real creator-payment phase for dashboard shill-market runs.
+   * When provided, the orchestrator drives `@x402/fetch` against the server's
+   * own `/shill/:tokenAddr` endpoint so the settlement artifact carries a
+   * genuine Base Sepolia USDC tx hash instead of the zero-sentinel stub.
+   * CLI demos leave this undefined (stub mode keeps `pnpm test` USDC-free).
+   */
+  shillCreatorPaymentImpl?: CreatorPaymentPhaseFn;
 }
 
 const SSE_KEEPALIVE_MS = 20_000;
@@ -235,6 +247,9 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
         args,
         shillOrderStore,
         loreStore,
+        ...(deps.shillCreatorPaymentImpl !== undefined
+          ? { creatorPaymentImpl: deps.shillCreatorPaymentImpl }
+          : {}),
       })
         .then(() => {
           runStore.setStatus(record.runId, 'done');

@@ -28,6 +28,14 @@
  */
 import { randomUUID } from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
+import { createPublicClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { baseSepolia } from 'viem/chains';
+import { wrapFetchWithPayment } from '@x402/fetch';
+import { x402Client } from '@x402/core/client';
+import { decodePaymentResponseHeader } from '@x402/core/http';
+import { ExactEvmScheme as ClientExactEvmScheme, toClientEvmSigner } from '@x402/evm';
+import type { Network } from '@x402/core/types';
 import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import { runShillerAgent, type ShillerAgentOutput } from '../agents/market-maker.js';
 import type { AppConfig } from '../config.js';
@@ -115,6 +123,86 @@ export const stubCreatorPaymentPhase: CreatorPaymentPhaseFn = async (deps) => {
   });
   return { orderId, paidTxHash, paidAmountUsdc };
 };
+
+/**
+ * Real creator-payment phase: drives `@x402/fetch` against the server's own
+ * `/shill/:tokenAddr` endpoint so the settlement tx is a genuine Base Sepolia
+ * USDC transfer instead of the `stubCreatorPaymentPhase` sentinel.
+ *
+ * Dashboard flow (POST /api/runs kind='shill-market') wires this so
+ * evaluators who click the settlement pill on the OrderPanel land on a real
+ * BaseScan page — AC-P4.6-1 end-to-end proof. CLI demo keeps the stub by
+ * default (mirrors AGENTS.md dry-run posture so `pnpm test` never spends USDC).
+ *
+ * Factory throws at construction time if `agentPrivateKey` is missing rather
+ * than lazily at first payment — matches the fail-fast pattern the other
+ * x402-consuming tools use.
+ */
+export interface RealCreatorPaymentOptions {
+  /** `0x…` 32-byte hex, typically `AGENT_WALLET_PRIVATE_KEY`. */
+  readonly agentPrivateKey: `0x${string}`;
+  /** HTTP port of the running server (self-target for the loopback fetch). */
+  readonly serverPort: number;
+  /** x402 network id; defaults to Base Sepolia (`eip155:84532`). */
+  readonly network?: Network;
+  /** Base Sepolia RPC endpoint the viem public client queries. */
+  readonly rpcUrl?: string;
+  /** Host used when building the loopback URL; defaults to 127.0.0.1. */
+  readonly serverHost?: string;
+}
+
+export function createRealCreatorPaymentPhase(
+  opts: RealCreatorPaymentOptions,
+): CreatorPaymentPhaseFn {
+  const network: Network = opts.network ?? ('eip155:84532' as Network);
+  const rpcUrl = opts.rpcUrl ?? 'https://sepolia.base.org';
+  const host = opts.serverHost ?? '127.0.0.1';
+  const account = privateKeyToAccount(opts.agentPrivateKey);
+  const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
+  const signer = toClientEvmSigner(account, publicClient);
+  const client = new x402Client().register(network, new ClientExactEvmScheme(signer));
+  const payingFetch = wrapFetchWithPayment(fetch, client);
+
+  return async (deps) => {
+    const { tokenAddr, creatorBrief } = deps;
+    const url = `http://${host}:${String(opts.serverPort)}/shill/${tokenAddr}`;
+    const payload = creatorBrief !== undefined ? { creatorBrief } : {};
+    const response = await payingFetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const snippet = await safeReadBody(response);
+      throw new Error(
+        `realCreatorPayment: /shill/${tokenAddr} returned ${String(response.status)}: ${snippet}`,
+      );
+    }
+    const paymentHeader = response.headers.get('X-Payment-Response');
+    if (paymentHeader === null || paymentHeader === '') {
+      throw new Error(`realCreatorPayment: /shill/${tokenAddr} missing X-Payment-Response header`);
+    }
+    const settlement = decodePaymentResponseHeader(paymentHeader);
+    const bodyJson = (await response.json()) as { orderId?: unknown };
+    if (typeof bodyJson.orderId !== 'string' || bodyJson.orderId.length === 0) {
+      throw new Error(`realCreatorPayment: /shill/${tokenAddr} response missing orderId`);
+    }
+    return {
+      orderId: bodyJson.orderId,
+      paidTxHash: settlement.transaction,
+      paidAmountUsdc: '0.01',
+    };
+  };
+}
+
+async function safeReadBody(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+  } catch {
+    return '<body unreadable>';
+  }
+}
 
 /**
  * Default Shiller phase implementation — wires the existing
