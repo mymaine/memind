@@ -1447,15 +1447,26 @@ body:has(.logs-drawer.open) .toc {
  * width is 0 so it takes no horizontal space. Expanded (`.open`): the
  * body animates to 360px. Handle always stays clickable.
  */
+/*
+ * UAT 2026-04-20: the LogsDrawer is a *debug* surface — judges validating
+ * the demo through BrainChat (meme thumb + artifact pills + markdown final
+ * reply) already have enough on-screen evidence. The dev drawer is now
+ * hidden by default and only materialises when the developer presses `D`.
+ * Escape / `D` both close it. This keeps the demo view uncluttered while
+ * preserving the inspection surface for debugging sessions.
+ */
 .logs-drawer {
   position: fixed;
   top: 56px; /* sits below TopBar */
   left: 0;
   bottom: 0;
   z-index: 280;
-  display: flex;
+  display: none;
   flex-direction: row;
   pointer-events: auto;
+}
+.logs-drawer.open {
+  display: flex;
 }
 .logs-drawer-handle {
   width: 32px;
