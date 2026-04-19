@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  agentIdSchema,
   artifactSchema,
   assistantDeltaEventPayloadSchema,
+  chatMessageSchema,
   createRequestSchema,
   createRunRequestSchema,
   runKindSchema,
@@ -797,5 +799,41 @@ describe('runSnapshotSchema', () => {
       ],
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// ─── Brain Conversational Surface (BRAIN-P1) ─────────────────────────────────
+// Brain meta-agent introduces two new agent ids (`brain` orchestrator +
+// `shiller` persona promoted from implicit shill-market usage) and a new
+// `brain-chat` run kind driven by OpenAI-style chat messages. See
+// docs/features/brain-conversational-surface.md Roadmap BRAIN-P1.
+describe('agentIdSchema (BRAIN-P1 adds brain + shiller)', () => {
+  it('accepts brain as a new agent id', () => {
+    const result = agentIdSchema.safeParse('brain');
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts shiller as a new agent id', () => {
+    const result = agentIdSchema.safeParse('shiller');
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('runKindSchema (BRAIN-P1 adds brain-chat)', () => {
+  it('accepts brain-chat as a new run kind', () => {
+    const result = runKindSchema.safeParse('brain-chat');
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('chatMessageSchema', () => {
+  it('accepts a user message with non-empty content', () => {
+    const result = chatMessageSchema.safeParse({ role: 'user', content: 'hi' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a message with unknown role and empty content', () => {
+    const result = chatMessageSchema.safeParse({ role: 'foo', content: '' });
+    expect(result.success).toBe(false);
   });
 });
