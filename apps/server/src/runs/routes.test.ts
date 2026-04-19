@@ -11,6 +11,7 @@ import { RunStore } from './store.js';
 import {
   registerRunRoutes,
   type RunA2ADemoFn,
+  type RunBrainChatFn,
   type RunHeartbeatDemoFn,
   type RunShillMarketDemoFn,
 } from './routes.js';
@@ -68,6 +69,7 @@ interface Harness {
 interface StartHarnessOptions {
   heartbeatImpl?: RunHeartbeatDemoFn;
   shillMarketImpl?: RunShillMarketDemoFn;
+  brainChatImpl?: RunBrainChatFn;
   shillOrderStore?: ShillOrderStore;
 }
 
@@ -96,6 +98,7 @@ function startHarness(
     runA2ADemoImpl: runImpl,
     ...(opts.heartbeatImpl !== undefined ? { runHeartbeatDemoImpl: opts.heartbeatImpl } : {}),
     ...(opts.shillMarketImpl !== undefined ? { runShillMarketDemoImpl: opts.shillMarketImpl } : {}),
+    ...(opts.brainChatImpl !== undefined ? { runBrainChatImpl: opts.brainChatImpl } : {}),
     ...(opts.shillOrderStore !== undefined ? { shillOrderStore: opts.shillOrderStore } : {}),
   });
 

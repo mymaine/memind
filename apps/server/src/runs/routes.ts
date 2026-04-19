@@ -10,16 +10,19 @@
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import {
+  chatMessageSchema,
   createRunRequestSchema,
   runSnapshotSchema,
+  type ChatMessage,
   type CreateRunRequest,
   type RunSnapshot,
 } from '@hack-fourmeme/shared';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { AnchorLedger } from '../state/anchor-ledger.js';
-import type { ShillOrderStore } from '../state/shill-order-store.js';
+import { ShillOrderStore } from '../state/shill-order-store.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
@@ -28,6 +31,7 @@ import {
   type CreatorPaymentPhaseFn,
   type RunShillMarketDemoArgs,
 } from './shill-market.js';
+import { runBrainChat } from './brain-chat.js';
 
 /**
  * Default Phase 2 validated BSC mainnet demo token — mirrors the CLI
@@ -60,6 +64,12 @@ export type RunHeartbeatDemoFn = typeof runHeartbeatDemo;
  */
 export type RunShillMarketDemoFn = typeof runShillMarketDemo;
 
+/**
+ * Signature of the BRAIN-P3 brain-chat orchestrator. Injectable so routes.test
+ * can feed a fake and the real `runBrainChat` is wired in production.
+ */
+export type RunBrainChatFn = typeof runBrainChat;
+
 export interface RegisterRunRoutesDeps {
   config: AppConfig;
   anthropic: Anthropic;
@@ -89,6 +99,8 @@ export interface RegisterRunRoutesDeps {
   runHeartbeatDemoImpl?: RunHeartbeatDemoFn;
   /** Test hook — overrides the real `runShillMarketDemo`. */
   runShillMarketDemoImpl?: RunShillMarketDemoFn;
+  /** Test hook — overrides the real `runBrainChat`. */
+  runBrainChatImpl?: RunBrainChatFn;
   /**
    * Optional real creator-payment phase for dashboard shill-market runs.
    * When provided, the orchestrator drives `@x402/fetch` against the server's
@@ -106,11 +118,18 @@ const SSE_KEEPALIVE_MS = 20_000;
 // one-liner check.
 const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
+// BRAIN-P3: messages payload schema for `kind: 'brain-chat'`. Array of
+// OpenAI-style `{role, content}` entries with at least one turn so the LLM
+// has something to respond to. Kept at the route boundary so HTTP callers
+// get a 400 for empty / malformed payloads before the orchestrator boots.
+const brainChatMessagesSchema = z.array(chatMessageSchema).min(1);
+
 export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): void {
   const { config, anthropic, runStore, loreStore } = deps;
   const runImpl = deps.runA2ADemoImpl ?? runA2ADemo;
   const heartbeatImpl = deps.runHeartbeatDemoImpl ?? runHeartbeatDemo;
   const shillMarketImpl = deps.runShillMarketDemoImpl ?? runShillMarketDemo;
+  const brainChatImpl = deps.runBrainChatImpl ?? runBrainChat;
 
   // ─── POST /api/runs ──────────────────────────────────────────────────────
   app.post('/api/runs', (req: Request, res: Response) => {
@@ -268,6 +287,63 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
           runStore.setStatus(record.runId, 'error', message);
+        });
+      return;
+    }
+
+    // ─── BRAIN-P3: brain-chat dispatch ─────────────────────────────────────
+    if (body.kind === 'brain-chat') {
+      const paramsRecord = body.params ?? {};
+      const rawMessages = paramsRecord.messages;
+      const parsedMessages = brainChatMessagesSchema.safeParse(rawMessages);
+      if (!parsedMessages.success) {
+        res.status(400).json({
+          error: 'brain-chat mode requires params.messages (non-empty ChatMessage[])',
+          details: parsedMessages.error.issues,
+        });
+        return;
+      }
+      const messages: ChatMessage[] = parsedMessages.data;
+
+      // No per-token concurrency mutex for brain-chat: the meta-agent may
+      // target different tokens on different turns, and the spec describes
+      // the session as stateless (client ships full message history each
+      // POST). tryCreate without tokenAddress skips the mutex by design.
+      const record = runStore.tryCreate({ kind: 'brain-chat' });
+      if (!record.ok) {
+        // Reachable only if the shared tryCreate contract changes. Kept for
+        // symmetry with the other dispatch branches.
+        res.status(409).json({
+          error: record.error,
+          existingRunId: record.existingRunId,
+        });
+        return;
+      }
+      const created = record.record;
+      res.status(201).json({ runId: created.runId });
+
+      // shillOrderStore is optional at the server-boot level but the Brain
+      // orchestrator always needs one (the `invoke_shiller` tool's resolver
+      // inspects it). Fall back to a fresh empty instance when the caller
+      // did not wire a shared store — matches the spec's "single server
+      // instance demo" rail without coupling the route to a real queue.
+      const brainShillOrderStore = deps.shillOrderStore ?? new ShillOrderStore();
+
+      void brainChatImpl({
+        config,
+        anthropic,
+        store: runStore,
+        runId: created.runId,
+        messages,
+        loreStore,
+        shillOrderStore: brainShillOrderStore,
+      })
+        .then(() => {
+          runStore.setStatus(created.runId, 'done');
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          runStore.setStatus(created.runId, 'error', message);
         });
       return;
     }
