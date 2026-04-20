@@ -13,6 +13,18 @@ const config: NextConfig = {
   // `typedRoutes` was promoted out of `experimental` in Next 15.
   typedRoutes: true,
   transpilePackages: ['@hack-fourmeme/shared'],
+  // NodeNext ESM rewrites source imports to `./schema.js` etc; webpack
+  // doesn't strip the extension back to find `schema.ts`. Map `.js` to the
+  // TS source extensions so the shared package resolves in production
+  // builds (dev mode masked this).
+  webpack: (config) => {
+    config.resolve.extensionAlias = {
+      ...config.resolve.extensionAlias,
+      '.js': ['.ts', '.tsx', '.js'],
+      '.mjs': ['.mts', '.mjs'],
+    };
+    return config;
+  },
   async rewrites() {
     return [
       {
