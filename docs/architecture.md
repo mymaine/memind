@@ -61,8 +61,10 @@ hack-bnb-fourmeme-agent-creator/
 │   │       │             # useSlashPalette / useTweakMode
 │   │       └── lib/      # chapters.ts (CHAPTER_META / SLOT_VH /
 │   │                     #   chapterScrollTarget / resolveChapterIndexFromHash)
-│   │                     # + slash-commands.ts (/launch /order /lore /heartbeat
-│   │                     #   /status /help /reset registry)
+│   │                     # + slash-commands.ts (10-command registry: server
+│   │                     #   /launch /order /lore /heartbeat /heartbeat-stop
+│   │                     #   /heartbeat-list + client /status /help /reset
+│   │                     #   /clear)
 │   │                     # + artifact-view.ts (Artifact → pill display)
 │   └── server/           # Express + x402 server + agent runtime
 │       └── src/
@@ -72,7 +74,9 @@ hack-bnb-fourmeme-agent-creator/
 │           │                 # + persona-adapters.ts + _json.ts
 │           ├── tools/        # registry / narrative / image / deployer / lore /
 │           │                 # lore-extend / token-status / x-post / post-shill-for /
-│           │                 # x-fetch-lore / invoke-persona (4 factories)
+│           │                 # x-fetch-lore / invoke-persona (6 factories:
+│           │                 # 4 persona dispatchers + stop_heartbeat +
+│           │                 # list_heartbeats)
 │           ├── state/        # LoreStore + AnchorLedger + ShillOrderStore +
 │           │                 # HeartbeatSessionStore + ArtifactLogStore
 │           │                 # (pg-backed; see db/ for pool + ensureSchema)
@@ -141,13 +145,17 @@ hack-bnb-fourmeme-agent-creator/
                  │ │   heartbeat_tick}       (Brain meta-agent)   │ │
                  │ └──────────────────────────────────────────────┘ │
                  │                                                  │
-                 │ ┌────────────────┐   ┌─────────────────────────┐ │
-                 │ │ LoreStore      │◄──┤ Narrator.upsert         │ │
-                 │ │ AnchorLedger   │◄──┤ narrator AnchorLedger   │ │
-                 │ │                │   │   append (keccak256)    │ │
-                 │ │ ShillOrderStore│◄──┤ x402 /shill/ enqueue    │ │
-                 │ │ (in-memory)    │──►┤ handleLore(store hit)   │ │
-                 │ └────────────────┘   └─────────────────────────┘ │
+                 │ ┌─────────────────────┐ ┌──────────────────────┐ │
+                 │ │ LoreStore           │◄┤ Narrator.upsert      │ │
+                 │ │ AnchorLedger        │◄┤ narrator AnchorLedger│ │
+                 │ │                     │ │   append (keccak256) │ │
+                 │ │ ShillOrderStore     │◄┤ x402 /shill/ enqueue │ │
+                 │ │ HeartbeatSessionStore├►│ setInterval session  │ │
+                 │ │ ArtifactLogStore    │►┤ /api/artifacts hydr. │ │
+                 │ │ (all pg-backed;     │ │ handleLore(store hit)│ │
+                 │ │  STATE_BACKEND=     │ │                      │ │
+                 │ │  memory for tests)  │ │                      │ │
+                 │ └─────────────────────┘ └──────────────────────┘ │
                  │                                                  │
                  │ ┌──────────────────────────────────────────────┐ │
                  │ │ x402 Server (express) — 4 paid endpoints     │ │
