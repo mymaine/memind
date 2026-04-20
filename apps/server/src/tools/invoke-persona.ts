@@ -19,7 +19,12 @@ import type { HeartbeatPersonaInput, HeartbeatPersonaOutput } from '../agents/he
 import type { PostShillForInput, PostShillForOutput } from './post-shill-for.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { AnchorLedger } from '../state/anchor-ledger.js';
-import { anchorChapterOne, maybeAnchorContent, type sendAnchorMemoTx } from '../chain/anchor-tx.js';
+import {
+  anchorChapterOne,
+  maybeAnchorContent,
+  type AnchorTxSettlement,
+  type sendAnchorMemoTx,
+} from '../chain/anchor-tx.js';
 import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type {
   HeartbeatSessionAction,
@@ -225,6 +230,40 @@ export interface ListHeartbeatsOutput {
   totalRunning: number;
 }
 
+// ─── AnchorSettlementView — Brain-facing projection of an AnchorTxSettlement ─
+//
+// The Brain LLM reads tool outputs to phrase its reply. When the layer-2
+// anchor memo tx lands we want the bscscan link available in the output
+// itself — not just buried inside a fan-out artifact — so the LLM sees
+// structural evidence of the settlement and can cite it naturally.
+//
+// We keep the shape local to this file (Option A from the UX spec) rather
+// than adding it to the shared `CreatorResult` / `NarratorPersonaOutput`
+// contracts because:
+//   - The `output` schema on these tools is already `z.any()` (validation
+//     happens inside the persona), so adding a key at the tool layer is
+//     wire-compatible.
+//   - Shared types are consumed by persona-direct callers (CLI demos,
+//     unit tests) that never run the tool wrapper's anchor hook. Leaking
+//     an optional `anchorTx` into those contracts would be dishonest.
+// Brain-level receiver types are expressed as intersections at each tool's
+// return site so the TS signature still conveys the optional surface.
+
+/** Brain-facing view of a settled on-chain anchor memo tx. */
+export interface AnchorSettlementView {
+  readonly onChainTxHash: `0x${string}`;
+  readonly chain: 'bsc-mainnet';
+  readonly explorerUrl: string;
+}
+
+function toAnchorSettlementView(settlement: AnchorTxSettlement): AnchorSettlementView {
+  return {
+    onChainTxHash: settlement.onChainTxHash,
+    chain: settlement.chain,
+    explorerUrl: settlement.explorerUrl,
+  };
+}
+
 // ─── invoke_creator ─────────────────────────────────────────────────────────
 
 export interface CreateInvokeCreatorToolDeps extends PersonaInvokeEventCallbacks {
@@ -265,9 +304,18 @@ export interface CreateInvokeCreatorToolDeps extends PersonaInvokeEventCallbacks
   sendAnchorMemoTxImpl?: typeof sendAnchorMemoTx;
 }
 
+/**
+ * Tool-layer extension to `CreatorResult`. We surface `anchorTx` only when
+ * the layer-2 memo tx actually settled (i.e. `anchorChapterOne` returned a
+ * non-null settlement) so the Brain LLM can cite the BscScan link in its
+ * reply without inventing or omitting it. The key is strictly optional —
+ * disabled layer-2, unwired ledger, or a failed tx all leave it absent.
+ */
+export type CreatorToolOutput = CreatorResult & { anchorTx?: AnchorSettlementView };
+
 export function createInvokeCreatorTool(
   deps: CreateInvokeCreatorToolDeps,
-): AgentTool<InvokeCreatorInput, CreatorResult> {
+): AgentTool<InvokeCreatorInput, CreatorToolOutput> {
   const {
     persona,
     client,
@@ -293,8 +341,8 @@ export function createInvokeCreatorTool(
     // already validates its own output via `creatorResultSchema`, so a second
     // round of zod here would only duplicate the contract for no behavioural
     // gain. We keep the downstream type narrowed by the generic `TOutput`.
-    outputSchema: z.any() as unknown as z.ZodType<CreatorResult>,
-    async execute(input): Promise<CreatorResult> {
+    outputSchema: z.any() as unknown as z.ZodType<CreatorToolOutput>,
+    async execute(input): Promise<CreatorToolOutput> {
       const parsed = invokeCreatorInputSchema.parse(input);
       const startedAt = Date.now();
       onLog?.({
@@ -364,6 +412,7 @@ export function createInvokeCreatorTool(
         // consults. Anchor happens only when the creator actually pinned
         // the lore — an empty `loreIpfsCid` would produce a meaningless
         // commitment.
+        let anchorSettlement: AnchorTxSettlement | null = null;
         if (
           anchorLedger !== undefined &&
           typeof result.loreIpfsCid === 'string' &&
@@ -371,7 +420,7 @@ export function createInvokeCreatorTool(
           typeof result.tokenAddr === 'string' &&
           result.tokenAddr !== ''
         ) {
-          await anchorChapterOne({
+          anchorSettlement = await anchorChapterOne({
             anchorLedger,
             tokenAddr: result.tokenAddr,
             loreCid: result.loreIpfsCid,
@@ -392,6 +441,12 @@ export function createInvokeCreatorTool(
           message: `creator persona finished (${durationMs.toString()}ms, token=${result.tokenAddr})`,
           meta: { durationMs },
         });
+        // Surface the on-chain memo trio to the Brain LLM when layer-2
+        // actually settled. Strictly opt-in: disabled layer-2 / unwired
+        // ledger / failed tx all leave `anchorTx` absent.
+        if (anchorSettlement !== null) {
+          return { ...result, anchorTx: toAnchorSettlementView(anchorSettlement) };
+        }
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -470,9 +525,18 @@ export interface CreateInvokeNarratorToolDeps extends PersonaInvokeEventCallback
   sendAnchorMemoTxImpl?: typeof sendAnchorMemoTx;
 }
 
+/**
+ * Tool-layer extension to `NarratorPersonaOutput`. Mirrors
+ * `CreatorToolOutput` — `anchorTx` is present only when the layer-2 memo
+ * tx for the extended chapter actually settled on BSC mainnet.
+ */
+export type NarratorToolOutput = NarratorPersonaOutput & {
+  anchorTx?: AnchorSettlementView;
+};
+
 export function createInvokeNarratorTool(
   deps: CreateInvokeNarratorToolDeps,
-): AgentTool<InvokeNarratorInput, NarratorPersonaOutput> {
+): AgentTool<InvokeNarratorInput, NarratorToolOutput> {
   const {
     persona,
     client,
@@ -495,8 +559,8 @@ export function createInvokeNarratorTool(
     description:
       'Extend the next lore chapter for a deployed token and pin it to IPFS. Input: { tokenAddr }. Returns { tokenAddr, chapterNumber, ipfsHash, ipfsUri, chapterText }.',
     inputSchema: invokeNarratorInputSchema,
-    outputSchema: z.any() as unknown as z.ZodType<NarratorPersonaOutput>,
-    async execute(input): Promise<NarratorPersonaOutput> {
+    outputSchema: z.any() as unknown as z.ZodType<NarratorToolOutput>,
+    async execute(input): Promise<NarratorToolOutput> {
       const parsed = invokeNarratorInputSchema.parse(input);
       const meta = await resolveTokenMeta(parsed.tokenAddr);
       const personaInput: NarratorPersonaInput = {
@@ -553,8 +617,9 @@ export function createInvokeNarratorTool(
         // set and a deployer key is present. `maybeAnchorContent` is
         // non-fatal on every failure branch so the narrator happy path and
         // the lore-cid artifact both stay intact regardless of RPC health.
+        let anchorSettlement: AnchorTxSettlement | null = null;
         if (anchorLedger !== undefined) {
-          await maybeAnchorContent({
+          anchorSettlement = await maybeAnchorContent({
             anchorLedger,
             tokenAddr: result.tokenAddr as `0x${string}`,
             chapterNumber: result.chapterNumber,
@@ -576,6 +641,12 @@ export function createInvokeNarratorTool(
           message: `narrator persona finished (${durationMs.toString()}ms, chapter=${result.chapterNumber.toString()})`,
           meta: { durationMs },
         });
+        // Attach the on-chain memo trio when layer-2 settled so the Brain
+        // LLM sees structural evidence of the anchor and can cite the
+        // BscScan link in its reply.
+        if (anchorSettlement !== null) {
+          return { ...result, anchorTx: toAnchorSettlementView(anchorSettlement) };
+        }
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

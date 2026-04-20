@@ -472,7 +472,7 @@ describe('createInvokeCreatorTool', () => {
       onArtifact,
     });
 
-    await tool.execute({ theme: 'anchor on' });
+    const output = await tool.execute({ theme: 'anchor on' });
 
     const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
     expect(sendMock).toHaveBeenCalledTimes(1);
@@ -495,6 +495,46 @@ describe('createInvokeCreatorTool', () => {
       expect(upgraded.chain).toBe('bsc-mainnet');
       expect(upgraded.explorerUrl).toBe(settlement.explorerUrl);
     }
+
+    // UX surface fix (2026-04-21): the tool output now carries an anchorTx
+    // view so the Brain LLM sees structural evidence of the on-chain memo
+    // and can phrase its reply with the bscscan link instead of hallucinating
+    // or omitting it.
+    expect(output).toMatchObject({
+      anchorTx: {
+        onChainTxHash: settlement.onChainTxHash,
+        chain: 'bsc-mainnet',
+        explorerUrl: settlement.explorerUrl,
+      },
+    });
+  });
+
+  it('omits anchorTx from the creator output when layer-2 is disabled', async () => {
+    // The anchorTx key is strictly opt-in on layer-2 settlement. When
+    // ANCHOR_ON_CHAIN=false (or the anchorLedger is omitted) there is no
+    // bscscan link to surface and the output must stay free of the key.
+    const ledger = new AnchorLedger();
+    const run = async (): Promise<CreatorResult> => ({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      tokenDeployTx: FAKE_TX,
+      loreIpfsCid: 'bafkrei-ch1-off',
+      metadata: {
+        name: 'HBNB2026-OFF',
+        symbol: 'HBNB2026-OFF',
+        description: 'off',
+        imageLocalPath: '/tmp/off.png',
+      },
+    });
+    const persona = makeCreatorPersona(run);
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      anchorLedger: ledger,
+      env: { ANCHOR_ON_CHAIN: 'false' },
+    });
+    const output = (await tool.execute({ theme: 'off' })) as Record<string, unknown>;
+    expect('anchorTx' in output).toBe(false);
   });
 });
 
@@ -761,7 +801,7 @@ describe('createInvokeNarratorTool', () => {
       onArtifact,
     });
 
-    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
 
     const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
     expect(sendMock).toHaveBeenCalledTimes(1);
@@ -786,6 +826,45 @@ describe('createInvokeNarratorTool', () => {
       expect(anchorArtifact.chain).toBe('bsc-mainnet');
       expect(anchorArtifact.explorerUrl).toBe(settlement.explorerUrl);
     }
+
+    // UX surface fix (2026-04-21): narrator output carries an anchorTx view
+    // mirroring the creator path so the Brain LLM can always cite the memo
+    // tx on /lore replies when layer-2 settled.
+    expect(output).toMatchObject({
+      anchorTx: {
+        onChainTxHash: settlement.onChainTxHash,
+        chain: 'bsc-mainnet',
+        explorerUrl: settlement.explorerUrl,
+      },
+    });
+  });
+
+  it('omits anchorTx from the narrator output when layer-2 is disabled', async () => {
+    const ledger = new AnchorLedger();
+    const run = vi.fn(
+      async (
+        input: NarratorPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<NarratorPersonaOutput> => ({
+        tokenAddr: input.tokenAddr,
+        chapterNumber: 2,
+        ipfsHash: 'bafkrei-ch2-off',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch2-off',
+        chapterText: 'ch2',
+      }),
+    );
+    const persona = makeNarratorPersona(run);
+    const tool = createInvokeNarratorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      store: { __brand: 'LoreStore' } as unknown as never,
+      resolveTokenMeta: () => ({ tokenName: 'HBNB2026-OFF', tokenSymbol: 'HBNB2026-OFF' }),
+      anchorLedger: ledger,
+      env: { ANCHOR_ON_CHAIN: 'false' },
+    });
+    const output = (await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR })) as Record<string, unknown>;
+    expect('anchorTx' in output).toBe(false);
   });
 });
 
