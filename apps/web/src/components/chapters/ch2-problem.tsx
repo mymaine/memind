@@ -72,7 +72,7 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
           target="_blank"
           rel="noopener noreferrer"
         >
-          {'97% \u00b7 chainplay state of memecoin 2024 \u2197'}
+          {'97% \u00b7 chainplay state of memecoin 2024 \u2197 \u00b7 validated 2025-2026'}
         </a>
       </div>
       <div className="ch-problem-body">
