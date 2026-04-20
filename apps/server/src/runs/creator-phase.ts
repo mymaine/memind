@@ -155,6 +155,10 @@ export const runCreatorPhase: RunCreatorPhaseFn = async (deps) => {
         ...(bscDeployerKey !== undefined
           ? { bscDeployerPrivateKey: bscDeployerKey as `0x${string}` }
           : {}),
+        // Thread the configured BSC RPC so the layer-2 memo tx hits the
+        // Binance-operated node instead of viem's community default —
+        // Railway egress IPs were silently hanging on the latter.
+        rpcUrl: config.bsc.rpcUrl,
         onArtifact: (artifact) => store.addArtifact(runId, artifact),
         onLog: (event) => store.addLog(runId, event),
       });

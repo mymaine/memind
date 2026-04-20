@@ -121,6 +121,86 @@ describe('sendAnchorMemoTx', () => {
       /insufficient funds/,
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // Fix A (rpcUrl pass-through) + Fix B (timeout safety rail) regression tests.
+  // ---------------------------------------------------------------------------
+
+  it('passes rpcUrl to the walletClientFactory when provided', async () => {
+    const sendTransaction = vi.fn().mockResolvedValue(`0x${'c'.repeat(64)}`);
+    const factorySpy = vi.fn((_pk: `0x${string}`, _rpcUrl?: string) => ({
+      account: { address: ADDRESS },
+      sendTransaction,
+    }));
+    const CUSTOM_RPC = 'https://bsc-dataseed.binance.org';
+    await sendAnchorMemoTx({
+      contentHash: CONTENT_HASH,
+      deps: {
+        privateKey: PRIVATE_KEY,
+        walletClientFactory: factorySpy,
+        rpcUrl: CUSTOM_RPC,
+      },
+    });
+    expect(factorySpy).toHaveBeenCalledTimes(1);
+    const factoryCall = factorySpy.mock.calls[0];
+    expect(factoryCall?.[0]).toBe(PRIVATE_KEY);
+    expect(factoryCall?.[1]).toBe(CUSTOM_RPC);
+  });
+
+  it('passes rpcUrl undefined to the factory when not supplied', async () => {
+    const sendTransaction = vi.fn().mockResolvedValue(`0x${'c'.repeat(64)}`);
+    const factorySpy = vi.fn((_pk: `0x${string}`, _rpcUrl?: string) => ({
+      account: { address: ADDRESS },
+      sendTransaction,
+    }));
+    await sendAnchorMemoTx({
+      contentHash: CONTENT_HASH,
+      deps: {
+        privateKey: PRIVATE_KEY,
+        walletClientFactory: factorySpy,
+      },
+    });
+    expect(factorySpy).toHaveBeenCalledTimes(1);
+    expect(factorySpy.mock.calls[0]?.[1]).toBeUndefined();
+  });
+
+  it('rejects when wallet.sendTransaction hangs past the timeout', async () => {
+    // Fake wallet whose sendTransaction never resolves — mirrors the Railway
+    // production hang (viem awaiting a stuck community RPC forever).
+    const sendTransaction = vi.fn(() => new Promise<`0x${string}`>(() => {}));
+    const deps = makeDeps({
+      walletClientFactory: () => ({
+        account: { address: ADDRESS },
+        sendTransaction,
+      }),
+      // Inject a short timeout so the test finishes in real time instead
+      // of hanging for the 30s production default.
+      timeoutMs: 25,
+    });
+
+    await expect(sendAnchorMemoTx({ contentHash: CONTENT_HASH, deps })).rejects.toThrow(
+      /timed out after 25ms/,
+    );
+    expect(sendTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves normally when the wallet finishes before the timeout', async () => {
+    const sendTransaction = vi.fn().mockImplementation(
+      () =>
+        new Promise<`0x${string}`>((resolveFn) => {
+          setTimeout(() => resolveFn(`0x${'c'.repeat(64)}`), 5);
+        }),
+    );
+    const deps = makeDeps({
+      walletClientFactory: () => ({
+        account: { address: ADDRESS },
+        sendTransaction,
+      }),
+      timeoutMs: 200,
+    });
+    const result = await sendAnchorMemoTx({ contentHash: CONTENT_HASH, deps });
+    expect(result.onChainTxHash).toBe(`0x${'c'.repeat(64)}`);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -300,6 +380,77 @@ describe('maybeAnchorContent', () => {
     expect(onArtifact).not.toHaveBeenCalled();
     const warnLog = onLog.mock.calls.find((c) => c[0].level === 'warn');
     expect(warnLog?.[0].message).toMatch(/rpc 502 bad gateway/);
+  });
+
+  it('forwards rpcUrl + timeoutMs through to sendAnchorMemoTxImpl', async () => {
+    const ledger = new AnchorLedger();
+    const anchorId = computeAnchorId(TOKEN_ADDR, CHAPTER);
+    await ledger.append({
+      anchorId,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      contentHash: computeContentHash(TOKEN_ADDR, CHAPTER, LORE_CID),
+      ts: '2026-04-21T00:00:00.000Z',
+    });
+
+    const CUSTOM_RPC = 'https://bsc-dataseed.binance.org';
+    const CUSTOM_TIMEOUT = 1234;
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => fakeSettlement());
+
+    await maybeAnchorContent({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      rpcUrl: CUSTOM_RPC,
+      timeoutMs: CUSTOM_TIMEOUT,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const forwardedArgs = sendMock.mock.calls[0]?.[0] as {
+      deps: { rpcUrl?: string; timeoutMs?: number };
+    };
+    expect(forwardedArgs.deps.rpcUrl).toBe(CUSTOM_RPC);
+    expect(forwardedArgs.deps.timeoutMs).toBe(CUSTOM_TIMEOUT);
+  });
+
+  it('omits rpcUrl + timeoutMs from sendAnchorMemoTxImpl deps when not provided', async () => {
+    // Back-compat guard: legacy callers that never touch rpcUrl keep the
+    // original downstream shape. `sendAnchorMemoTx` then falls back to
+    // viem's built-in BSC default + the 30s timeout default.
+    const ledger = new AnchorLedger();
+    const anchorId = computeAnchorId(TOKEN_ADDR, CHAPTER);
+    await ledger.append({
+      anchorId,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      contentHash: computeContentHash(TOKEN_ADDR, CHAPTER, LORE_CID),
+      ts: '2026-04-21T00:00:00.000Z',
+    });
+
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => fakeSettlement());
+    await maybeAnchorContent({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    const forwardedArgs = sendMock.mock.calls[0]?.[0] as {
+      deps: { rpcUrl?: string; timeoutMs?: number };
+    };
+    expect(forwardedArgs.deps.rpcUrl).toBeUndefined();
+    expect(forwardedArgs.deps.timeoutMs).toBeUndefined();
   });
 
   it('returns null + warn log when ledger.markOnChain throws (no rethrow)', async () => {
@@ -493,6 +644,33 @@ describe('anchorChapterOne', () => {
     // A warn log explaining the append failure must be present.
     const warnLog = onLog.mock.calls.find((c) => c[0].level === 'warn');
     expect(warnLog?.[0].message).toMatch(/append failed|pg connection refused/);
+  });
+
+  it('forwards rpcUrl to sendAnchorMemoTxImpl via maybeAnchorContent', async () => {
+    // End-to-end back-compat assertion: the Creator-path entry point
+    // (`anchorChapterOne`) threads `rpcUrl` all the way down to
+    // `sendAnchorMemoTx` via the `maybeAnchorContent` hop. Prevents a
+    // future refactor from dropping the plumbing silently.
+    const ledger = new AnchorLedger();
+    const CUSTOM_RPC = 'https://bsc-dataseed.binance.org';
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => fakeSettlement());
+
+    await anchorChapterOne({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      rpcUrl: CUSTOM_RPC,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const forwardedArgs = sendMock.mock.calls[0]?.[0] as {
+      deps: { rpcUrl?: string };
+    };
+    expect(forwardedArgs.deps.rpcUrl).toBe(CUSTOM_RPC);
   });
 
   it('still runs layer-2 when onArtifact throws (layer-1 ledger row already landed)', async () => {

@@ -68,6 +68,19 @@ export interface AnchorWalletClient {
   }) => Promise<Hash>;
 }
 
+/**
+ * Factory signature for producing an `AnchorWalletClient` from a private key
+ * and an optional RPC URL. The rpcUrl parameter carries `config.bsc.rpcUrl`
+ * through to viem's `http(rpcUrl)` transport so production traffic hits the
+ * same Binance-operated node `tools/deployer.ts` uses. When undefined (legacy
+ * callers, tests) the transport falls back to viem's built-in BSC default,
+ * preserving existing behaviour.
+ *
+ * Fake factories injected by tests can ignore the rpcUrl parameter entirely —
+ * the optional trailing arg means `(pk) => ...` shaped fakes remain valid.
+ */
+export type AnchorWalletClientFactory = (pk: `0x${string}`, rpcUrl?: string) => AnchorWalletClient;
+
 export interface AnchorTxDeps {
   /** Signer for the BSC mainnet self-tx (e.g. `BSC_DEPLOYER_PRIVATE_KEY`). */
   privateKey: `0x${string}`;
@@ -75,30 +88,55 @@ export interface AnchorTxDeps {
    * Walk-ins the wallet client. Production callers use the default factory
    * which wires viem against BSC mainnet; tests inject a fake.
    */
-  walletClientFactory?: (pk: `0x${string}`) => AnchorWalletClient;
+  walletClientFactory?: AnchorWalletClientFactory;
   /** Produce the explorer URL from the settled tx hash. */
   explorerUrlBuilder?: (txHash: `0x${string}`) => string;
+  /**
+   * Optional BSC mainnet RPC URL forwarded to the default wallet client
+   * factory as `http(rpcUrl)`. Resolved from `config.bsc.rpcUrl` in
+   * production (which defaults to Binance's `https://bsc-dataseed.binance.org`
+   * — the same node `tools/deployer.ts` uses). Left undefined in tests and
+   * legacy callers → viem's built-in default RPC is used.
+   *
+   * History: Railway egress IPs get silently stuck on the community nodes
+   * viem's built-in default resolves to, so anchor tx calls would hang
+   * indefinitely. Routing through `config.bsc.rpcUrl` matches the deployer
+   * path's proven-stable Binance-operated node.
+   */
+  rpcUrl?: string;
+  /**
+   * Optional millisecond cap on the `wallet.sendTransaction` call. Defaults
+   * to 30_000ms so a stuck RPC can never wedge the orchestrator
+   * indefinitely. Tests inject a short value (e.g. 50ms) to exercise the
+   * timeout path without real waits.
+   */
+  timeoutMs?: number;
 }
 
 function defaultExplorerUrl(txHash: `0x${string}`): string {
   return `https://bscscan.com/tx/${txHash}`;
 }
 
-function defaultWalletClientFactory(pk: `0x${string}`): AnchorWalletClient {
+function defaultWalletClientFactory(pk: `0x${string}`, rpcUrl?: string): AnchorWalletClient {
   // `privateKeyToAccount` yields a viem LocalAccount; createWalletClient with
   // a BSC mainnet transport gives us a concrete, production-shaped client.
   // Return the viem client directly — its shape is a superset of the minimal
-  // AnchorWalletClient contract.
+  // AnchorWalletClient contract. When `rpcUrl` is undefined, `http(undefined)`
+  // falls back to viem's built-in BSC default; when set, the configured
+  // Binance-operated node is used.
   const account: PrivateKeyAccount = privateKeyToAccount(pk);
   const client: WalletClient = createWalletClient({
     account,
     chain: bsc,
-    transport: http(),
+    transport: http(rpcUrl),
   });
   // viem's sendTransaction accepts a chain argument automatically via the
   // bound client. Narrow the callable surface to our interface.
   return client as unknown as AnchorWalletClient;
 }
+
+/** Default cap on `wallet.sendTransaction` latency — see `AnchorTxDeps.timeoutMs`. */
+const DEFAULT_SEND_TX_TIMEOUT_MS = 30_000;
 
 /**
  * Read the ANCHOR_ON_CHAIN env flag. Only the literal string "true" enables
@@ -140,18 +178,38 @@ export async function sendAnchorMemoTx(args: SendAnchorMemoTxArgs): Promise<Anch
   }
   const factory = args.deps.walletClientFactory ?? defaultWalletClientFactory;
   const explorerUrl = args.deps.explorerUrlBuilder ?? defaultExplorerUrl;
-  const wallet = factory(args.deps.privateKey);
+  // Forward the RPC URL so the default factory produces a viem client that
+  // hits `config.bsc.rpcUrl` (Binance's dataseed) instead of viem's built-in
+  // community fallback. Fake factories in tests can ignore the trailing arg.
+  const wallet = factory(args.deps.privateKey, args.deps.rpcUrl);
 
   const tx = buildAnchorTxRequest({
     from: wallet.account.address,
     contentHash: args.contentHash,
   });
 
-  const txHash = await wallet.sendTransaction({
-    to: tx.to,
-    value: tx.value,
-    data: tx.data,
-  });
+  // Safety rail: a stuck RPC must never wedge the orchestrator. `Promise.race`
+  // a timeout against the send so any node-side hang turns into a normal error
+  // the caller (`maybeAnchorContent`) catches and downgrades to a warn log.
+  const timeoutMs = args.deps.timeoutMs ?? DEFAULT_SEND_TX_TIMEOUT_MS;
+  const txHash = await Promise.race<Hash>([
+    wallet.sendTransaction({
+      to: tx.to,
+      value: tx.value,
+      data: tx.data,
+    }),
+    new Promise<never>((_, reject) => {
+      const handle = setTimeout(() => {
+        reject(
+          new Error(`sendAnchorMemoTx: BSC RPC call timed out after ${timeoutMs.toString()}ms`),
+        );
+      }, timeoutMs);
+      // Do not keep the event loop alive solely because the timeout is
+      // pending — if the wallet promise resolves first, the timer unref
+      // avoids leaking an open handle into test runners.
+      if (typeof handle.unref === 'function') handle.unref();
+    }),
+  ]);
 
   return {
     onChainTxHash: txHash as `0x${string}`,
@@ -211,6 +269,20 @@ export interface MaybeAnchorContentArgs {
    * still ships.
    */
   bscDeployerPrivateKey?: `0x${string}` | undefined;
+  /**
+   * Optional BSC mainnet RPC URL threaded through to `sendAnchorMemoTx`.
+   * Production callers resolve it off `config.bsc.rpcUrl` so the viem wallet
+   * client talks to the Binance-operated node `tools/deployer.ts` already
+   * uses (stable on Railway egress IPs). Left undefined → viem's built-in
+   * BSC default kicks in (same as pre-fix behaviour).
+   */
+  rpcUrl?: string;
+  /**
+   * Optional per-call override for `sendAnchorMemoTx`'s send timeout. Tests
+   * pass a short value (e.g. 50ms) to exercise the timeout branch without
+   * real waits; production callers omit this and the 30s default wins.
+   */
+  timeoutMs?: number;
   /** Artifact sink — receives the upgraded `lore-anchor` once the tx settles. */
   onArtifact?: (artifact: Artifact) => void;
   /** Log sink — receives info/warn lines from this helper. */
@@ -279,6 +351,8 @@ export async function maybeAnchorContent(
     loreCid,
     env,
     bscDeployerPrivateKey,
+    rpcUrl,
+    timeoutMs,
     onArtifact,
     onLog,
     sendAnchorMemoTxImpl,
@@ -313,7 +387,11 @@ export async function maybeAnchorContent(
     const send = sendAnchorMemoTxImpl ?? sendAnchorMemoTx;
     const settlement = await send({
       contentHash,
-      deps: { privateKey: bscDeployerPrivateKey },
+      deps: {
+        privateKey: bscDeployerPrivateKey,
+        ...(rpcUrl !== undefined ? { rpcUrl } : {}),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      },
     });
     await anchorLedger.markOnChain(anchorId, settlement);
     if (onArtifact !== undefined) {
@@ -385,6 +463,8 @@ export async function anchorChapterOne(
     loreCid,
     env,
     bscDeployerPrivateKey,
+    rpcUrl,
+    timeoutMs,
     onArtifact,
     onLog,
     sendAnchorMemoTxImpl,
@@ -447,6 +527,8 @@ export async function anchorChapterOne(
     loreCid,
     ...(env !== undefined ? { env } : {}),
     ...(bscDeployerPrivateKey !== undefined ? { bscDeployerPrivateKey } : {}),
+    ...(rpcUrl !== undefined ? { rpcUrl } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(onArtifact !== undefined ? { onArtifact } : {}),
     ...(onLog !== undefined ? { onLog } : {}),
     ...(sendAnchorMemoTxImpl !== undefined ? { sendAnchorMemoTxImpl } : {}),

@@ -344,6 +344,11 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
       chapterNumber: narrator.chapterNumber,
       loreCid: narrator.ipfsHash,
       bscDeployerPrivateKey: config.wallets.bscDeployer.privateKey as `0x${string}` | undefined,
+      // Route through the configured Binance-operated BSC RPC so Railway
+      // egress IPs stop getting stuck on the community-default node viem
+      // would otherwise resolve. Matches the proven-stable RPC the deployer
+      // tool uses.
+      rpcUrl: config.bsc.rpcUrl,
       onArtifact: (artifact) => store.addArtifact(runId, artifact),
       onLog: (event) => store.addLog(runId, event),
       // Preserve the pre-refactor log tool attribution the inline a2a block

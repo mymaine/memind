@@ -144,6 +144,10 @@ async function main(): Promise<void> {
       tokenAddr: result.tokenAddr,
       loreCid: result.loreIpfsCid,
       bscDeployerPrivateKey: env.BSC_DEPLOYER_PRIVATE_KEY as `0x${string}`,
+      // Route through config.bsc.rpcUrl so the CLI uses the same
+      // Binance-operated node the long-lived HTTP server uses. viem's
+      // built-in community default hangs on some egress environments.
+      rpcUrl: config.bsc.rpcUrl,
       onArtifact: (artifact) => {
         // Surface the anchor artifacts alongside the log stream so the CLI
         // transcript matches what the dashboard's left column would render.

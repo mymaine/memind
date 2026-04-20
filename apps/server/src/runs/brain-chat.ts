@@ -449,6 +449,9 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     store: loreStore,
     ...(deps.anchorLedger !== undefined ? { anchorLedger: deps.anchorLedger } : {}),
     ...(bscDeployerPk !== undefined ? { bscDeployerPrivateKey: bscDeployerPk } : {}),
+    // Route layer-2 anchor through the configured Binance BSC RPC so
+    // Railway deployments stop hanging on viem's default community node.
+    rpcUrl: config.bsc.rpcUrl,
     ...eventForwarders,
   });
 
@@ -487,6 +490,9 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     // forward the ledger + deployer key.
     ...(deps.anchorLedger !== undefined ? { anchorLedger: deps.anchorLedger } : {}),
     ...(bscDeployerPk !== undefined ? { bscDeployerPrivateKey: bscDeployerPk } : {}),
+    // Same Binance-node override the creator tool uses — keeps /lore
+    // anchor tx out of viem's community default RPC.
+    rpcUrl: config.bsc.rpcUrl,
     ...eventForwarders,
   });
 

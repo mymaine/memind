@@ -252,6 +252,13 @@ export interface CreateInvokeCreatorToolDeps extends PersonaInvokeEventCallbacks
    * for tests that disable layer 2.
    */
   bscDeployerPrivateKey?: `0x${string}`;
+  /**
+   * Optional BSC mainnet RPC URL. When set, threaded down to
+   * `anchorChapterOne` → `sendAnchorMemoTx` so the viem wallet client hits
+   * the configured Binance-operated node instead of viem's community
+   * default. Resolved from `config.bsc.rpcUrl` in production.
+   */
+  rpcUrl?: string;
   /** Env bag for the `ANCHOR_ON_CHAIN` gate; defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
   /** Test seam — override the real `sendAnchorMemoTx`. */
@@ -268,6 +275,7 @@ export function createInvokeCreatorTool(
     store,
     anchorLedger,
     bscDeployerPrivateKey,
+    rpcUrl,
     env,
     sendAnchorMemoTxImpl,
     onLog,
@@ -368,6 +376,7 @@ export function createInvokeCreatorTool(
             tokenAddr: result.tokenAddr,
             loreCid: result.loreIpfsCid,
             ...(bscDeployerPrivateKey !== undefined ? { bscDeployerPrivateKey } : {}),
+            ...(rpcUrl !== undefined ? { rpcUrl } : {}),
             ...(env !== undefined ? { env } : {}),
             ...(sendAnchorMemoTxImpl !== undefined ? { sendAnchorMemoTxImpl } : {}),
             ...(onArtifact !== undefined ? { onArtifact } : {}),
@@ -442,6 +451,13 @@ export interface CreateInvokeNarratorToolDeps extends PersonaInvokeEventCallback
    */
   bscDeployerPrivateKey?: `0x${string}`;
   /**
+   * Optional BSC mainnet RPC URL. When set, threaded down to
+   * `maybeAnchorContent` → `sendAnchorMemoTx` so viem talks to the
+   * configured Binance-operated node instead of its community-default
+   * fallback (which was silently hanging on Railway).
+   */
+  rpcUrl?: string;
+  /**
    * Optional env bag for the `ANCHOR_ON_CHAIN` gate. Defaults to
    * `process.env` inside `maybeAnchorContent`; hermetic tests pass an
    * explicit bag to exercise both branches deterministically.
@@ -465,6 +481,7 @@ export function createInvokeNarratorTool(
     resolveTokenMeta,
     anchorLedger,
     bscDeployerPrivateKey,
+    rpcUrl,
     env,
     sendAnchorMemoTxImpl,
     onLog,
@@ -543,6 +560,7 @@ export function createInvokeNarratorTool(
             chapterNumber: result.chapterNumber,
             loreCid: result.ipfsHash,
             ...(bscDeployerPrivateKey !== undefined ? { bscDeployerPrivateKey } : {}),
+            ...(rpcUrl !== undefined ? { rpcUrl } : {}),
             ...(env !== undefined ? { env } : {}),
             ...(sendAnchorMemoTxImpl !== undefined ? { sendAnchorMemoTxImpl } : {}),
             ...(onArtifact !== undefined ? { onArtifact } : {}),
