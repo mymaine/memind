@@ -522,6 +522,123 @@ describe('runBrainChat', () => {
       expect(fabricationWarns).toHaveLength(0);
     });
 
+    // ─── tool_choice forcing (anti-fabrication structural fix) ─────────────
+    //
+    // The orchestrator inspects the final user turn and, when it matches a
+    // tool-required slash command, derives the forced tool name and passes
+    // `toolChoice: {type:'tool', name:<invoke_*>}` to runBrainAgent. This
+    // physically prevents the LLM from skipping the tool and fabricating
+    // plausible output from prior tool_result context. Free-form turns and
+    // unknown slashes leave toolChoice undefined (auto behaviour).
+    describe('tool_choice forcing', () => {
+      const addr = '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd';
+
+      it('forces invoke_narrator on /lore <addr>', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: `/lore ${addr}` }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call).toBeDefined();
+        expect(call!.toolChoice).toEqual({ type: 'tool', name: INVOKE_NARRATOR_TOOL_NAME });
+      });
+
+      it('forces invoke_creator on /launch <theme>', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: '/launch cyberpunk neko' }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call!.toolChoice).toEqual({ type: 'tool', name: INVOKE_CREATOR_TOOL_NAME });
+      });
+
+      it('forces invoke_shiller on /order <addr>', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: `/order ${addr} cool brief` }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call!.toolChoice).toEqual({ type: 'tool', name: INVOKE_SHILLER_TOOL_NAME });
+      });
+
+      it('forces invoke_heartbeat_tick on /heartbeat', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: `/heartbeat ${addr}` }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call!.toolChoice).toEqual({
+          type: 'tool',
+          name: INVOKE_HEARTBEAT_TICK_TOOL_NAME,
+        });
+      });
+
+      it('forces stop_heartbeat on /heartbeat-stop', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: `/heartbeat-stop ${addr}` }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call!.toolChoice).toEqual({ type: 'tool', name: STOP_HEARTBEAT_TOOL_NAME });
+      });
+
+      it('forces list_heartbeats on /heartbeat-list (name matches exactly)', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: '/heartbeat-list' }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call!.toolChoice).toEqual({ type: 'tool', name: LIST_HEARTBEATS_TOOL_NAME });
+      });
+
+      it('leaves toolChoice undefined on free-form user input (no leading slash)', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: "how's it going?" }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call!.toolChoice).toBeUndefined();
+      });
+
+      it('leaves toolChoice undefined on an unknown slash command (/unknown foo)', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: '/unknown foo' }];
+        const spy = vi.fn(
+          async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult(),
+        );
+        await runBrainChat(buildDeps(record.runId, messages, spy));
+        const call = spy.mock.calls[0]?.[0];
+        expect(call!.toolChoice).toBeUndefined();
+      });
+
+      it('emits an info log naming the forced tool when a slash forces a tool', async () => {
+        const record = runStore.create('brain-chat');
+        const messages: ChatMessage[] = [{ role: 'user', content: `/lore ${addr}` }];
+        const impl = async (_p: RunBrainAgentParams): Promise<AgentLoopResult> => fakeLoopResult();
+        await runBrainChat(buildDeps(record.runId, messages, impl));
+        const snapshot = runStore.get(record.runId);
+        const forcingLogs = snapshot!.logs.filter((l) =>
+          l.message.includes('forcing tool_choice=invoke_narrator'),
+        );
+        expect(forcingLogs.length).toBe(1);
+        expect(forcingLogs[0]!.level).toBe('info');
+      });
+    });
+
     it('does NOT warn on free-form user turns (no leading slash)', async () => {
       const record = runStore.create('brain-chat');
       const messages: ChatMessage[] = [{ role: 'user', content: 'how is the token doing?' }];

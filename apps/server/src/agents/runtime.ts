@@ -6,6 +6,7 @@ import type {
   MessageParam,
   RawMessageStreamEvent,
   TextBlock,
+  ToolChoice,
   ToolResultBlockParam,
   ToolUseBlock,
 } from '@anthropic-ai/sdk/resources/messages/messages.js';
@@ -68,6 +69,19 @@ export interface RunAgentLoopParams {
   agentId?: AgentId;
   /** Max tokens per streamed turn. Default: 2048. */
   maxTokens?: number;
+  /**
+   * Anthropic `tool_choice` override. When set, ONLY the first LLM call of
+   * the loop receives it — turn 2+ always runs with `{type:'auto'}` so the
+   * loop can terminate after the forced tool's result comes back. Getting
+   * this wrong locks the loop into infinite tool invocations.
+   *
+   * Anti-fabrication fix (2026-04-20): orchestrators pass
+   * `{type:'tool', name:'<invoke_*>'}` on slash-command turns so the LLM
+   * physically cannot "decide to skip the tool" and fabricate a plausible
+   * answer from prior tool_result context. Free-form turns leave this
+   * undefined (default: `{type:'auto'}`).
+   */
+  toolChoice?: ToolChoice;
 }
 
 export interface RuntimeToolUseStart {
@@ -140,6 +154,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
     onAssistantDelta,
     agentId = 'creator',
     maxTokens = DEFAULT_MAX_TOKENS,
+    toolChoice,
   } = params;
 
   // Input-shape contract: exactly one of the two seeding paths must be set.
@@ -195,6 +210,13 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
       message: `turn ${turn + 1} requesting completion`,
     });
 
+    // `tool_choice` is applied ONLY on turn 0. On turn 1+ we always fall
+    // through to Anthropic's default `auto` behaviour, otherwise forcing a
+    // specific tool on every iteration traps the loop into infinite tool
+    // invocations (the LLM keeps being forced to call the tool instead of
+    // emitting `end_turn` after the first tool_result arrives).
+    const turnToolChoice: ToolChoice | undefined = turn === 0 ? toolChoice : undefined;
+
     // Streaming call — `messages.stream` returns a `MessageStream`. We consume
     // chunks via `for await` for fine-grained events and then await
     // `finalMessage()` for the authoritative tool_use blocks + stop_reason.
@@ -204,6 +226,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<AgentLoo
       system: systemPrompt,
       tools: anthropicTools,
       messages,
+      ...(turnToolChoice !== undefined ? { tool_choice: turnToolChoice } : {}),
     }) as unknown as StreamHandle;
 
     const mapper = createStreamEventMapper();

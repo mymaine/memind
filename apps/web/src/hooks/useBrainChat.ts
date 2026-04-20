@@ -157,9 +157,24 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
     turnsRef.current = state.turns;
   }, [state.turns]);
 
+  // Keep the latest mirror in a ref so the unmount cleanup below can call
+  // into it without subscribing to mirror identity changes. The provider's
+  // `setBrainChatActivity` is a stable useCallback reference, but the
+  // surrounding `mirror` object is re-created on every context value
+  // update — including ones we trigger ourselves when we publish activity.
+  // Subscribing the cleanup effect to `mirror` would therefore re-fire on
+  // every SSE event we handle and close the EventSource we just opened,
+  // leaving the chat in a perma-thinking state (regression observed on
+  // first send after this file shipped).
+  const mirrorRef = useRef(mirror);
+  useEffect(() => {
+    mirrorRef.current = mirror;
+  }, [mirror]);
+
   // Close any live EventSource on unmount — same leak guard as useRun. We
   // also reset the published activity so the indicator drops back to IDLE
-  // when the BrainPanel host tree is torn down mid-stream.
+  // when the BrainPanel host tree is torn down mid-stream. Deps MUST stay
+  // empty so this only fires on real unmount.
   useEffect(() => {
     return () => {
       if (esRef.current) {
@@ -167,12 +182,9 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
         esRef.current = null;
       }
       activityRef.current = EMPTY_BRAIN_CHAT_ACTIVITY;
-      mirror.setBrainChatActivity(EMPTY_BRAIN_CHAT_ACTIVITY);
+      mirrorRef.current.setBrainChatActivity(EMPTY_BRAIN_CHAT_ACTIVITY);
     };
-    // `mirror` is memoised at provider-level; including it in deps keeps
-    // the cleanup fresh if the provider re-renders, but the subscription
-    // is still effectively once per mount.
-  }, [mirror]);
+  }, []);
 
   /**
    * Mutate the currently-active assistant turn via a reducer fn. Identified by

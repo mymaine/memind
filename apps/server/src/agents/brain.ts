@@ -1,5 +1,11 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages/messages.js';
+import type {
+  ContentBlockParam,
+  MessageParam,
+  ToolChoice,
+  ToolResultBlockParam,
+  ToolUseBlockParam,
+} from '@anthropic-ai/sdk/resources/messages/messages.js';
 import type { AgentTool, AnyAgentTool, ChatMessage, LogEvent } from '@hack-fourmeme/shared';
 import { type ToolRegistry } from '../tools/registry.js';
 import {
@@ -122,6 +128,13 @@ export interface RunBrainAgentParams {
   /** Max tokens per streamed turn. Default: 2048 (inherited from runAgentLoop). */
   maxTokens?: number;
   /**
+   * Anthropic `tool_choice` override forwarded to the first LLM call of the
+   * loop. Orchestrators pass `{type:'tool', name:'invoke_<persona>'}` on
+   * slash-command turns (anti-fabrication fix 2026-04-20); free-form turns
+   * leave it undefined. Turn 2+ of the runtime loop always uses auto.
+   */
+  toolChoice?: ToolChoice;
+  /**
    * Test seam. Defaults to the real `runAgentLoop`. Production callers
    * should never set this; the orchestrator test in BRAIN-P3 substitutes a
    * stub here to avoid touching Anthropic.
@@ -146,9 +159,23 @@ const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
  * turns (deployed addresses, CIDs, tweet URLs) stay addressable on
  * follow-ups.
  *
+ * Anti-fabrication fix (2026-04-20): when an assistant message carries
+ * `toolInvocations`, we re-expand them into native Anthropic content blocks
+ * (assistant `tool_use` + synthetic user `tool_result`). This gives the LLM
+ * a structural signal that the prior Chapter / Tweet / Deploy was grounded
+ * in a real tool call — defeating the pattern-match "I saw 'Chapter 2 pinned
+ * to IPFS! CID: Qm...' earlier, let me generate 'Chapter 3 pinned to IPFS!
+ * CID: QmFake...' without calling the tool" failure mode. Pre-fix callers
+ * (no `toolInvocations`) fall back to the flat-text MessageParam.
+ *
  * Contract: the final turn MUST have `role="user"`; the runtime enforces
  * this too but we surface a clear error here so the blame lands on the
  * caller (HTTP layer / CLI) rather than the runtime.
+ *
+ * Zero-risk fallback: if reconstruction encounters a malformed invocation
+ * (missing id, unparseable input, etc.) the expander reverts THIS turn to
+ * flat text rather than throwing — history rehydration must never break a
+ * live send. Defensive code lives inside `expandAssistantTurn`.
  */
 export function toAnthropicMessages(messages: ReadonlyArray<ChatMessage>): MessageParam[] {
   if (messages.length === 0) {
@@ -158,7 +185,93 @@ export function toAnthropicMessages(messages: ReadonlyArray<ChatMessage>): Messa
   if (!last || last.role !== 'user') {
     throw new Error('runBrainAgent: the final chat message must have role="user"');
   }
-  return messages.map((m) => ({ role: m.role, content: m.content }));
+
+  const out: MessageParam[] = [];
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.toolInvocations && m.toolInvocations.length > 0) {
+      const expanded = expandAssistantTurn(m);
+      for (const entry of expanded) out.push(entry);
+      continue;
+    }
+    out.push({ role: m.role, content: m.content });
+  }
+  return out;
+}
+
+/**
+ * Expand one assistant turn carrying `toolInvocations` into the Anthropic
+ * native pair: `{role:'assistant', content:[text?, tool_use...]}` followed by
+ * `{role:'user', content:[tool_result...]}`. Order matches the SDK convention
+ * where the model emits text first, then tool_use blocks.
+ *
+ * Defensive: any malformed invocation (missing toolUseId / toolName, unusable
+ * input shape) causes the whole turn to revert to flat text so rehydration
+ * never throws out of the outer `toAnthropicMessages`.
+ */
+function expandAssistantTurn(m: ChatMessage): MessageParam[] {
+  const invocations = m.toolInvocations ?? [];
+  try {
+    const assistantBlocks: ContentBlockParam[] = [];
+    if (m.content.length > 0) {
+      assistantBlocks.push({ type: 'text', text: m.content });
+    }
+
+    const toolResultBlocks: ToolResultBlockParam[] = [];
+    for (const inv of invocations) {
+      // Structural guard — empty id / name is a malformed entry we cannot
+      // round-trip. Throwing here flips the catch branch to flat-text.
+      if (inv.toolUseId === '' || inv.toolName === '') {
+        throw new Error('toAnthropicMessages: malformed toolInvocation (empty id or name)');
+      }
+      const toolUseBlock: ToolUseBlockParam = {
+        type: 'tool_use',
+        id: inv.toolUseId,
+        name: inv.toolName,
+        input: inv.input,
+      };
+      assistantBlocks.push(toolUseBlock);
+
+      // Stringify output for the wire, matching the runtime's live tool-
+      // result shape. `is_error` is only set on failure (Anthropic treats
+      // missing as false, but the explicit `true` preserves intent).
+      const resultContent =
+        inv.output === undefined
+          ? ''
+          : typeof inv.output === 'string'
+            ? inv.output
+            : safeStringify(inv.output);
+      const resultBlock: ToolResultBlockParam = {
+        type: 'tool_result',
+        tool_use_id: inv.toolUseId,
+        content: resultContent,
+        ...(inv.isError ? { is_error: true } : {}),
+      };
+      toolResultBlocks.push(resultBlock);
+    }
+
+    // Empty assistant blocks means we had neither text nor valid tool_use —
+    // fall back to flat text so Anthropic always sees a non-empty content.
+    if (assistantBlocks.length === 0) {
+      return [{ role: 'assistant', content: m.content }];
+    }
+    return [
+      { role: 'assistant', content: assistantBlocks },
+      { role: 'user', content: toolResultBlocks },
+    ];
+  } catch {
+    // Defensive: any reconstruction failure reverts to flat text for THIS
+    // turn only. Live runs prefer a slightly less grounded history over a
+    // hard crash mid-rehydrate.
+    return [{ role: 'assistant', content: m.content }];
+  }
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 /**
@@ -183,6 +296,7 @@ export async function runBrainAgent(params: RunBrainAgentParams): Promise<AgentL
     onToolUseEnd,
     onAssistantDelta,
     maxTokens,
+    toolChoice,
     runAgentLoopImpl = runAgentLoop,
   } = params;
 
@@ -213,5 +327,6 @@ export async function runBrainAgent(params: RunBrainAgentParams): Promise<AgentL
     ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
     ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
+    ...(toolChoice !== undefined ? { toolChoice } : {}),
   });
 }

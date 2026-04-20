@@ -812,4 +812,69 @@ describe('chatMessageSchema', () => {
     const result = chatMessageSchema.safeParse({ role: 'foo', content: '' });
     expect(result.success).toBe(false);
   });
+
+  // Anti-fabrication fix (2026-04-20): `toolInvocations` is an optional field
+  // that round-trips Anthropic's `tool_use` + `tool_result` blocks so the LLM
+  // sees prior Brain-level tool calls structurally (not as flat "Chapter 2
+  // pinned!" text it can pattern-match into fabricated CIDs). These tests pin
+  // both the opt-in and opt-out shapes parse correctly.
+  it('accepts a message without toolInvocations (back-compat)', () => {
+    const result = chatMessageSchema.safeParse({ role: 'assistant', content: 'hello' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an assistant message with one toolInvocations entry', () => {
+    const result = chatMessageSchema.safeParse({
+      role: 'assistant',
+      content: 'Chapter 2 pinned to IPFS.',
+      toolInvocations: [
+        {
+          toolUseId: 'tu_1',
+          toolName: 'invoke_narrator',
+          input: { tokenAddr: '0xabc' },
+          output: { chapterNumber: 2, ipfsHash: 'QmXXX' },
+          isError: false,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an assistant message with multiple toolInvocations entries', () => {
+    const result = chatMessageSchema.safeParse({
+      role: 'assistant',
+      content: 'done',
+      toolInvocations: [
+        {
+          toolUseId: 'tu_1',
+          toolName: 'invoke_creator',
+          input: { theme: 'cyberpunk' },
+          output: { tokenAddr: '0xabc' },
+          isError: false,
+        },
+        {
+          toolUseId: 'tu_2',
+          toolName: 'invoke_narrator',
+          input: { tokenAddr: '0xabc' },
+          output: { error: 'pinata timed out' },
+          isError: true,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects toolInvocations entries missing required fields', () => {
+    const result = chatMessageSchema.safeParse({
+      role: 'assistant',
+      content: 'hi',
+      toolInvocations: [
+        {
+          toolUseId: 'tu_1',
+          // missing toolName / input / output / isError
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
 });

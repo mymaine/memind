@@ -27,6 +27,7 @@ import { describe, it, expect } from 'vitest';
 import type {
   Artifact,
   AssistantDeltaEventPayload,
+  ChatMessage,
   HeartbeatSessionState,
   HeartbeatTickEvent,
   LogEvent,
@@ -450,5 +451,140 @@ describe('turnToApiMessage — heartbeat turns map to assistant with prefix', ()
       role: 'assistant',
       content: '[heartbeat] Heartbeat tick 3/5: idle',
     });
+  });
+
+  // ─── toolInvocations round-trip (anti-fabrication fix 2026-04-20) ────────
+  //
+  // Assistant turns that recorded Brain-level tool-use events must round-trip
+  // their invocations via `toolInvocations`. The server re-expands these into
+  // native Anthropic content blocks so the LLM sees prior Chapter / Tweet /
+  // Deploy as grounded tool calls. Persona-level events (agent != 'brain')
+  // are intentionally NOT rolled into toolInvocations — they belong to the
+  // persona's private execution, not to the Brain's conversational context.
+  it('emits toolInvocations for matched brain tool-use-start + tool-use-end', () => {
+    const assistant: BrainChatTurn = {
+      id: 'a1',
+      role: 'assistant',
+      content: 'Chapter 2 pinned to IPFS.',
+      brainEvents: [
+        {
+          kind: 'tool-use-start',
+          agent: 'brain',
+          toolName: 'invoke_narrator',
+          toolUseId: 'tu_1',
+          input: { tokenAddr: '0xabc' },
+        },
+        {
+          kind: 'tool-use-end',
+          agent: 'brain',
+          toolName: 'invoke_narrator',
+          toolUseId: 'tu_1',
+          output: { chapterNumber: 2, ipfsHash: 'QmXX' },
+          isError: false,
+        },
+      ],
+    };
+    const msg = turnToApiMessage(assistant);
+    expect(msg).toEqual({
+      role: 'assistant',
+      content: 'Chapter 2 pinned to IPFS.',
+      toolInvocations: [
+        {
+          toolUseId: 'tu_1',
+          toolName: 'invoke_narrator',
+          input: { tokenAddr: '0xabc' },
+          output: { chapterNumber: 2, ipfsHash: 'QmXX' },
+          isError: false,
+        },
+      ],
+    });
+  });
+
+  it('omits toolInvocations when only persona-level tool events are recorded', () => {
+    // Persona internal tools (e.g. narrator's extend_lore) must never pollute
+    // the Brain's toolInvocations wire shape — they are not Brain-level
+    // decisions and would confuse the server's rehydration step.
+    const assistant: BrainChatTurn = {
+      id: 'a1',
+      role: 'assistant',
+      content: 'Chapter 2 pinned to IPFS.',
+      brainEvents: [
+        {
+          kind: 'tool-use-start',
+          agent: 'narrator',
+          toolName: 'extend_lore',
+          toolUseId: 'tu_narr',
+          input: {},
+        },
+        {
+          kind: 'tool-use-end',
+          agent: 'narrator',
+          toolName: 'extend_lore',
+          toolUseId: 'tu_narr',
+          output: { cid: 'Qm' },
+          isError: false,
+        },
+      ],
+    };
+    const msg = turnToApiMessage(assistant);
+    expect(msg).toEqual({
+      role: 'assistant',
+      content: 'Chapter 2 pinned to IPFS.',
+    });
+    expect((msg as ChatMessage).toolInvocations).toBeUndefined();
+  });
+
+  it('omits toolInvocations on assistant turns with no brainEvents', () => {
+    const assistant: BrainChatTurn = {
+      id: 'a1',
+      role: 'assistant',
+      content: 'hello',
+      brainEvents: [],
+    };
+    const msg = turnToApiMessage(assistant);
+    expect(msg).toEqual({ role: 'assistant', content: 'hello' });
+  });
+
+  it('user turns are unchanged regardless of brainEvents', () => {
+    // brainEvents is typed as optional on the turn; a defensive case where a
+    // user turn somehow carries brainEvents should still produce a flat user
+    // ChatMessage (no toolInvocations on user role).
+    const user: BrainChatTurn = {
+      id: 'u1',
+      role: 'user',
+      content: '/lore 0xabc',
+    };
+    expect(turnToApiMessage(user)).toEqual({ role: 'user', content: '/lore 0xabc' });
+  });
+
+  it('heartbeat turns remain untouched (no toolInvocations ever)', () => {
+    const event = makeTickEvent();
+    const turn = buildHeartbeatTurn('hb-tool', event);
+    const msg = turnToApiMessage(turn);
+    expect(msg).toEqual({
+      role: 'assistant',
+      content: '[heartbeat] Heartbeat tick 3/5: idle',
+    });
+    expect((msg as ChatMessage).toolInvocations).toBeUndefined();
+  });
+
+  it('skips orphan tool-use-end without a matching start (defensive)', () => {
+    const assistant: BrainChatTurn = {
+      id: 'a1',
+      role: 'assistant',
+      content: 'ok',
+      brainEvents: [
+        {
+          kind: 'tool-use-end',
+          agent: 'brain',
+          toolName: 'invoke_narrator',
+          toolUseId: 'tu_missing',
+          output: {},
+          isError: false,
+        },
+      ],
+    };
+    const msg = turnToApiMessage(assistant);
+    expect(msg).toEqual({ role: 'assistant', content: 'ok' });
   });
 });

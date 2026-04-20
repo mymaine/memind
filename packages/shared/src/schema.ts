@@ -332,11 +332,35 @@ export type RunKind = z.infer<typeof runKindSchema>;
 // the `brain-chat` run kind. The Brain meta-agent consumes a `messages[]`
 // array on each POST /api/runs call to rebuild conversation context on a
 // stateless server. `content` is min-1 so empty sends never reach the LLM.
+//
+// `toolInvocations` (2026-04-20 anti-fabrication fix): optional array that
+// round-trips the Anthropic-native `tool_use` + `tool_result` blocks produced
+// during the assistant turn. When present, the server re-expands them into
+// native content blocks on the next `messages.create` call so the LLM sees a
+// structural signal that the prior Chapter / Tweet / Deploy was grounded in a
+// real tool call — and that any text-only assistant turn in history is
+// visibly NOT grounded. Without it, the assistant history is flat text and
+// the LLM pattern-matches fabrications from prior "Chapter 2 pinned to IPFS!
+// CID: Qm..." strings. Field stays optional so pre-fix callers keep working.
 // ---------------------------------------------------------------------------
+
+export const chatMessageToolInvocationSchema = z.object({
+  toolUseId: z.string().min(1),
+  toolName: z.string().min(1),
+  input: z.record(z.unknown()),
+  // `output` is the tool's raw return value. Typed as `unknown` because
+  // persona-invoke tools return heterogeneous shapes (CreatorResult, narrator
+  // payload, shill tweet, heartbeat snapshot, etc.) — the schema only enforces
+  // structural round-trip, not per-tool output shape.
+  output: z.unknown(),
+  isError: z.boolean(),
+});
+export type ChatMessageToolInvocation = z.infer<typeof chatMessageToolInvocationSchema>;
 
 export const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().min(1),
+  toolInvocations: z.array(chatMessageToolInvocationSchema).optional(),
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 

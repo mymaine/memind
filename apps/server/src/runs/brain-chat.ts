@@ -61,6 +61,12 @@ import {
   createInvokeShillerTool,
   createListHeartbeatsTool,
   createStopHeartbeatTool,
+  INVOKE_CREATOR_TOOL_NAME,
+  INVOKE_HEARTBEAT_TICK_TOOL_NAME,
+  INVOKE_NARRATOR_TOOL_NAME,
+  INVOKE_SHILLER_TOOL_NAME,
+  LIST_HEARTBEATS_TOOL_NAME,
+  STOP_HEARTBEAT_TOOL_NAME,
   type NarratorTokenMeta,
   type ShillerOrderContext,
 } from '../tools/invoke-persona.js';
@@ -556,6 +562,23 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // either way, but at least a warn-level log lands in the run's event
   // stream. The Brain system prompt's HARD NO-FABRICATION RULES are the
   // primary defence; this guard is belt-and-suspenders.
+  // Derive forced tool_choice from the final user turn's slash command, if
+  // any. This bypasses the LLM's ability to "decide to skip the tool" on
+  // tool-required slashes — the root structural defence against the
+  // fabricated CID regression observed when prior tool_result text sat in
+  // context. Emits an info log on force so demo operators can see the
+  // decision in the SSE stream.
+  const forcedToolName = deriveForcedToolName(validated);
+  if (forcedToolName !== undefined) {
+    store.addLog(runId, {
+      ts: new Date().toISOString(),
+      agent: 'brain',
+      tool: 'runtime',
+      level: 'info',
+      message: `forcing tool_choice=${forcedToolName} for slash command`,
+    });
+  }
+
   let brainToolCallCount = 0;
   await runBrainAgentFn({
     client: anthropic,
@@ -572,6 +595,9 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     },
     onToolUseEnd: (event) => store.addToolUseEnd(runId, event),
     onAssistantDelta: (event) => store.addAssistantDelta(runId, event),
+    ...(forcedToolName !== undefined
+      ? { toolChoice: { type: 'tool' as const, name: forcedToolName } }
+      : {}),
   });
 
   const lastUserMessage = validated[validated.length - 1];
@@ -603,3 +629,44 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
  */
 const TOOL_REQUIRED_SLASH_REGEX =
   /^\/(launch|order|lore|heartbeat|heartbeat-stop|heartbeat-list)(\s|$)/;
+
+/**
+ * Anti-fabrication fix (2026-04-20): maps a slash-command keyword to the
+ * exact Brain-level tool name the Anthropic `tool_choice: {type:'tool'}`
+ * must force. With this, the LLM cannot "decide to skip the tool" on a
+ * repeated /lore — which was the root cause of the fabricated Chapter 3/4
+ * CIDs observed when prior turns' tool_result text sat in context.
+ *
+ * Keep this map in lockstep with the BRAIN_SYSTEM_PROMPT's slash-handling
+ * section; a drift means the prompt tells the LLM to route `/X` to tool Y
+ * while the runtime forces a different tool, which either fails loudly
+ * (unknown tool) or silently produces the wrong action.
+ */
+const SLASH_TO_TOOL_NAME = new Map<string, string>([
+  ['launch', INVOKE_CREATOR_TOOL_NAME],
+  ['order', INVOKE_SHILLER_TOOL_NAME],
+  ['lore', INVOKE_NARRATOR_TOOL_NAME],
+  ['heartbeat', INVOKE_HEARTBEAT_TICK_TOOL_NAME],
+  ['heartbeat-stop', STOP_HEARTBEAT_TOOL_NAME],
+  ['heartbeat-list', LIST_HEARTBEATS_TOOL_NAME],
+]);
+
+/**
+ * Inspect the final user turn's content; if it opens with a recognised
+ * tool-required slash command, return the forced tool name. Free-form user
+ * turns (no leading slash) and unrecognised slashes both yield undefined —
+ * the Brain's auto tool_choice branch handles them.
+ *
+ * Exported for unit tests so the slash → tool mapping is pinnable without
+ * driving the full orchestrator. Keep in sync with SLASH_TO_TOOL_NAME.
+ */
+export function deriveForcedToolName(messages: ReadonlyArray<ChatMessage>): string | undefined {
+  const last = messages[messages.length - 1];
+  if (last === undefined || last.role !== 'user') return undefined;
+  const trimmed = last.content.trim();
+  const match = /^\/([a-z][a-z-]*)/.exec(trimmed);
+  if (match === null) return undefined;
+  const slashKey = match[1];
+  if (slashKey === undefined) return undefined;
+  return SLASH_TO_TOOL_NAME.get(slashKey);
+}

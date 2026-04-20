@@ -29,6 +29,7 @@ import type {
   Artifact,
   AssistantDeltaEventPayload,
   ChatMessage,
+  ChatMessageToolInvocation,
   HeartbeatSessionAction,
   HeartbeatTickEvent,
   LogEvent,
@@ -322,6 +323,17 @@ export function buildHeartbeatTurn(id: string, payload: HeartbeatTickEvent): Bra
  * Drops UI-only fields (id, brainEvents) so the wire format matches the
  * Brain runtime's `chatMessageSchema`.
  *
+ * Anti-fabrication fix (2026-04-20): assistant turns that recorded
+ * Brain-level (agent='brain') tool_use events via their `brainEvents` list
+ * round-trip their invocations on `toolInvocations`. The server re-expands
+ * these into Anthropic-native `tool_use` + `tool_result` blocks so the LLM
+ * sees the prior Chapter / Tweet / Deploy as a grounded tool call — not as
+ * flat "Chapter 2 pinned! CID: Qm..." text it can pattern-match into
+ * fabricated Chapter 3 CIDs. Persona-level tool events (agent!='brain',
+ * e.g. narrator's internal `extend_lore`) are intentionally excluded: those
+ * belong to the persona's private execution, not to the Brain's
+ * conversational context.
+ *
  * Heartbeat turns are folded back into `assistant` messages with a
  * `[heartbeat] ` prefix so the Brain LLM sees them as prior context on a
  * follow-up user turn, without confusing them with real user input.
@@ -330,5 +342,49 @@ export function turnToApiMessage(turn: BrainChatTurn): ChatMessage {
   if (turn.role === 'heartbeat') {
     return { role: 'assistant', content: `[heartbeat] ${turn.content}` };
   }
+  if (turn.role === 'assistant') {
+    const toolInvocations = extractBrainToolInvocations(turn);
+    if (toolInvocations.length > 0) {
+      return { role: 'assistant', content: turn.content, toolInvocations };
+    }
+    return { role: 'assistant', content: turn.content };
+  }
   return { role: turn.role, content: turn.content };
+}
+
+/**
+ * Walk an assistant turn's `brainEvents` and return the matched
+ * `tool-use-start` + `tool-use-end` pairs for Brain-level tool calls only.
+ * Ignores persona-level events (agent != 'brain') and orphaned ends
+ * (tool-use-end with no matching start). Never throws — any malformed state
+ * collapses to an empty array so a rehydrate can never break a live send.
+ */
+function extractBrainToolInvocations(turn: BrainChatTurn): ChatMessageToolInvocation[] {
+  const events = turn.brainEvents ?? [];
+  if (events.length === 0) return [];
+  try {
+    const startById = new Map<string, { toolName: string; input: Record<string, unknown> }>();
+    const out: ChatMessageToolInvocation[] = [];
+    for (const ev of events) {
+      if (ev.kind === 'tool-use-start' && ev.agent === 'brain') {
+        startById.set(ev.toolUseId, { toolName: ev.toolName, input: ev.input });
+        continue;
+      }
+      if (ev.kind === 'tool-use-end' && ev.agent === 'brain') {
+        const match = startById.get(ev.toolUseId);
+        if (match === undefined) continue;
+        out.push({
+          toolUseId: ev.toolUseId,
+          toolName: match.toolName,
+          input: match.input,
+          output: ev.output,
+          isError: ev.isError,
+        });
+        startById.delete(ev.toolUseId);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }

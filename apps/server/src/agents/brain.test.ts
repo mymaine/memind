@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AgentTool, AnyAgentTool } from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
-import { BRAIN_SYSTEM_PROMPT, runBrainAgent, type RunBrainAgentParams } from './brain.js';
+import {
+  BRAIN_SYSTEM_PROMPT,
+  runBrainAgent,
+  toAnthropicMessages,
+  type RunBrainAgentParams,
+} from './brain.js';
 import {
   INVOKE_CREATOR_TOOL_NAME,
   INVOKE_NARRATOR_TOOL_NAME,
@@ -251,5 +256,232 @@ describe('runBrainAgent', () => {
         { role: 'user', content: 'launch a meme about BNB 2026' },
       ]);
     });
+  });
+
+  // ─── toolChoice forwarding (anti-fabrication fix 2026-04-20) ─────────────
+  //
+  // The Brain orchestrator passes `toolChoice: {type:'tool', name:'invoke_*'}`
+  // on slash-command turns so the LLM physically cannot skip the tool and
+  // fabricate a plausible answer from prior tool_result context. The
+  // runtime applies it ONLY on turn 0; these tests pin that the brain-level
+  // wrapper forwards the param unchanged.
+  describe('toolChoice forwarding', () => {
+    it('forwards toolChoice to runAgentLoop when provided', async () => {
+      const spy = vi.fn(async (_p: RunAgentLoopParams) => makeFakeLoopResult());
+      const params = baseParams(spy);
+      params.toolChoice = { type: 'tool', name: INVOKE_NARRATOR_TOOL_NAME };
+      await runBrainAgent(params);
+      const call = spy.mock.calls[0]?.[0];
+      expect(call?.toolChoice).toEqual({ type: 'tool', name: INVOKE_NARRATOR_TOOL_NAME });
+    });
+
+    it('omits toolChoice when not provided (defaults to Anthropic auto)', async () => {
+      const spy = vi.fn(async (_p: RunAgentLoopParams) => makeFakeLoopResult());
+      await runBrainAgent(baseParams(spy));
+      const call = spy.mock.calls[0]?.[0];
+      expect(call?.toolChoice).toBeUndefined();
+    });
+  });
+});
+
+// ─── toAnthropicMessages — tool_use/tool_result rehydration ────────────────
+//
+// Anti-fabrication fix (2026-04-20). Assistant turns that carry a
+// `toolInvocations[]` field (shipped from the client which synthesised it
+// from SSE `tool-use-start|end` events) must round-trip into Anthropic's
+// native content-block shape so the LLM sees the prior Chapter / Tweet /
+// Deploy as a grounded tool call, not as flat "Chapter 2 pinned!" text it
+// can pattern-match into fabrications.
+describe('toAnthropicMessages', () => {
+  it('passes through a message without toolInvocations as flat {role, content}', () => {
+    const out = toAnthropicMessages([{ role: 'user', content: '/lore 0xabc' }]);
+    expect(out).toEqual([{ role: 'user', content: '/lore 0xabc' }]);
+  });
+
+  it('expands one tool invocation + text into assistant[text,tool_use] + user[tool_result]', () => {
+    const out = toAnthropicMessages([
+      {
+        role: 'assistant',
+        content: 'Chapter 2 pinned to IPFS.',
+        toolInvocations: [
+          {
+            toolUseId: 'tu_1',
+            toolName: 'invoke_narrator',
+            input: { tokenAddr: '0xabc' },
+            output: { chapterNumber: 2, ipfsHash: 'QmXX' },
+            isError: false,
+          },
+        ],
+      },
+      { role: 'user', content: '/lore 0xabc' },
+    ]);
+    expect(out).toHaveLength(3);
+    // Assistant block: text first, then tool_use.
+    expect(out[0]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Chapter 2 pinned to IPFS.' },
+        {
+          type: 'tool_use',
+          id: 'tu_1',
+          name: 'invoke_narrator',
+          input: { tokenAddr: '0xabc' },
+        },
+      ],
+    });
+    // Synthetic user tool_result block paired to the tool_use above.
+    expect(out[1]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'tu_1',
+          content: JSON.stringify({ chapterNumber: 2, ipfsHash: 'QmXX' }),
+        },
+      ],
+    });
+    // Trailing user turn untouched.
+    expect(out[2]).toEqual({ role: 'user', content: '/lore 0xabc' });
+  });
+
+  it('emits only tool_use blocks (no text) when content is empty', () => {
+    const out = toAnthropicMessages([
+      {
+        role: 'assistant',
+        content: '',
+        toolInvocations: [
+          {
+            toolUseId: 'tu_1',
+            toolName: 'invoke_creator',
+            input: { theme: 'cyberpunk' },
+            output: { tokenAddr: '0xabc' },
+            isError: false,
+          },
+        ],
+      },
+      { role: 'user', content: 'follow up' },
+    ]);
+    expect(out[0]).toEqual({
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tu_1',
+          name: 'invoke_creator',
+          input: { theme: 'cyberpunk' },
+        },
+      ],
+    });
+  });
+
+  it('expands two tool invocations as two tool_use blocks + two tool_result blocks', () => {
+    const out = toAnthropicMessages([
+      {
+        role: 'assistant',
+        content: 'running both',
+        toolInvocations: [
+          {
+            toolUseId: 'tu_a',
+            toolName: 'invoke_creator',
+            input: { theme: 'x' },
+            output: { tokenAddr: '0x1' },
+            isError: false,
+          },
+          {
+            toolUseId: 'tu_b',
+            toolName: 'invoke_narrator',
+            input: { tokenAddr: '0x1' },
+            output: { chapterNumber: 1 },
+            isError: false,
+          },
+        ],
+      },
+      { role: 'user', content: 'next' },
+    ]);
+    expect(out[0]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'running both' },
+        {
+          type: 'tool_use',
+          id: 'tu_a',
+          name: 'invoke_creator',
+          input: { theme: 'x' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tu_b',
+          name: 'invoke_narrator',
+          input: { tokenAddr: '0x1' },
+        },
+      ],
+    });
+    expect(out[1]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'tu_a',
+          content: JSON.stringify({ tokenAddr: '0x1' }),
+        },
+        {
+          type: 'tool_result',
+          tool_use_id: 'tu_b',
+          content: JSON.stringify({ chapterNumber: 1 }),
+        },
+      ],
+    });
+  });
+
+  it('sets is_error=true on the tool_result block when isError=true', () => {
+    const out = toAnthropicMessages([
+      {
+        role: 'assistant',
+        content: 'that failed',
+        toolInvocations: [
+          {
+            toolUseId: 'tu_err',
+            toolName: 'invoke_narrator',
+            input: { tokenAddr: '0xabc' },
+            output: { error: 'pinata timed out' },
+            isError: true,
+          },
+        ],
+      },
+      { role: 'user', content: 'try again' },
+    ]);
+    const userBlock = out[1] as unknown as {
+      role: 'user';
+      content: Array<Record<string, unknown>>;
+    };
+    expect(userBlock.content[0]).toEqual({
+      type: 'tool_result',
+      tool_use_id: 'tu_err',
+      content: JSON.stringify({ error: 'pinata timed out' }),
+      is_error: true,
+    });
+  });
+
+  it('falls back to flat-text MessageParam when an invocation is malformed (defensive)', () => {
+    // Malformed entry (empty toolUseId) must not crash rehydration; the
+    // turn reverts to plain text instead.
+    const out = toAnthropicMessages([
+      {
+        role: 'assistant',
+        content: 'Chapter 2 pinned',
+        toolInvocations: [
+          {
+            toolUseId: '',
+            toolName: 'invoke_narrator',
+            input: {},
+            output: {},
+            isError: false,
+          },
+        ],
+      },
+      { role: 'user', content: 'follow up' },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ role: 'assistant', content: 'Chapter 2 pinned' });
   });
 });

@@ -397,6 +397,61 @@ describe('runAgentLoop', () => {
     });
   });
 
+  // ─── tool_choice forcing — first-turn only ───────────────────────────────
+  //
+  // Anti-fabrication fix (2026-04-20): orchestrators force a specific tool
+  // on slash-command turns by passing `toolChoice: {type:'tool', name:...}`.
+  // The runtime MUST only forward this on turn 0; on turn 2+ it reverts to
+  // Anthropic's default auto so the loop can terminate after the forced
+  // tool's result returns. Forcing every turn traps the loop in an infinite
+  // tool-use cycle.
+  describe('toolChoice forcing', () => {
+    it('forwards tool_choice to the FIRST messages.stream call only', async () => {
+      const registry = new ToolRegistry();
+      const addSpy = vi.fn(async (i: AddInput) => ({ sum: i.a + i.b }));
+      registry.register(makeAddTool(addSpy) as unknown as AnyAgentTool);
+
+      const { client, stream } = fakeClient([
+        toolUseStream([{ id: 'tu_1', name: 'add', input: { a: 2, b: 3 } }]),
+        textStream('done'),
+      ]);
+
+      await runAgentLoop({
+        client,
+        model: 'test-model',
+        registry,
+        systemPrompt: 'test',
+        userInput: 'add 2 and 3',
+        toolChoice: { type: 'tool', name: 'add' },
+      });
+
+      expect(stream).toHaveBeenCalledTimes(2);
+      const turn0Params = stream.mock.calls[0]?.[0] as { tool_choice?: unknown };
+      const turn1Params = stream.mock.calls[1]?.[0] as { tool_choice?: unknown };
+      // Turn 0 sees the forced tool_choice.
+      expect(turn0Params.tool_choice).toEqual({ type: 'tool', name: 'add' });
+      // Turn 1 must NOT carry tool_choice, else the loop spins forever on
+      // forced tool invocations.
+      expect(turn1Params.tool_choice).toBeUndefined();
+    });
+
+    it('never sends tool_choice when undefined at the call site', async () => {
+      const registry = new ToolRegistry();
+      const { client, stream } = fakeClient([textStream('hello')]);
+
+      await runAgentLoop({
+        client,
+        model: 'test-model',
+        registry,
+        systemPrompt: 'test',
+        userInput: 'hi',
+      });
+
+      const turn0Params = stream.mock.calls[0]?.[0] as { tool_choice?: unknown };
+      expect(turn0Params.tool_choice).toBeUndefined();
+    });
+  });
+
   it('handles parallel tool_use blocks in a single turn', async () => {
     const registry = new ToolRegistry();
     const addSpy = vi.fn(async (i: AddInput) => ({ sum: i.a + i.b }));
