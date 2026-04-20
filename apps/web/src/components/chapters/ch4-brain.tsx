@@ -166,7 +166,15 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
       {/* UAT issue #7 — explicit legend above the brain stage so viewers
        * don't have to guess which ring is which. Persona = content voice
        * (how the brain speaks), channel = delivery surface (where the
-       * brain speaks). X is live today; the rest ship next. */}
+       * brain speaks). X is live today; the rest ship next.
+       *
+       * 2026-04-20 consistency pass: the four glyphs on this stage map
+       * 1:1 to the four runtime personas (Creator / Narrator / Market-
+       * maker (Shiller mode) / Heartbeat) listed in the README and
+       * brain-agent-positioning decision. Market-maker is dual-mode:
+       * reads lore as alpha (a2a) or posts creator-commissioned tweets
+       * as Shiller. The second legend row names the runtime lineup so a
+       * reader arriving from the README sees the same four personas. */}
       <div className="brain-legend">
         <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
           persona = content voice
@@ -188,6 +196,12 @@ export function Ch4Brain({ p }: Ch4BrainProps): ReactElement {
         </span>
         <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
           others shipping
+        </span>
+      </div>
+      <div className="brain-legend">
+        <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
+          runtime: Creator {'\u00b7'} Narrator {'\u00b7'} Market-maker (Shiller mode) {'\u00b7'}{' '}
+          Heartbeat
         </span>
       </div>
       <div className="brain-stage">

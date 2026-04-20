@@ -32,7 +32,6 @@ const LAUNCH_WILD_MEME: SuggestionChip = {
 const LAUNCH_BNB_TRIBUTE: SuggestionChip = {
   label: 'Launch a BNB Chain tribute',
   prompts: [
-    '/launch A token celebrating BNB Chain 2026 growth. The lore is a neon cyberpunk heist where every validator pulls off the biggest rug-reverse in crypto history.',
     '/launch A token honouring four.meme itself. The lore says four.meme is secretly an ancient oracle that predicts every trending meme three blocks in advance.',
     '/launch A token pitting AI agents against human meme traders in a rooftop dance-off that decides the fate of the next bull market.',
     '/launch A tribute to the BNB degens who refuse to sleep. The lore says their keyboards run on pure caffeine, hopium, and leftover bubble tea.',

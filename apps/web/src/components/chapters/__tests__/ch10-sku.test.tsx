@@ -100,7 +100,7 @@ describe('<Ch10SKU>', () => {
     expect(html).toContain('billing rails');
     expect(html).toContain('last mile');
     // UAT 2026-04-20: non-live SKU pricing MUST be flagged as a highly
-    // conservative estimate so judges cannot read it as promised revenue.
+    // conservative estimate so readers do not mistake it for promised revenue.
     expect(html).toContain('highly conservative estimate');
   });
 });
