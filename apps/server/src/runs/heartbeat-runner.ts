@@ -66,8 +66,13 @@ const MAX_TURNS_PER_TICK = 4;
  * share the prompt told the model to embed the full tokenAddr + bscscan
  * URL — X's 2026 post-OAuth cooldown rejected every such post with a
  * 403. Safe mode: no URL, no raw address, lore chapter reference only.
+ *
+ * Exported so every heartbeat entry point (CLI runner, Brain
+ * `invoke_heartbeat_tick`) shares one source of truth — prior drift
+ * between this prompt and brain-chat.ts's private copy caused the
+ * Brain-driven tick path to silently generate guard-rejected tweets.
  */
-const SYSTEM_PROMPT = [
+export const HEARTBEAT_SYSTEM_PROMPT = [
   'You are an autonomous agent operating a meme token on BSC mainnet.',
   'Each tick, call check_token_status on the configured token. Based on the status,',
   'EITHER call post_to_x with a short tweet drafted per the tweet rules below,',
@@ -116,7 +121,7 @@ export interface RunHeartbeatDemoDeps {
 /**
  * Extract the first `{...}` JSON blob from the model's final text and attempt
  * to parse it into a heartbeat-decision action + reason. Matches the
- * contract stamped into SYSTEM_PROMPT. Defensively tolerates surrounding
+ * contract stamped into HEARTBEAT_SYSTEM_PROMPT. Defensively tolerates surrounding
  * whitespace, markdown fences, or extra prose — if no valid JSON is found we
  * fall back to 'skip' with a generic reason so the UI still shows a decision.
  */
@@ -317,7 +322,7 @@ export async function runHeartbeatDemo(deps: RunHeartbeatDemoDeps): Promise<void
         client: deps.anthropic,
         model: MODEL,
         registry,
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: HEARTBEAT_SYSTEM_PROMPT,
         userInput,
         agentId: 'heartbeat',
         maxTurns: MAX_TURNS_PER_TICK,

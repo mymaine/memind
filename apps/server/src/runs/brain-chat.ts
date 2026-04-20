@@ -74,6 +74,7 @@ import {
   type NarratorTokenMeta,
 } from '../tools/invoke-persona.js';
 import type { CreatorPaymentPhaseFn, runShillMarketDemo } from './shill-market.js';
+import { HEARTBEAT_SYSTEM_PROMPT } from './heartbeat-runner.js';
 import {
   createPostShillForTool,
   postShillForInputSchema,
@@ -103,26 +104,6 @@ const MODEL = 'anthropic/claude-sonnet-4-5';
 // boundary, but the orchestrator re-validates so CLI / test callers cannot
 // bypass the check.
 const brainChatMessagesSchema = z.array(chatMessageSchema).min(1);
-
-/**
- * Same per-tick heartbeat system prompt used by the `heartbeat` run kind's
- * runner. Duplicated (not imported) because the heartbeat-runner keeps it
- * private; the Brain only needs a minimal prompt since it drives exactly one
- * tick per `invoke_heartbeat_tick` call per AC spec.
- */
-const HEARTBEAT_SYSTEM_PROMPT = [
-  'You are an autonomous agent operating a meme token on BSC mainnet.',
-  'The user message names the exact tokenAddr under observation — use THAT address verbatim.',
-  'Each tick, call check_token_status(tokenAddr) with the address from the user message.',
-  'Based on the status, EITHER call post_to_x with a short tweet (<=240 chars, include the',
-  'tokenAddr and a bscscan link) OR call extend_lore to add a new chapter to the on-chain',
-  'story, OR respond idle when nothing is worth doing this tick.',
-  'Pick exactly ONE action per tick. Your final response is a single JSON object:',
-  '{"action": "post_to_x" | "extend_lore" | "idle", "reason": "..."}.',
-  'Do NOT invent addresses. If check_token_status returns zero holders or zero activity,',
-  'that alone does NOT mean the token is undeployed — the contract can exist on-chain with',
-  'fresh data; treat it as "newly launched" and still operate on the given tokenAddr.',
-].join(' ');
 
 /**
  * Build a `post_shill_for` tool from the run config. When X OAuth credentials
