@@ -1,7 +1,9 @@
 'use client';
 
 /**
- * <Ch8TakeRate> — take-rate chapter of the Memind scrollytelling narrative.
+ * <Ch9TakeRate> — take-rate chapter of the Memind scrollytelling narrative
+ * (memind-scrollytelling-rebuild AC-MSR-9 ch9; renumbered 2026-04-20 from
+ * ch8 when The Saga was inserted at slot 7).
  *
  * 2026-04-20 rebuild: the prior version quoted `$3.20 projected lifetime /
  * token` with four SKU bars but no derivation. The new panel keeps the
@@ -28,7 +30,7 @@
 import type { ReactElement } from 'react';
 import { BigHeadline, Label, Mono, clamp, fmt, lerp } from './chapter-primitives';
 
-interface Ch8TakeRateProps {
+interface Ch9TakeRateProps {
   /** Interior progress 0..1 emitted by <StickyStage /> for this chapter. */
   readonly p: number;
 }
@@ -135,14 +137,14 @@ const PROJECTIONS: readonly Projection[] = [
   },
 ];
 
-export function Ch8TakeRate({ p }: Ch8TakeRateProps): ReactElement {
+export function Ch9TakeRate({ p }: Ch9TakeRateProps): ReactElement {
   const bigNum = fmt(lerp(0, 3.2, clamp(p / 0.6)), 2);
   // Projection rows fade in after the bars finish stretching — the
   // headline metric should land before the roadmap numbers.
   const projReveal = clamp((p - 0.5) * 2.5);
   return (
     <div className="ch ch-biz">
-      <Label n={8}>take rate</Label>
+      <Label n={9}>take rate</Label>
       <BigHeadline size={84}>
         revenue per token, <span style={{ color: 'var(--accent)' }}>per heartbeat</span>.
       </BigHeadline>

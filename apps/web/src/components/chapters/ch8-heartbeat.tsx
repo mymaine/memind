@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * <Ch7Heartbeat> — autonomous-heartbeat chapter of the Memind
- * scrollytelling narrative (memind-scrollytelling-rebuild AC-MSR-9 ch7).
+ * <Ch8Heartbeat> — autonomous-heartbeat chapter of the Memind
+ * scrollytelling narrative (memind-scrollytelling-rebuild AC-MSR-9 ch8;
+ * renumbered 2026-04-20 from ch7 when The Saga was inserted at slot 7).
  *
  * Interior progress `p ∈ [0, 1]` drives two synchronous animations:
  *   - EKG polyline: `strokeDasharray=1000` + `strokeDashoffset = 1000 - p*1000`
@@ -20,7 +21,7 @@ import type { ReactElement } from 'react';
 import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
 import { BigHeadline, Label, Mono } from './chapter-primitives';
 
-interface Ch7HeartbeatProps {
+interface Ch8HeartbeatProps {
   /** Interior progress 0..1 emitted by <StickyStage /> for this chapter. */
   readonly p: number;
 }
@@ -47,13 +48,13 @@ const DECISIONS: readonly string[] = [
 const EKG_POINTS =
   '0,70 40,70 50,70 55,30 60,110 65,50 70,70 90,70 130,70 135,35 140,100 145,70 180,70 220,70 225,40 230,95 235,70 270,70 310,70 315,30 320,110 325,70 360,70 400,70';
 
-export function Ch7Heartbeat({ p }: Ch7HeartbeatProps): ReactElement {
+export function Ch8Heartbeat({ p }: Ch8HeartbeatProps): ReactElement {
   const ticks = Math.floor(p * 14);
   const visibleDecisions = DECISIONS.slice(0, ticks);
 
   return (
     <div className="ch ch-heartbeat">
-      <Label n={7}>autonomous heartbeat</Label>
+      <Label n={8}>autonomous heartbeat</Label>
       <BigHeadline size={72}>
         <span>
           every 60 seconds, the brain wakes up and{' '}

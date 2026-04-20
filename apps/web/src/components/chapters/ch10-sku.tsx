@@ -1,13 +1,15 @@
 'use client';
 
 /**
- * <Ch9SKU> — SKU matrix chapter of the Memind scrollytelling narrative.
+ * <Ch10SKU> — SKU matrix chapter of the Memind scrollytelling narrative
+ * (memind-scrollytelling-rebuild AC-MSR-9 ch10; renumbered 2026-04-20
+ * from ch9 when The Saga was inserted at slot 7).
  *
  * 2026-04-20 rebuild: prior version shipped a 4-card grid (SHILL.ORDER +
  * BRAIN.BASIC/PRO + PERSONA.MINT) where two of the four cards lacked a
  * real business case — free tiers don't surface revenue, and NFT persona
  * minting had no clear buyer. This rebuild swaps those two for SKUs that
- * the Ch8 projection actually books against:
+ * the Ch9 projection actually books against:
  *
  *   SKU-01 SHILL.ORDER   · $0.005–$5 dynamic        · live
  *   SKU-02 LAUNCH.BOOST  · $9.99 one-time bundle    · next
@@ -27,7 +29,7 @@
 import type { ReactElement } from 'react';
 import { BigHeadline, Label, Mono, clamp, lerp } from './chapter-primitives';
 
-interface Ch9SKUProps {
+interface Ch10SKUProps {
   /** Interior progress 0..1 emitted by <StickyStage /> for this chapter. */
   readonly p: number;
 }
@@ -122,10 +124,10 @@ function SkuCard({ s, idx, p }: { s: Sku; idx: number; p: number }): ReactElemen
   );
 }
 
-export function Ch9SKU({ p }: Ch9SKUProps): ReactElement {
+export function Ch10SKU({ p }: Ch10SKUProps): ReactElement {
   return (
     <div className="ch ch-biz">
-      <Label n={9}>{'seller + demand side \u00b7 1 live + 4 on the roadmap'}</Label>
+      <Label n={10}>{'seller + demand side \u00b7 1 live + 4 on the roadmap'}</Label>
       <BigHeadline size={72}>what we sell today, what lands next.</BigHeadline>
       <div className="sku-matrix">
         <div className="sku-row sku-row-3">

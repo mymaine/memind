@@ -1,5 +1,5 @@
 /**
- * Tests for <Ch11Evidence /> — rebuilt 2026-04-20 around a chain-partitioned
+ * Tests for <Ch12Evidence /> — rebuilt 2026-04-20 around a chain-partitioned
  * tab view + a clickable hash-link model.
  *
  * Contract (new):
@@ -32,7 +32,7 @@ vi.mock('@/hooks/useRunStateContext', () => ({
   useRunState: () => mockUseRunState(),
 }));
 
-const { Ch11Evidence, mapArtifactToEvidenceRow } = await import('../ch11-evidence.js');
+const { Ch12Evidence, mapArtifactToEvidenceRow } = await import('../ch12-evidence.js');
 
 function makeRunning(artifacts: Artifact[], logs: LogEvent[] = []): RunState {
   return {
@@ -50,9 +50,9 @@ beforeEach(() => {
   mockUseRunState.mockReturnValue(IDLE_STATE);
 });
 
-describe('<Ch11Evidence> tab shell', () => {
+describe('<Ch12Evidence> tab shell', () => {
   it('renders exactly four tabs — BNB / BASE / IPFS / X', () => {
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     const tabs = html.match(/class="ev-tab(?: ev-tab-active)?"/g) ?? [];
     expect(tabs.length).toBe(4);
     // First render defaults to BNB being the active tab.
@@ -66,13 +66,13 @@ describe('<Ch11Evidence> tab shell', () => {
     // Non-active tab panels stay in the DOM (opacity:0, pointer-events:none)
     // so the cross-fade is purely CSS. Total row count across all four
     // panels is 4 × 5 = 20 when every tab is at capacity.
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     const rows = html.match(/class="ev-pill ev-pill-link"/g) ?? [];
     expect(rows.length).toBe(20);
   });
 
   it('every evidence row is an <a> with target=_blank + rel=noopener (clickable hash)', () => {
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     // Count all <a class="ev-pill ev-pill-link" ...> occurrences — each
     // MUST carry target="_blank" and rel="noopener noreferrer".
     const links =
@@ -83,10 +83,10 @@ describe('<Ch11Evidence> tab shell', () => {
   });
 });
 
-describe('<Ch11Evidence> real-data binding', () => {
+describe('<Ch12Evidence> real-data binding', () => {
   it('empty runState still fills every tab with 5 sample rows', () => {
     mockUseRunState.mockReturnValue(makeRunning([]));
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     // Every row carries the sample mono badge when no real data exists.
     const sampleBadges = html.match(/class="ev-sample mono">sample</g) ?? [];
     expect(sampleBadges.length).toBe(20);
@@ -115,7 +115,7 @@ describe('<Ch11Evidence> real-data binding', () => {
       },
     ];
     mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     // All three real hashes render (each in its correct tab panel).
     expect(html).toContain('0x11111111..1111');
     expect(html).toContain('0x33333333..3333');
@@ -136,7 +136,7 @@ describe('<Ch11Evidence> real-data binding', () => {
       },
     ];
     mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     const rows = html.match(/class="ev-pill ev-pill-link"/g) ?? [];
     expect(rows.length).toBe(20);
     // The real BNB artifact is present; the remaining 4 BNB rows come
@@ -145,10 +145,10 @@ describe('<Ch11Evidence> real-data binding', () => {
   });
 });
 
-describe('<Ch11Evidence> meme cover', () => {
+describe('<Ch12Evidence> meme cover', () => {
   it('no meme-image artifact → placeholder SVG + sample badge', () => {
     mockUseRunState.mockReturnValue(makeRunning([]));
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     // Placeholder is an inline data: SVG URL so we don't need next.config
     // domain allow-listing.
     expect(html).toMatch(/class="ev-meme-frame"/);
@@ -167,7 +167,7 @@ describe('<Ch11Evidence> meme cover', () => {
       },
     ];
     mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     // The cover `<img>` carries class="ev-meme-img" AND an https://
     // Pinata source. Assert each separately since attribute order is not
     // guaranteed by renderToStaticMarkup.
@@ -180,9 +180,9 @@ describe('<Ch11Evidence> meme cover', () => {
   });
 });
 
-describe('<Ch11Evidence> closing card', () => {
+describe('<Ch12Evidence> closing card', () => {
   it('renders the MEMIND wordmark + sunglasses glyph', () => {
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     expect(html).toContain('MEMIND');
     expect(html).toMatch(/data-mood="sunglasses"/);
     expect(html).toContain('open the demo');
@@ -190,26 +190,26 @@ describe('<Ch11Evidence> closing card', () => {
   });
 
   it('"see the code" renders as an external GitHub link', () => {
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     expect(html).toMatch(/<a[^>]*href="https?:\/\/[^"]*github[^"]*"[^>]*target="_blank"/);
     expect(html).toMatch(/rel="noopener noreferrer"/);
   });
 
   it('"open the demo" renders a button', () => {
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     expect(html).toMatch(/<button[^>]*class="cta cta-primary"[^>]*>[^<]*open the demo/);
   });
 });
 
-describe('<Ch11Evidence> engineering rows', () => {
+describe('<Ch12Evidence> engineering rows', () => {
   it('brain.tick row reads "60s · autonomous" with no model or provider leak', () => {
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     expect(html).toContain('60s \u00b7 autonomous');
     expect(html).not.toMatch(/claude|sonnet|opus|haiku|gpt|openrouter|anthropic/i);
   });
 
   it('bundle row states the budget, not the "194 kB" live number', () => {
-    const html = renderToStaticMarkup(<Ch11Evidence p={1} />);
+    const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     expect(html).toContain('230 kB');
     expect(html).not.toContain('194 kB');
   });

@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * <Ch11Evidence> — closing evidence chapter of the Memind scrollytelling
- * narrative.
+ * <Ch12Evidence> — closing evidence chapter of the Memind scrollytelling
+ * narrative (memind-scrollytelling-rebuild AC-MSR-9 ch12; renumbered
+ * 2026-04-20 from ch11 when The Saga was inserted at slot 7).
  *
  * Reviewer-facing pitch: "not a pitch. it's on-chain." The whole chapter is
  * proof-of-work — every on-chain hash is a real click-through to BSCScan,
@@ -40,7 +41,7 @@ import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
 import { useRunState } from '@/hooks/useRunStateContext';
 import { BigHeadline, Label, Mono, clamp } from './chapter-primitives';
 
-interface Ch11EvidenceProps {
+interface Ch12EvidenceProps {
   /** Interior progress 0..1 emitted by <StickyStage /> for this chapter. */
   readonly p: number;
 }
@@ -503,7 +504,7 @@ const TAB_COLOR: Record<EvidenceTab, string> = {
   X: 'var(--accent)',
 };
 
-export function Ch11Evidence({ p }: Ch11EvidenceProps): ReactElement {
+export function Ch12Evidence({ p }: Ch12EvidenceProps): ReactElement {
   const runState = useRunState();
   const artifacts = runState.artifacts;
   const [activeTab, setActiveTab] = useState<EvidenceTab>('BNB');
@@ -525,7 +526,7 @@ export function Ch11Evidence({ p }: Ch11EvidenceProps): ReactElement {
 
   return (
     <div className="ch ch-evidence">
-      <Label n={11}>evidence</Label>
+      <Label n={12}>evidence</Label>
       <BigHeadline size={96}>
         not a pitch. <span style={{ color: 'var(--accent)' }}>it&apos;s on-chain.</span>
       </BigHeadline>

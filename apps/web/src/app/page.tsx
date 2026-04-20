@@ -34,11 +34,11 @@ import { Ch3Solution } from '@/components/chapters/ch3-solution';
 import { Ch4Brain } from '@/components/chapters/ch4-brain';
 import { Ch5Launch } from '@/components/chapters/ch5-launch';
 import { Ch6Shill } from '@/components/chapters/ch6-shill';
-import { Ch7Heartbeat } from '@/components/chapters/ch7-heartbeat';
-import { Ch8TakeRate } from '@/components/chapters/ch8-take-rate';
-import { Ch9SKU } from '@/components/chapters/ch9-sku';
-import { Ch10Phase } from '@/components/chapters/ch10-phase';
-import { Ch11Evidence } from '@/components/chapters/ch11-evidence';
+import { Ch8Heartbeat } from '@/components/chapters/ch8-heartbeat';
+import { Ch9TakeRate } from '@/components/chapters/ch9-take-rate';
+import { Ch10SKU } from '@/components/chapters/ch10-sku';
+import { Ch11Phase } from '@/components/chapters/ch11-phase';
+import { Ch12Evidence } from '@/components/chapters/ch12-evidence';
 import { BrainPanel } from '@/components/brain-panel';
 import { FooterCredit } from '@/components/footer-credit';
 import { Header } from '@/components/header';
@@ -108,11 +108,11 @@ const REAL_COMPS: Partial<Record<string, StickyStageChapter['Comp']>> = {
   'brain-architecture': Ch4Brain,
   'launch-demo': Ch5Launch,
   'order-shill': Ch6Shill,
-  'heartbeat-demo': Ch7Heartbeat,
-  'take-rate': Ch8TakeRate,
-  'sku-matrix': Ch9SKU,
-  'phase-map': Ch10Phase,
-  evidence: Ch11Evidence,
+  'heartbeat-demo': Ch8Heartbeat,
+  'take-rate': Ch9TakeRate,
+  'sku-matrix': Ch10SKU,
+  'phase-map': Ch11Phase,
+  evidence: Ch12Evidence,
 };
 
 const CHAPTERS: readonly StickyStageChapter[] = CHAPTER_META.map((m, idx) => ({

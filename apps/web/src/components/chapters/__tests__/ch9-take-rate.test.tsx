@@ -1,5 +1,5 @@
 /**
- * Tests for <Ch8TakeRate /> — rebuilt 2026-04-20 around a five-SKU
+ * Tests for <Ch9TakeRate /> — rebuilt 2026-04-20 around a five-SKU
  * revenue mix + a four-stage adoption projection.
  *
  * Contract:
@@ -17,16 +17,16 @@
  */
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Ch8TakeRate } from '../ch8-take-rate.js';
+import { Ch9TakeRate } from '../ch9-take-rate.js';
 
-describe('<Ch8TakeRate>', () => {
+describe('<Ch9TakeRate>', () => {
   it('at p=0 the big number renders "$0.00"', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={0} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={0} />);
     expect(html).toMatch(/class="biz-num-big"[^>]*>\$<span>0\.00<\/span>/);
   });
 
   it('at p=0.6 the big number reaches "$3.20"', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={0.6} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={0.6} />);
     expect(html).toContain('3.20');
     // Cohort caption: 351 launches × 3% survival curve.
     expect(html).toContain('351 launches');
@@ -36,7 +36,7 @@ describe('<Ch8TakeRate>', () => {
   });
 
   it('renders exactly five revenue bars with the new SKU labels', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={1} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={1} />);
     const rows = html.match(/class="biz-bar-row"/g) ?? [];
     expect(rows.length).toBe(5);
     expect(html).toContain('shill order');
@@ -51,7 +51,7 @@ describe('<Ch8TakeRate>', () => {
   });
 
   it('status chips surface one live + one next + two planned + one future', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={1} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={1} />);
     const live = (html.match(/biz-bar-status biz-bar-status-live/g) ?? []).length;
     const next = (html.match(/biz-bar-status biz-bar-status-next/g) ?? []).length;
     const planned = (html.match(/biz-bar-status biz-bar-status-planned/g) ?? []).length;
@@ -63,14 +63,14 @@ describe('<Ch8TakeRate>', () => {
   });
 
   it('dynamic shill pricing hint surfaces the $0.005 – $5 range', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={1} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={1} />);
     expect(html).toContain('$0.005 \u2013 $5 dynamic');
     // Regression: kill any remnants of the flat $0.01 only copy.
     expect(html).not.toContain('0.01 USDC \u00b7 live');
   });
 
   it('each bar uses its design-handoff color (accent / chain-bnb / chain-base / chain-ipfs / fg-secondary)', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={1} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={1} />);
     expect(html).toMatch(/background:var\(--accent\)/);
     expect(html).toMatch(/background:var\(--chain-bnb\)/);
     expect(html).toMatch(/background:var\(--chain-base\)/);
@@ -79,7 +79,7 @@ describe('<Ch8TakeRate>', () => {
   });
 
   it('renders all four projection rows with daily + ARR + footnote columns', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={1} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={1} />);
     const rows = html.match(/class="biz-projection-row"/g) ?? [];
     expect(rows.length).toBe(4);
     // 2026-04-20: the timeline compresses to a 6-month horizon so the
@@ -102,7 +102,7 @@ describe('<Ch8TakeRate>', () => {
   });
 
   it('ships a margin note that mentions the X API cost floor but does not dwell on it', () => {
-    const html = renderToStaticMarkup(<Ch8TakeRate p={1} />);
+    const html = renderToStaticMarkup(<Ch9TakeRate p={1} />);
     expect(html).toMatch(/class="biz-projection-note"/);
     expect(html).toContain('shill price floors at $0.02');
   });

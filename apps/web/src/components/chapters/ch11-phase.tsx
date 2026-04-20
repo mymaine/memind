@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * <Ch10Phase> — phase map + swarm-dialogue chapter of the Memind
- * scrollytelling narrative.
+ * <Ch11Phase> — phase map + swarm-dialogue chapter of the Memind
+ * scrollytelling narrative (memind-scrollytelling-rebuild AC-MSR-9 ch11;
+ * renumbered 2026-04-20 from ch10 when The Saga was inserted at slot 7).
  *
  * Interior progress `p ∈ [0, 1]` drives two stacked animations:
  *
@@ -27,7 +28,7 @@ import type { ReactElement } from 'react';
 import { PixelHumanGlyph, type ShillingMood } from '@/components/pixel-human-glyph';
 import { Label, Mono, clamp, lerp } from './chapter-primitives';
 
-interface Ch10PhaseProps {
+interface Ch11PhaseProps {
   /** Interior progress 0..1 emitted by <StickyStage /> for this chapter. */
   readonly p: number;
 }
@@ -176,7 +177,7 @@ function dealStageFor(p: number): DealStage {
   };
 }
 
-export function Ch10Phase({ p }: Ch10PhaseProps): ReactElement {
+export function Ch11Phase({ p }: Ch11PhaseProps): ReactElement {
   const cursor = lerp(0, 2, clamp(p * 1.2));
   const fillPct = (cursor / 2) * 100;
 
@@ -196,7 +197,7 @@ export function Ch10Phase({ p }: Ch10PhaseProps): ReactElement {
 
   return (
     <div className="ch ch-biz">
-      <Label n={10}>the road</Label>
+      <Label n={11}>the road</Label>
       <div className="phase-track">
         <div className="phase-line">
           <div className="phase-line-fill" style={{ width: `${fillPct}%` }} />

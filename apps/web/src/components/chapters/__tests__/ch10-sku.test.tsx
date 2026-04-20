@@ -1,5 +1,5 @@
 /**
- * Tests for <Ch9SKU /> — rebuilt 2026-04-20 around a five-SKU, 2+2+1
+ * Tests for <Ch10SKU /> — rebuilt 2026-04-20 around a five-SKU, 2+2+1
  * time-oriented matrix.
  *
  * Contract:
@@ -16,11 +16,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Ch9SKU } from '../ch9-sku.js';
+import { Ch10SKU } from '../ch10-sku.js';
 
-describe('<Ch9SKU>', () => {
+describe('<Ch10SKU>', () => {
   it('renders exactly five SKU cards with their codes', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={1} />);
     const cards = html.match(/class="sku-card"/g) ?? [];
     expect(cards.length).toBe(5);
     for (const code of ['SKU-01', 'SKU-02', 'SKU-03', 'SKU-04', 'SKU-05']) {
@@ -29,13 +29,13 @@ describe('<Ch9SKU>', () => {
   });
 
   it('at p=0 every card has opacity:0 (first card too, since (0-0)*2 = 0)', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={0} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={0} />);
     const opacities = html.match(/class="sku-card"[^>]*style="opacity:0/g) ?? [];
     expect(opacities.length).toBe(5);
   });
 
   it('applies the correct tier class to each card (item / bundle / pro / sub / market)', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={1} />);
     expect(html).toContain('sku-tier sku-tier-item');
     expect(html).toContain('sku-tier sku-tier-bundle');
     expect(html).toContain('sku-tier sku-tier-pro');
@@ -46,7 +46,7 @@ describe('<Ch9SKU>', () => {
   });
 
   it('status chips surface one live + one next + two planned + one future', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={1} />);
     const live = (html.match(/class="sku-status sku-status-live"/g) ?? []).length;
     const next = (html.match(/class="sku-status sku-status-next"/g) ?? []).length;
     const planned = (html.match(/class="sku-status sku-status-planned"/g) ?? []).length;
@@ -62,7 +62,7 @@ describe('<Ch9SKU>', () => {
   });
 
   it('surfaces the real dynamic shill pricing instead of the old flat $0.01', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={1} />);
     expect(html).toContain('$0.005 \u2013 $5 / order');
     expect(html).toContain('$9.99 one-time');
     expect(html).toContain('$49 / month retainer');
@@ -73,7 +73,7 @@ describe('<Ch9SKU>', () => {
   });
 
   it('renders the five SKU product names', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={1} />);
     for (const name of ['SHILL.ORDER', 'LAUNCH.BOOST', 'BRAIN.PRO', 'ALPHA.FEED', 'KOL.MARKET']) {
       expect(html).toContain(name);
     }
@@ -83,7 +83,7 @@ describe('<Ch9SKU>', () => {
   });
 
   it('arranges the cards in a 3+2 symmetric matrix (UAT 2026-04-20)', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={1} />);
     // Exactly two rows: a `.sku-row-3` trio of near-term SKUs on top
     // and a `.sku-row-2-center` duo of long-horizon SKUs centred below.
     // The old 2+2+1 layout (with `.sku-row-solo`) is gone.
@@ -95,7 +95,7 @@ describe('<Ch9SKU>', () => {
   });
 
   it('ships an honest footnote about the billing rails being the last mile', () => {
-    const html = renderToStaticMarkup(<Ch9SKU p={1} />);
+    const html = renderToStaticMarkup(<Ch10SKU p={1} />);
     expect(html).toMatch(/class="sku-footnote"/);
     expect(html).toContain('billing rails');
     expect(html).toContain('last mile');

@@ -1,6 +1,6 @@
 /**
- * Tests for <Ch7Heartbeat /> — autonomous-heartbeat chapter
- * (memind-scrollytelling-rebuild AC-MSR-9 ch7).
+ * Tests for <Ch8Heartbeat /> — autonomous-heartbeat chapter
+ * (memind-scrollytelling-rebuild AC-MSR-9 ch8; renumbered 2026-04-20).
  *
  * Ports the interior-progress contract from the design handoff. Two
  * concurrent animations:
@@ -15,14 +15,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Ch7Heartbeat } from '../ch7-heartbeat.js';
+import { Ch8Heartbeat } from '../ch8-heartbeat.js';
 
 // CSS-regression source for UAT issue #9.
 const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../../app/globals.css'), 'utf8');
 
-describe('<Ch7Heartbeat>', () => {
+describe('<Ch8Heartbeat>', () => {
   it('at p=0 no decision row is rendered (ticks = floor(0) = 0)', () => {
-    const html = renderToStaticMarkup(<Ch7Heartbeat p={0} />);
+    const html = renderToStaticMarkup(<Ch8Heartbeat p={0} />);
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(0);
     // Headline + operator.log header still render.
@@ -31,7 +31,7 @@ describe('<Ch7Heartbeat>', () => {
   });
 
   it('at p=0.5 seven decision rows are rendered (ticks = floor(7) = 7)', () => {
-    const html = renderToStaticMarkup(<Ch7Heartbeat p={0.5} />);
+    const html = renderToStaticMarkup(<Ch8Heartbeat p={0.5} />);
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(7);
     // 2026-04-20: the decision list mirrors the real Heartbeat runner
@@ -50,7 +50,7 @@ describe('<Ch7Heartbeat>', () => {
   });
 
   it('at p=1 all eight decision rows are rendered (ticks capped by array length)', () => {
-    const html = renderToStaticMarkup(<Ch7Heartbeat p={1} />);
+    const html = renderToStaticMarkup(<Ch8Heartbeat p={1} />);
     const matches = html.match(/class="hb-op-row"/g) ?? [];
     expect(matches).toHaveLength(8);
     // `sleep 60s` shows up twice (the heartbeat cadence loops), and
@@ -61,7 +61,7 @@ describe('<Ch7Heartbeat>', () => {
   });
 
   it('at p=0.5 the EKG polyline stroke-dashoffset resolves to 500 (1000 - p*1000)', () => {
-    const html = renderToStaticMarkup(<Ch7Heartbeat p={0.5} />);
+    const html = renderToStaticMarkup(<Ch8Heartbeat p={0.5} />);
     // SSR serializes `strokeDashoffset={500}` as `stroke-dashoffset="500"`
     expect(html).toMatch(/stroke-dashoffset="500"/);
     // Base strokeDasharray is always 1000.
@@ -69,7 +69,7 @@ describe('<Ch7Heartbeat>', () => {
   });
 
   it('renders the headline copy "every 60 seconds, the brain wakes up and decides"', () => {
-    const html = renderToStaticMarkup(<Ch7Heartbeat p={0.4} />);
+    const html = renderToStaticMarkup(<Ch8Heartbeat p={0.4} />);
     expect(html).toContain('every 60 seconds');
     expect(html).toContain('wakes up and');
     expect(html).toContain('decides');
