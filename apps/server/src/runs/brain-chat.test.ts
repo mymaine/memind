@@ -469,6 +469,74 @@ describe('runBrainChat', () => {
       expect(creatorReg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
     });
 
+    // Hallucination guard regression. When the Brain loop finishes without
+    // firing a single Brain-level tool call on a turn whose last user message
+    // was a tool-required slash command, the orchestrator emits a warn-level
+    // log so operators can spot fabrication. (The system prompt's HARD
+    // NO-FABRICATION RULES are the primary defence; this is
+    // belt-and-suspenders.)
+    it('warns when a tool-required slash command ends with zero Brain tool calls', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [
+        { role: 'user', content: '/lore 0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd' },
+      ];
+      // Brain loop pretends to finish normally WITHOUT firing any tool call.
+      const impl = async (_params: RunBrainAgentParams): Promise<AgentLoopResult> =>
+        fakeLoopResult();
+
+      await runBrainChat(buildDeps(record.runId, messages, impl));
+
+      const snapshot = runStore.get(record.runId);
+      expect(snapshot).toBeDefined();
+      const warnLogs = snapshot!.logs.filter((l) => l.level === 'warn');
+      expect(warnLogs.length).toBeGreaterThanOrEqual(1);
+      expect(warnLogs.some((l) => l.message.includes('zero tool calls'))).toBe(true);
+      expect(warnLogs.some((l) => l.message.includes('/lore'))).toBe(true);
+    });
+
+    it('does NOT warn on tool-required slash when at least one Brain tool call fires', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [
+        { role: 'user', content: '/lore 0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd' },
+      ];
+      const impl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        // Simulate a tool_use:start on the brain agent — the orchestrator's
+        // guard counts these to decide whether a fabrication warning fires.
+        params.onToolUseStart?.({
+          agent: 'brain',
+          toolName: INVOKE_NARRATOR_TOOL_NAME,
+          toolUseId: 'tu-1',
+          input: { tokenAddr: '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd' },
+          ts: new Date().toISOString(),
+        });
+        return fakeLoopResult();
+      };
+
+      await runBrainChat(buildDeps(record.runId, messages, impl));
+
+      const snapshot = runStore.get(record.runId);
+      expect(snapshot).toBeDefined();
+      const fabricationWarns = snapshot!.logs.filter(
+        (l) => l.level === 'warn' && l.message.includes('zero tool calls'),
+      );
+      expect(fabricationWarns).toHaveLength(0);
+    });
+
+    it('does NOT warn on free-form user turns (no leading slash)', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: 'how is the token doing?' }];
+      const impl = async (_params: RunBrainAgentParams): Promise<AgentLoopResult> =>
+        fakeLoopResult();
+
+      await runBrainChat(buildDeps(record.runId, messages, impl));
+
+      const snapshot = runStore.get(record.runId);
+      const fabricationWarns = snapshot!.logs.filter(
+        (l) => l.level === 'warn' && l.message.includes('zero tool calls'),
+      );
+      expect(fabricationWarns).toHaveLength(0);
+    });
+
     it('narrator sub-registry is not aliased to the brain registry', async () => {
       const record = runStore.create('brain-chat');
       const messages: ChatMessage[] = [{ role: 'user', content: 'hi' }];

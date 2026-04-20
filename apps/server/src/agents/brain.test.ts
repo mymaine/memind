@@ -106,6 +106,33 @@ describe('BRAIN_SYSTEM_PROMPT', () => {
     expect(BRAIN_SYSTEM_PROMPT).toMatch(/\/lore[^\n]*invoke_narrator/);
     expect(BRAIN_SYSTEM_PROMPT).toMatch(/\/heartbeat[^\n]*invoke_heartbeat_tick/);
   });
+
+  // HARD NO-FABRICATION RULES — added after the "Brain skipped tool call and
+  // fabricated Chapter 3/4 CIDs" bug. These rules are the primary defence
+  // against the "LLM sees prior tool output in context and generates a
+  // plausible next one without calling the tool" failure mode. Pin them
+  // here so a future prompt cleanup cannot silently drop the guardrails.
+  it('contains the HARD NO-FABRICATION RULES section', () => {
+    expect(BRAIN_SYSTEM_PROMPT).toContain('HARD NO-FABRICATION RULES');
+  });
+
+  it('forbids reusing prior tool outputs to satisfy a new slash command', () => {
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(
+      /EVERY slash command requires a FRESH tool call in the CURRENT turn/,
+    );
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(
+      /Prior tool outputs[^\n]*NEVER satisfy a new slash command/,
+    );
+  });
+
+  it('explicitly forbids fabricating CIDs, addresses, tx hashes, tweet URLs', () => {
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/NEVER invent IPFS CIDs/);
+    // Coverage of the typical fabrication markers we've actually seen in
+    // regressions: chapter pin announcements + "CID: Qm..." + tweet URLs.
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/Chapter N pinned to IPFS/);
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/CID: Qm/);
+    expect(BRAIN_SYSTEM_PROMPT).toMatch(/Tweet posted/);
+  });
 });
 
 // ─── runBrainAgent wiring ───────────────────────────────────────────────────

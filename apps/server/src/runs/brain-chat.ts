@@ -546,6 +546,17 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
 
   // Drive the Brain agent. Every persona-side event surfaces through the
   // RunStore callbacks so the SSE consumer (routes.ts) sees them end-to-end.
+  // Hallucination guard: count Brain-level tool calls that fired this turn
+  // so we can detect the "LLM saw prior results in context and skipped the
+  // tool call, fabricating plausible output instead" failure mode. If the
+  // final user turn was a slash command that MUST go through a tool
+  // (launch/order/lore/heartbeat/heartbeat-stop/heartbeat-list) but the
+  // Brain emitted zero tool calls this turn, we log loudly so the operator
+  // can see something is wrong — the UI will show the dodgy assistant text
+  // either way, but at least a warn-level log lands in the run's event
+  // stream. The Brain system prompt's HARD NO-FABRICATION RULES are the
+  // primary defence; this guard is belt-and-suspenders.
+  let brainToolCallCount = 0;
   await runBrainAgentFn({
     client: anthropic,
     registry: brainRegistry,
@@ -553,10 +564,42 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     tools,
     model: MODEL,
     onLog: (event) => store.addLog(runId, event),
-    onToolUseStart: (event) => store.addToolUseStart(runId, event),
+    onToolUseStart: (event) => {
+      if (event.agent === 'brain') {
+        brainToolCallCount += 1;
+      }
+      store.addToolUseStart(runId, event);
+    },
     onToolUseEnd: (event) => store.addToolUseEnd(runId, event),
     onAssistantDelta: (event) => store.addAssistantDelta(runId, event),
   });
 
+  const lastUserMessage = validated[validated.length - 1];
+  if (lastUserMessage !== undefined && lastUserMessage.role === 'user') {
+    const trimmed = lastUserMessage.content.trim();
+    if (TOOL_REQUIRED_SLASH_REGEX.test(trimmed) && brainToolCallCount === 0) {
+      const hint =
+        `Brain emitted zero tool calls for a slash command that requires one (message=${JSON.stringify(trimmed.slice(0, 80))}). ` +
+        'Any CIDs, tx hashes, or URLs in the assistant reply are likely fabricated. ' +
+        'See BRAIN_SYSTEM_PROMPT HARD NO-FABRICATION RULES.';
+      store.addLog(runId, {
+        ts: new Date().toISOString(),
+        agent: 'brain',
+        tool: 'runtime',
+        level: 'warn',
+        message: hint,
+      });
+      console.warn(`[brain-chat] ${hint} (runId=${runId})`);
+    }
+  }
+
   store.setStatus(runId, 'done');
 }
+
+/**
+ * Server-side slash commands that MUST be backed by a tool call. Client-only
+ * commands (/status, /help, /reset, /clear) are handled in the web UI before
+ * they ever reach the Brain, so we do NOT include them here.
+ */
+const TOOL_REQUIRED_SLASH_REGEX =
+  /^\/(launch|order|lore|heartbeat|heartbeat-stop|heartbeat-list)(\s|$)/;
