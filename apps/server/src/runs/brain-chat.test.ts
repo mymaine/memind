@@ -15,6 +15,7 @@ import {
   INVOKE_HEARTBEAT_TICK_TOOL_NAME,
   INVOKE_NARRATOR_TOOL_NAME,
   INVOKE_SHILLER_TOOL_NAME,
+  LIST_HEARTBEATS_TOOL_NAME,
   STOP_HEARTBEAT_TOOL_NAME,
 } from '../tools/invoke-persona.js';
 
@@ -129,20 +130,21 @@ describe('runBrainChat', () => {
     await runBrainChat(buildDeps(record.runId, messages, spy));
 
     // runBrainAgent called exactly once with the same messages + the Brain
-    // systemPrompt defaults + the five persona-invoke tools (the four
-    // invoke_* plus stop_heartbeat).
+    // systemPrompt defaults + the six Brain tools (four invoke_* plus
+    // stop_heartbeat and list_heartbeats).
     expect(spy).toHaveBeenCalledTimes(1);
     const call = spy.mock.calls[0]?.[0];
     expect(call).toBeDefined();
     expect(call!.messages).toEqual(messages);
-    // All five Brain tools wired through.
-    expect(call!.tools.length).toBe(5);
+    // All six Brain tools wired through.
+    expect(call!.tools.length).toBe(6);
     const toolNames = call!.tools.map((t) => t.name).sort();
     expect(toolNames).toEqual([
       'invoke_creator',
       'invoke_heartbeat_tick',
       'invoke_narrator',
       'invoke_shiller',
+      'list_heartbeats',
       'stop_heartbeat',
     ]);
 
@@ -372,6 +374,7 @@ describe('runBrainChat', () => {
           INVOKE_HEARTBEAT_TICK_TOOL_NAME,
           INVOKE_NARRATOR_TOOL_NAME,
           INVOKE_SHILLER_TOOL_NAME,
+          LIST_HEARTBEATS_TOOL_NAME,
           STOP_HEARTBEAT_TOOL_NAME,
         ].sort(),
       );

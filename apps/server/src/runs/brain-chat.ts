@@ -59,6 +59,7 @@ import {
   createInvokeHeartbeatTickTool,
   createInvokeNarratorTool,
   createInvokeShillerTool,
+  createListHeartbeatsTool,
   createStopHeartbeatTool,
   type NarratorTokenMeta,
   type ShillerOrderContext,
@@ -522,12 +523,18 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     ...eventForwarders,
   });
 
+  const listHeartbeatsTool = createListHeartbeatsTool({
+    sessionStore: heartbeatSessionStore,
+    ...eventForwarders,
+  });
+
   const tools: ReadonlyArray<AgentTool<unknown, unknown>> = [
     invokeCreatorTool as unknown as AgentTool<unknown, unknown>,
     invokeNarratorTool as unknown as AgentTool<unknown, unknown>,
     invokeShillerTool as unknown as AgentTool<unknown, unknown>,
     invokeHeartbeatTickTool as unknown as AgentTool<unknown, unknown>,
     stopHeartbeatTool as unknown as AgentTool<unknown, unknown>,
+    listHeartbeatsTool as unknown as AgentTool<unknown, unknown>,
   ];
 
   // Drive the Brain agent. Every persona-side event surfaces through the

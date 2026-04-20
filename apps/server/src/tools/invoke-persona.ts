@@ -85,6 +85,7 @@ export const INVOKE_NARRATOR_TOOL_NAME = 'invoke_narrator';
 export const INVOKE_SHILLER_TOOL_NAME = 'invoke_shiller';
 export const INVOKE_HEARTBEAT_TICK_TOOL_NAME = 'invoke_heartbeat_tick';
 export const STOP_HEARTBEAT_TOOL_NAME = 'stop_heartbeat';
+export const LIST_HEARTBEATS_TOOL_NAME = 'list_heartbeats';
 
 // ─── Shared LLM-facing input schemas ────────────────────────────────────────
 //
@@ -120,6 +121,12 @@ export const stopHeartbeatInputSchema = z.object({
   tokenAddr: z.string().regex(evmAddressRegex),
 });
 export type StopHeartbeatInput = z.infer<typeof stopHeartbeatInputSchema>;
+
+// list_heartbeats takes no input; the empty object keeps the tool schema
+// shape uniform with the others and preserves the option to add filters later
+// (e.g. `runningOnly: boolean`) without a breaking change.
+export const listHeartbeatsInputSchema = z.object({});
+export type ListHeartbeatsInput = z.infer<typeof listHeartbeatsInputSchema>;
 
 /**
  * Discriminator the Brain LLM reads back to phrase its reply after an
@@ -170,6 +177,28 @@ export interface StopHeartbeatOutput {
   tokenAddr: string;
   wasRunning: boolean;
   finalSnapshot: StopHeartbeatFinalSnapshot | null;
+}
+
+export interface ListHeartbeatsSessionSnapshot {
+  tokenAddr: string;
+  intervalMs: number;
+  startedAt: string;
+  running: boolean;
+  tickCount: number;
+  successCount: number;
+  errorCount: number;
+  skippedCount: number;
+  lastTickAt: string | null;
+  lastTickId: string | null;
+  lastAction: HeartbeatSessionAction | null;
+  lastError: string | null;
+}
+
+export interface ListHeartbeatsOutput {
+  /** Running sessions only — stopped ones are filtered out because the user
+   * asked "what's alive right now?" not "what ever existed?". */
+  sessions: ListHeartbeatsSessionSnapshot[];
+  totalRunning: number;
 }
 
 // ─── invoke_creator ─────────────────────────────────────────────────────────
@@ -935,6 +964,65 @@ export function createStopHeartbeatTool(
           lastAction: final.lastAction,
           lastError: final.lastError,
         },
+      };
+    },
+  };
+}
+
+// ─── list_heartbeats ────────────────────────────────────────────────────────
+
+export interface CreateListHeartbeatsToolDeps extends PersonaInvokeEventCallbacks {
+  sessionStore: HeartbeatSessionStore;
+}
+
+export function createListHeartbeatsTool(
+  deps: CreateListHeartbeatsToolDeps,
+): AgentTool<ListHeartbeatsInput, ListHeartbeatsOutput> {
+  const { sessionStore, onLog } = deps;
+  return {
+    name: LIST_HEARTBEATS_TOOL_NAME,
+    description:
+      'List every currently running background Heartbeat loop (one per token). Call this when the user asks which heartbeats are active, sends `/heartbeat-list`, or wonders which tokens are consuming resources. ' +
+      'Input: {}. Returns { sessions: [...], totalRunning }. Stopped sessions are filtered out.',
+    inputSchema: listHeartbeatsInputSchema,
+    outputSchema: z.any() as unknown as z.ZodType<ListHeartbeatsOutput>,
+    async execute(): Promise<ListHeartbeatsOutput> {
+      onLog?.({
+        ts: new Date().toISOString(),
+        agent: 'heartbeat',
+        tool: 'list_heartbeats',
+        level: 'info',
+        message: 'list_heartbeats requested',
+      });
+      const sessions = sessionStore
+        .list()
+        .filter((s) => s.running)
+        .map(
+          (s): ListHeartbeatsSessionSnapshot => ({
+            tokenAddr: s.tokenAddr,
+            intervalMs: s.intervalMs,
+            startedAt: s.startedAt,
+            running: s.running,
+            tickCount: s.tickCount,
+            successCount: s.successCount,
+            errorCount: s.errorCount,
+            skippedCount: s.skippedCount,
+            lastTickAt: s.lastTickAt,
+            lastTickId: s.lastTickId,
+            lastAction: s.lastAction,
+            lastError: s.lastError,
+          }),
+        );
+      onLog?.({
+        ts: new Date().toISOString(),
+        agent: 'heartbeat',
+        tool: 'list_heartbeats',
+        level: 'info',
+        message: `list_heartbeats: ${sessions.length.toString()} running`,
+      });
+      return {
+        sessions,
+        totalRunning: sessions.length,
       };
     },
   };

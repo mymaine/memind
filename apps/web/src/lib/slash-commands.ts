@@ -120,6 +120,14 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     argsSchema: heartbeatStopArgsSchema,
   },
   {
+    name: 'heartbeat-list',
+    description: 'List every running background Heartbeat loop',
+    usage: '/heartbeat-list',
+    kind: 'server',
+    scopes: ['heartbeat', 'global'],
+    argsSchema: emptyArgsSchema,
+  },
+  {
     name: 'status',
     description: 'Show the current chat session status',
     usage: '/status',

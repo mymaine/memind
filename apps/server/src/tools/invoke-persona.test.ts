@@ -15,11 +15,13 @@ import {
   createInvokeNarratorTool,
   createInvokeShillerTool,
   createInvokeHeartbeatTickTool,
+  createListHeartbeatsTool,
   createStopHeartbeatTool,
   INVOKE_CREATOR_TOOL_NAME,
   INVOKE_NARRATOR_TOOL_NAME,
   INVOKE_SHILLER_TOOL_NAME,
   INVOKE_HEARTBEAT_TICK_TOOL_NAME,
+  LIST_HEARTBEATS_TOOL_NAME,
   STOP_HEARTBEAT_TOOL_NAME,
 } from './invoke-persona.js';
 import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
@@ -978,5 +980,54 @@ describe('createStopHeartbeatTool', () => {
     expect(() => tool.inputSchema.parse({ tokenAddr: FAKE_TOKEN_ADDR })).not.toThrow();
     expect(() => tool.inputSchema.parse({ tokenAddr: 'bad' })).toThrow();
     expect(() => tool.inputSchema.parse({})).toThrow();
+  });
+});
+
+// ─── list_heartbeats ────────────────────────────────────────────────────────
+
+describe('createListHeartbeatsTool', () => {
+  it('returns every running session and excludes stopped ones', async () => {
+    const sessionStore = new HeartbeatSessionStore();
+    const otherAddr = '0x1111111111111111111111111111111111111111';
+    const stoppedAddr = '0x2222222222222222222222222222222222222222';
+
+    sessionStore.start({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      intervalMs: 60_000,
+      runTick: async () => ({ tickId: 't', tickAt: '2026-04-19T00:00:00.000Z', success: true }),
+    });
+    sessionStore.start({
+      tokenAddr: otherAddr,
+      intervalMs: 30_000,
+      runTick: async () => ({ tickId: 't', tickAt: '2026-04-19T00:00:00.000Z', success: true }),
+    });
+    sessionStore.start({
+      tokenAddr: stoppedAddr,
+      intervalMs: 10_000,
+      runTick: async () => ({ tickId: 't', tickAt: '2026-04-19T00:00:00.000Z', success: true }),
+    });
+    sessionStore.stop(stoppedAddr);
+
+    const tool = createListHeartbeatsTool({ sessionStore });
+    expect(tool.name).toBe(LIST_HEARTBEATS_TOOL_NAME);
+
+    const output = await tool.execute({});
+    expect(output.totalRunning).toBe(2);
+    const addrs = output.sessions.map((s) => s.tokenAddr).sort();
+    expect(addrs).toEqual([FAKE_TOKEN_ADDR.toLowerCase(), otherAddr.toLowerCase()].sort());
+    for (const s of output.sessions) {
+      expect(s.running).toBe(true);
+    }
+
+    sessionStore.clear();
+  });
+
+  it('returns an empty list when nothing is running', async () => {
+    const sessionStore = new HeartbeatSessionStore();
+    const tool = createListHeartbeatsTool({ sessionStore });
+
+    const output = await tool.execute({});
+    expect(output.totalRunning).toBe(0);
+    expect(output.sessions).toEqual([]);
   });
 });

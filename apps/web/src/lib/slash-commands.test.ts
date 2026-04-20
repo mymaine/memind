@@ -31,11 +31,13 @@ describe('SLASH_COMMANDS registry', () => {
     // so ChatGPT muscle-memory users can wipe the transcript with their
     // expected verb. The dispatcher routes both to the same handler.
     // `/heartbeat-stop` stops the background loop started by
-    // `/heartbeat <addr> <intervalMs>`.
+    // `/heartbeat <addr> <intervalMs>`. `/heartbeat-list` reports which
+    // loops are still running after refresh / clear.
     const names = SLASH_COMMANDS.map((c) => c.name).sort();
     expect(names).toEqual([
       'clear',
       'heartbeat',
+      'heartbeat-list',
       'heartbeat-stop',
       'help',
       'launch',
@@ -48,7 +50,14 @@ describe('SLASH_COMMANDS registry', () => {
     const serverCmds = SLASH_COMMANDS.filter((c) => c.kind === 'server')
       .map((c) => c.name)
       .sort();
-    expect(serverCmds).toEqual(['heartbeat', 'heartbeat-stop', 'launch', 'lore', 'order']);
+    expect(serverCmds).toEqual([
+      'heartbeat',
+      'heartbeat-list',
+      'heartbeat-stop',
+      'launch',
+      'lore',
+      'order',
+    ]);
 
     const clientCmds = SLASH_COMMANDS.filter((c) => c.kind === 'client')
       .map((c) => c.name)
