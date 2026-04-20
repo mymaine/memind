@@ -43,8 +43,8 @@ hack-bnb-fourmeme-agent-creator/
 │   │       │   ├── market/page.tsx   # 307 redirect → /#order-shill (legacy URL kept)
 │   │       │   └── demo/glyph/       # Internal QA surface for pixel-human moods
 │   │       ├── components/
-│   │       │   ├── chapters/         # Ch1-Ch11 real components (hero / problem /
-│   │       │   │                     # solution / brain / launch / shill /
+│   │       │   ├── chapters/         # Ch1-Ch12 real components (hero / problem /
+│   │       │   │                     # solution / brain / launch / shill / saga /
 │   │       │   │                     # heartbeat / take-rate / sku / phase / evidence)
 │   │       │   ├── brain-panel.tsx   # Right-side slide-in conversational surface
 │   │       │   ├── brain-chat*.tsx   # Chat UI, slash palette, message grouping
