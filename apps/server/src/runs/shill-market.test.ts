@@ -78,7 +78,7 @@ describe('runShillMarketDemo', () => {
     return async (deps) => {
       const paidTxHash = `0x${'0'.repeat(64)}`;
       const paidAmountUsdc = '0.01';
-      deps.shillOrderStore.enqueue({
+      await deps.shillOrderStore.enqueue({
         orderId,
         targetTokenAddr: deps.tokenAddr,
         ...(deps.creatorBrief !== undefined ? { creatorBrief: deps.creatorBrief } : {}),
@@ -93,7 +93,7 @@ describe('runShillMarketDemo', () => {
   it('happy path: lore present, shiller posts, artifact sequence matches', async () => {
     // Seed lore so the orchestrator has a real snippet to forward.
     const LORE_TEXT = 'The bats rose from the cavern at dusk, hunger sharp as moonlight.';
-    loreStore.upsert({
+    await loreStore.upsert({
       tokenAddr: TOKEN_ADDR_LOWER,
       chapterNumber: 1,
       chapterText: LORE_TEXT,
@@ -141,7 +141,7 @@ describe('runShillMarketDemo', () => {
     expect(call?.loreSnippet).toBe(LORE_TEXT);
 
     // Order state: processing → done with tweet metadata.
-    const orderAfter = shillOrderStore.getById(ORDER_ID);
+    const orderAfter = await shillOrderStore.getById(ORDER_ID);
     expect(orderAfter?.status).toBe('done');
     expect(orderAfter?.tweetId).toBe('t1');
     expect(orderAfter?.tweetUrl).toBe('https://x.com/shiller/status/t1');
@@ -172,7 +172,7 @@ describe('runShillMarketDemo', () => {
   });
 
   it('shiller skip path: order moves to failed, no shill-tweet artifact', async () => {
-    loreStore.upsert({
+    await loreStore.upsert({
       tokenAddr: TOKEN_ADDR_LOWER,
       chapterNumber: 1,
       chapterText: 'The cavern stayed silent.',
@@ -213,7 +213,7 @@ describe('runShillMarketDemo', () => {
       }),
     ).resolves.toBeUndefined();
 
-    const orderAfter = shillOrderStore.getById(ORDER_ID);
+    const orderAfter = await shillOrderStore.getById(ORDER_ID);
     expect(orderAfter?.status).toBe('failed');
     expect(orderAfter?.errorMessage).toBe('guard exhausted after 2 attempts');
 
@@ -246,7 +246,7 @@ describe('runShillMarketDemo', () => {
       observedPaymentTokenAddr = deps.tokenAddr;
       const paidTxHash = `0x${'0'.repeat(64)}`;
       const paidAmountUsdc = '0.01';
-      deps.shillOrderStore.enqueue({
+      await deps.shillOrderStore.enqueue({
         orderId: ORDER_ID,
         targetTokenAddr: deps.tokenAddr,
         paidTxHash,
@@ -307,14 +307,14 @@ describe('runShillMarketDemo', () => {
     }
 
     // findByTokenAddr(LOWER) must return the order — store key must be lowercase.
-    const found = shillOrderStore.findByTokenAddr(LOWER);
+    const found = await shillOrderStore.findByTokenAddr(LOWER);
     expect(found.map((o) => o.orderId)).toContain(ORDER_ID);
-    const entry = shillOrderStore.getById(ORDER_ID);
+    const entry = await shillOrderStore.getById(ORDER_ID);
     expect(entry?.targetTokenAddr).toBe(LOWER);
   });
 
   it('threads includeFourMemeUrl=true from args through to the shiller phase deps', async () => {
-    loreStore.upsert({
+    await loreStore.upsert({
       tokenAddr: TOKEN_ADDR_LOWER,
       chapterNumber: 1,
       chapterText: 'lore body',
@@ -365,7 +365,7 @@ describe('runShillMarketDemo', () => {
   });
 
   it('omits includeFourMemeUrl when args do not set it (safe-mode default)', async () => {
-    loreStore.upsert({
+    await loreStore.upsert({
       tokenAddr: TOKEN_ADDR_LOWER,
       chapterNumber: 1,
       chapterText: 'lore body',
@@ -465,7 +465,7 @@ describe('runShillMarketDemo', () => {
     expect(observedLore ?? '').not.toMatch(/www\./i);
 
     // Happy flow still completes end-to-end.
-    const orderAfter = shillOrderStore.getById(ORDER_ID);
+    const orderAfter = await shillOrderStore.getById(ORDER_ID);
     expect(orderAfter?.status).toBe('done');
   });
 });

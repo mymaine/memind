@@ -220,7 +220,7 @@ export async function runNarratorAgent(
 
   const result = expectExtendLoreOutput(call.output);
 
-  store.upsert({
+  await store.upsert({
     tokenAddr,
     chapterNumber: result.chapterNumber,
     chapterText: result.chapterText,
@@ -236,7 +236,7 @@ export async function runNarratorAgent(
   });
 
   // Return the normalised tokenAddr so the caller can trust it as a key.
-  const stored = store.getLatest(tokenAddr);
+  const stored = await store.getLatest(tokenAddr);
   if (!stored) {
     // Should be unreachable — we just upserted. Guard against a future
     // LoreStore bug rather than silently returning undefined.
@@ -251,7 +251,7 @@ export async function runNarratorAgent(
     const anchorId = computeAnchorId(stored.tokenAddr, stored.chapterNumber);
     const contentHash = computeContentHash(stored.tokenAddr, stored.chapterNumber, stored.ipfsHash);
     const ts = new Date().toISOString();
-    anchorLedger.append({
+    await anchorLedger.append({
       anchorId,
       tokenAddr: stored.tokenAddr,
       chapterNumber: stored.chapterNumber,

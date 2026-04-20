@@ -354,7 +354,7 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
           contentHash,
           deps: { privateKey: deployerPk as `0x${string}` },
         });
-        anchorLedger.markOnChain(anchorId, settlement);
+        await anchorLedger.markOnChain(anchorId, settlement);
         store.addArtifact(runId, {
           kind: 'lore-anchor',
           anchorId,

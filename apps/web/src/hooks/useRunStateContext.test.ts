@@ -28,7 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import { IDLE_STATE, type RunState } from './useRun-state.js';
-import { mergeRunState } from './useRunStateContext.js';
+import { dedupeArtifacts, mergeRunState } from './useRunStateContext.js';
 
 function makeLog(msg: string): LogEvent {
   return {
@@ -113,6 +113,107 @@ describe('mergeRunState — idle + extras (BrainChat-only scenario)', () => {
     const merged = mergeRunState(IDLE_STATE, [], [extra]);
     expect(merged.phase).toBe('idle');
     expect(merged.artifacts).toEqual([extra]);
+  });
+});
+
+describe('mergeRunState — natural-key dedupe', () => {
+  function shillOrder(status: 'queued' | 'processing' | 'done', ts: string): Artifact {
+    return {
+      kind: 'shill-order',
+      orderId: 'ord-1',
+      targetTokenAddr: '0x1111111111111111111111111111111111111111',
+      paidTxHash: `0x${'0'.repeat(64)}`,
+      paidAmountUsdc: '0.01',
+      status,
+      ts,
+    };
+  }
+
+  it('published queued + mirror done → single row, done wins (SSE first, fetch second)', () => {
+    const queued = shillOrder('queued', '2026-04-20T00:00:00.000Z');
+    const done = shillOrder('done', '2026-04-20T00:00:05.000Z');
+    const running: RunState = {
+      phase: 'running',
+      logs: [],
+      artifacts: [queued],
+      toolCalls: IDLE_STATE.toolCalls,
+      assistantText: IDLE_STATE.assistantText,
+      runId: 'run-1',
+      error: null,
+    };
+    const merged = mergeRunState(running, [], [done]);
+    const orders = merged.artifacts.filter((a) => a.kind === 'shill-order');
+    expect(orders).toHaveLength(1);
+    expect(orders[0]?.kind === 'shill-order' ? orders[0].status : '').toBe('done');
+  });
+
+  it('fetch-first + SSE-later → single row, SSE wins (fetch in mirror, SSE re-publishes)', () => {
+    const done = shillOrder('done', '2026-04-20T00:00:05.000Z');
+    const processing = shillOrder('processing', '2026-04-20T00:00:02.000Z');
+    // Simulate: fetch lands in mirror first; a re-publish brings processing
+    // through the published channel second. Merge order puts published
+    // before mirror, so the mirror's `done` wins by position.
+    const running: RunState = {
+      phase: 'running',
+      logs: [],
+      artifacts: [processing],
+      toolCalls: IDLE_STATE.toolCalls,
+      assistantText: IDLE_STATE.assistantText,
+      runId: 'run-1',
+      error: null,
+    };
+    const merged = mergeRunState(running, [], [done]);
+    const orders = merged.artifacts.filter((a) => a.kind === 'shill-order');
+    expect(orders).toHaveLength(1);
+    expect(orders[0]?.kind === 'shill-order' ? orders[0].status : '').toBe('done');
+  });
+
+  it('heartbeat ticks are keyless and stack (null natural key preserved)', () => {
+    const tick: Artifact = {
+      kind: 'heartbeat-tick',
+      tickNumber: 1,
+      totalTicks: 5,
+      decisions: ['check'],
+    };
+    const running: RunState = {
+      phase: 'running',
+      logs: [],
+      artifacts: [tick],
+      toolCalls: IDLE_STATE.toolCalls,
+      assistantText: IDLE_STATE.assistantText,
+      runId: 'run-1',
+      error: null,
+    };
+    const merged = mergeRunState(running, [], [tick, tick]);
+    expect(merged.artifacts.filter((a) => a.kind === 'heartbeat-tick')).toHaveLength(3);
+  });
+});
+
+describe('dedupeArtifacts (helper)', () => {
+  it('returns the array unchanged when every natural key is unique', () => {
+    const a: Artifact = {
+      kind: 'lore-cid',
+      cid: 'cid-a',
+      gatewayUrl: 'https://ipfs/cid-a',
+      author: 'creator',
+    };
+    const b: Artifact = {
+      kind: 'lore-cid',
+      cid: 'cid-b',
+      gatewayUrl: 'https://ipfs/cid-b',
+      author: 'narrator',
+    };
+    expect(dedupeArtifacts([a, b])).toEqual([a, b]);
+  });
+
+  it('null-keyed entries stack regardless of duplicates', () => {
+    const tick: Artifact = {
+      kind: 'heartbeat-tick',
+      tickNumber: 1,
+      totalTicks: 5,
+      decisions: ['x'],
+    };
+    expect(dedupeArtifacts([tick, tick, tick])).toHaveLength(3);
   });
 });
 

@@ -43,6 +43,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
+import { deriveNaturalKey } from '@hack-fourmeme/shared';
 import { IDLE_STATE, type RunState } from './useRun-state';
 
 interface RunStateContextValue {
@@ -72,14 +73,20 @@ export const RunStateContext = createContext<RunStateContextValue | null>(null);
  *     BrainChat's own nested UI.
  *   - logs = [...published.logs, ...extraLogs]. Mirror entries always
  *     render after the published ones in insertion order.
- *   - artifacts = [...published.artifacts, ...extraArtifacts]. Same order.
+ *   - artifacts: natural-key dedupe. Published rows flow through first (so
+ *     a page-owned `useRun()` still wins ordering for matching kinds),
+ *     then mirror rows. For each artifact with a non-null natural key the
+ *     later writer replaces the earlier one — this is how a
+ *     SSE-fed `shill-order(queued)` can be upgraded by a `/api/artifacts`-
+ *     hydrated `shill-order(done)` without rendering a duplicate. Artifacts
+ *     whose natural key is `null` (heartbeat-tick / heartbeat-decision)
+ *     always fall through and stack.
  *
  * Edge case: IDLE_STATE's TypeScript discriminant pins logs/artifacts to
  * `[]`, but we still want the FooterDrawer to render BrainChat-only
  * activity when the page never called `useRun()`. We widen the returned
  * shape to `RunState` by casting through the idle discriminant — the
- * runtime carries whatever arrays we pass. Callers (FooterDrawer tabs)
- * already treat logs/artifacts as readonly arrays.
+ * runtime carries whatever arrays we pass.
  */
 export function mergeRunState(
   published: RunState,
@@ -90,16 +97,44 @@ export function mergeRunState(
     return published;
   }
   const mergedLogs: LogEvent[] = [...published.logs, ...extraLogs];
-  const mergedArtifacts: Artifact[] = [...published.artifacts, ...extraArtifacts];
-  // Preserve the published phase + all non-collection fields by spreading,
-  // then overwrite logs / artifacts. The cast to `RunState` is the only
-  // safe path because the TS union ties logs:[] to phase:'idle'; the
-  // runtime shape is what consumers actually read.
+  const mergedArtifacts = dedupeArtifacts([...published.artifacts, ...extraArtifacts]);
   return {
     ...published,
     logs: mergedLogs,
     artifacts: mergedArtifacts,
   } as RunState;
+}
+
+/**
+ * Natural-key dedupe for an artifact sequence. Later entries with the same
+ * natural key replace earlier ones (status transitions, layer-2 anchor
+ * stamping, meme-image metadata fills). Null-keyed entries are always kept
+ * so heartbeat ticks / decisions stack verbatim.
+ *
+ * Exported so `useBrainChat` / other consumers can use the same dedupe
+ * logic on their own internal collections without re-implementing the
+ * key derivation.
+ */
+export function dedupeArtifacts(input: readonly Artifact[]): Artifact[] {
+  const seen = new Map<string, number>();
+  const out: Artifact[] = [];
+  for (const artifact of input) {
+    const key = deriveNaturalKey(artifact);
+    if (key === null) {
+      out.push(artifact);
+      continue;
+    }
+    const existingIdx = seen.get(key);
+    if (existingIdx === undefined) {
+      seen.set(key, out.length);
+      out.push(artifact);
+    } else {
+      // Later writer wins — replace in place so ordering relative to other
+      // artifacts stays stable (the earliest appearance anchors the slot).
+      out[existingIdx] = artifact;
+    }
+  }
+  return out;
 }
 
 export function RunStateProvider({ children }: { children: ReactNode }): ReactElement {

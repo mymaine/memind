@@ -718,7 +718,7 @@ describe('createInvokeHeartbeatTickTool', () => {
     expect(output.successCount).toBe(1);
     expect(output.lastTickId).toBe('tick_abc');
     // No session created.
-    expect(sessionStore.get(FAKE_TOKEN_ADDR)).toBeUndefined();
+    expect(await sessionStore.get(FAKE_TOKEN_ADDR)).toBeUndefined();
   });
 
   it('background-started mode: no session + intervalMs → start session and run one immediate tick', async () => {
@@ -759,12 +759,12 @@ describe('createInvokeHeartbeatTickTool', () => {
     expect(output.tickCount).toBeGreaterThanOrEqual(1);
     expect(output.successCount).toBeGreaterThanOrEqual(1);
     // Session exists in the store after execute.
-    const snap = sessionStore.get(FAKE_TOKEN_ADDR);
+    const snap = await sessionStore.get(FAKE_TOKEN_ADDR);
     expect(snap).toBeDefined();
     expect(snap!.running).toBe(true);
 
     // Cleanup to avoid timer leaks across tests.
-    sessionStore.clear();
+    await sessionStore.clear();
   });
 
   it('background-already-running mode: session exists + no intervalMs → return snapshot, no extra tick', async () => {
@@ -961,9 +961,9 @@ describe('createStopHeartbeatTool', () => {
     expect(output.finalSnapshot!.lastAction).toBe('post');
 
     // Session really stopped.
-    expect(sessionStore.get(FAKE_TOKEN_ADDR)?.running).toBe(false);
+    expect((await sessionStore.get(FAKE_TOKEN_ADDR))?.running).toBe(false);
 
-    sessionStore.clear();
+    await sessionStore.clear();
   });
 
   it('returns wasRunning=false + finalSnapshot=null when no session exists', async () => {

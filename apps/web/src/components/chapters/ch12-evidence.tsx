@@ -34,11 +34,12 @@
  * without an external destination (`heartbeat-tick` / `heartbeat-decision`)
  * are rendered as non-interactive <div>s.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { Artifact } from '@hack-fourmeme/shared';
+import { artifactSchema } from '@hack-fourmeme/shared';
 import { PixelHumanGlyph } from '@/components/pixel-human-glyph';
-import { useRunState } from '@/hooks/useRunStateContext';
+import { useRunState, useRunStateMirror } from '@/hooks/useRunStateContext';
 import { BigHeadline, Label, Mono, clamp } from './chapter-primitives';
 
 interface Ch12EvidenceProps {
@@ -507,7 +508,42 @@ const TAB_COLOR: Record<EvidenceTab, string> = {
 export function Ch12Evidence({ p }: Ch12EvidenceProps): ReactElement {
   const runState = useRunState();
   const artifacts = runState.artifacts;
+  const mirror = useRunStateMirror();
   const [activeTab, setActiveTab] = useState<EvidenceTab>('BNB');
+
+  // Ch12 hydration: on first real chapter entry (`p > 0`) fetch the last 20
+  // artifacts from `/api/artifacts` and splice them into the mirror so the
+  // reviewer sees real evidence even before any run has kicked off. `useRef`
+  // guards against React 19 StrictMode's double-invoke and against multiple
+  // re-entries as the user scrolls in-and-out of the chapter. Any failure
+  // (endpoint down, network error, schema drift) is swallowed silently —
+  // the chapter already has a sample-padded fallback that looks identical
+  // apart from the small `sample` chip.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    if (p <= 0) return;
+    hydratedRef.current = true;
+    const controller = new AbortController();
+    const run = async (): Promise<void> => {
+      try {
+        const res = await fetch('/api/artifacts?limit=20', { signal: controller.signal });
+        if (!res.ok) return;
+        const body = (await res.json()) as { artifacts?: unknown };
+        if (!Array.isArray(body.artifacts)) return;
+        for (const raw of body.artifacts) {
+          const parsed = artifactSchema.safeParse(raw);
+          if (parsed.success) {
+            mirror.pushArtifact(parsed.data);
+          }
+        }
+      } catch {
+        // Silent fail-soft — fallback rows stay visible.
+      }
+    };
+    void run();
+    return () => controller.abort();
+  }, [p, mirror]);
 
   const tabRows = useMemo(() => {
     return {

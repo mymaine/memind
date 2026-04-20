@@ -166,34 +166,37 @@ function buildRoutesConfig(
 export function createLoreHandler(opts: { loreStore?: LoreStore } = {}): RequestHandler {
   const { loreStore } = opts;
   return (req: Request, res: Response): void => {
-    const tokenAddr = req.params.tokenAddr;
-    if (loreStore && typeof tokenAddr === 'string') {
-      const entry = loreStore.getLatest(tokenAddr);
-      if (entry) {
-        res.json({
-          tokenAddr: entry.tokenAddr,
-          chapterNumber: entry.chapterNumber,
-          lore: entry.chapterText,
-          ipfsCid: entry.ipfsHash,
-          ipfsUri: entry.ipfsUri,
-          publishedAt: entry.publishedAt,
-        });
-        return;
+    void (async () => {
+      const tokenAddr = req.params.tokenAddr;
+      if (loreStore && typeof tokenAddr === 'string') {
+        const entry = await loreStore.getLatest(tokenAddr);
+        if (entry) {
+          res.json({
+            tokenAddr: entry.tokenAddr,
+            chapterNumber: entry.chapterNumber,
+            lore: entry.chapterText,
+            ipfsCid: entry.ipfsHash,
+            ipfsUri: entry.ipfsUri,
+            publishedAt: entry.publishedAt,
+          });
+          return;
+        }
       }
-    }
-    // Phase 2 fallback — wording kept byte-identical to the original handler
-    // so any downstream assertion on the mock lore stays valid.
-    //
-    // Normalise tokenAddr to lowercase so this branch matches the store-hit
-    // branch's shape (LoreStore keys are always lowercase). Without this,
-    // two identical requests could return different casings depending on
-    // whether the store was warm — a subtle source of downstream drift.
-    const normalisedAddr = typeof tokenAddr === 'string' ? tokenAddr.toLowerCase() : tokenAddr;
-    res.json({
-      tokenAddr: normalisedAddr,
-      lore: `Mock lore chapter for token ${normalisedAddr ?? '<missing>'}. Real IPFS lore arrives in Phase 3 once the Narrator agent is wired.`,
-      ipfsCid: 'bafybeigdyrztXXXXmockloreCIDplaceholderPhase2XXXXXXXXXXXXXXXX',
-    });
+      // Phase 2 fallback — wording kept byte-identical to the original
+      // handler so any downstream assertion on the mock lore stays valid.
+      //
+      // Normalise tokenAddr to lowercase so this branch matches the
+      // store-hit branch's shape (LoreStore keys are always lowercase).
+      // Without this, two identical requests could return different
+      // casings depending on whether the store was warm — a subtle source
+      // of downstream drift.
+      const normalisedAddr = typeof tokenAddr === 'string' ? tokenAddr.toLowerCase() : tokenAddr;
+      res.json({
+        tokenAddr: normalisedAddr,
+        lore: `Mock lore chapter for token ${normalisedAddr ?? '<missing>'}. Real IPFS lore arrives in Phase 3 once the Narrator agent is wired.`,
+        ipfsCid: 'bafybeigdyrztXXXXmockloreCIDplaceholderPhase2XXXXXXXXXXXXXXXX',
+      });
+    })();
   };
 }
 
@@ -248,33 +251,41 @@ export function createShillHandler(
 ): RequestHandler {
   const { shillOrderStore } = opts;
   return (req: Request, res: Response): void => {
-    const rawTokenAddr = typeof req.params.tokenAddr === 'string' ? req.params.tokenAddr : '';
-    const targetTokenAddr = rawTokenAddr.toLowerCase();
+    void (async () => {
+      const rawTokenAddr = typeof req.params.tokenAddr === 'string' ? req.params.tokenAddr : '';
+      const targetTokenAddr = rawTokenAddr.toLowerCase();
 
-    const body = (req.body ?? {}) as { creatorBrief?: unknown };
-    const creatorBrief =
-      typeof body.creatorBrief === 'string' && body.creatorBrief.length > 0
-        ? body.creatorBrief
-        : undefined;
+      const body = (req.body ?? {}) as { creatorBrief?: unknown };
+      const creatorBrief =
+        typeof body.creatorBrief === 'string' && body.creatorBrief.length > 0
+          ? body.creatorBrief
+          : undefined;
 
-    const orderId = randomUUID();
+      const orderId = randomUUID();
 
-    if (shillOrderStore) {
-      shillOrderStore.enqueue({
+      if (shillOrderStore) {
+        try {
+          await shillOrderStore.enqueue({
+            orderId,
+            targetTokenAddr,
+            ...(creatorBrief !== undefined ? { creatorBrief } : {}),
+            paidTxHash: PENDING_PAID_TX_HASH,
+            paidAmountUsdc: '0.01',
+            ts: new Date().toISOString(),
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          res.status(500).json({ error: `shill enqueue failed: ${message}` });
+          return;
+        }
+      }
+
+      res.status(200).json({
         orderId,
+        status: 'queued',
         targetTokenAddr,
-        creatorBrief,
-        paidTxHash: PENDING_PAID_TX_HASH,
-        paidAmountUsdc: '0.01',
-        ts: new Date().toISOString(),
+        estimatedReadyMs: 10_000,
       });
-    }
-
-    res.status(200).json({
-      orderId,
-      status: 'queued',
-      targetTokenAddr,
-      estimatedReadyMs: 10_000,
-    });
+    })();
   };
 }

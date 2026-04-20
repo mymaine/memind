@@ -158,7 +158,7 @@ describe('runNarratorAgent', () => {
     // Address is stored in normalised lowercase form.
     expect(output.tokenAddr).toBe(TOKEN_ADDR);
 
-    const stored = store.getLatest(TOKEN_ADDR);
+    const stored = await store.getLatest(TOKEN_ADDR);
     expect(stored).toBeDefined();
     expect(stored?.chapterNumber).toBe(1);
     expect(stored?.ipfsHash).toBe('bafkrei-ch1');
@@ -207,7 +207,7 @@ describe('runNarratorAgent', () => {
     });
 
     expect(output.chapterNumber).toBe(7);
-    expect(store.getLatest(TOKEN_ADDR)?.chapterNumber).toBe(7);
+    expect((await store.getLatest(TOKEN_ADDR))?.chapterNumber).toBe(7);
   });
 
   it('continues a multi-chapter timeline by defaulting target to previousChapters.length + 1', async () => {
@@ -253,7 +253,7 @@ describe('runNarratorAgent', () => {
     // the requested target — but it DOES surface the "3 prior chapters"
     // context in the user prompt so the model has the continuation hint.
     expect(executeSpy).toHaveBeenCalledTimes(1);
-    expect(store.getLatest(TOKEN_ADDR)?.chapterNumber).toBe(4);
+    expect((await store.getLatest(TOKEN_ADDR))?.chapterNumber).toBe(4);
   });
 
   it('throws when the agent loop ends without invoking extend_lore', async () => {
@@ -275,7 +275,7 @@ describe('runNarratorAgent', () => {
     ).rejects.toThrow(/extend_lore/);
 
     expect(executeSpy).not.toHaveBeenCalled();
-    expect(store.size()).toBe(0);
+    expect(await store.size()).toBe(0);
   });
 
   it('throws when the extend_lore call reports an error via is_error', async () => {
@@ -332,7 +332,7 @@ describe('runNarratorAgent', () => {
       }),
     ).rejects.toThrow(/pinata is down|extend_lore.*error/i);
 
-    expect(store.size()).toBe(0);
+    expect(await store.size()).toBe(0);
   });
 
   it('throws when extend_lore was invoked with a tokenAddr different from the requested one', async () => {
@@ -434,8 +434,8 @@ describe('runNarratorAgent', () => {
     // Ledger row exists with the expected contentHash + anchorId shape.
     const expectedAnchorId = computeAnchorId(TOKEN_ADDR, 3);
     const expectedHash = computeContentHash(TOKEN_ADDR, 3, 'bafkrei-ch3');
-    expect(ledger.size()).toBe(1);
-    const row = ledger.get(expectedAnchorId);
+    expect(await ledger.size()).toBe(1);
+    const row = await ledger.get(expectedAnchorId);
     expect(row).toBeDefined();
     expect(row?.contentHash).toBe(expectedHash);
     expect(row?.chapterNumber).toBe(3);
@@ -578,8 +578,8 @@ describe('runNarratorAgent', () => {
 
     // One ledger slot (same anchorId), but two artifact emissions — the event
     // stream is append-only; the UI layer does its own dedup by anchorId.
-    expect(ledger.size()).toBe(1);
-    expect(ledger.get(computeAnchorId(TOKEN_ADDR, 1))?.loreCid).toBe('second-cid');
+    expect(await ledger.size()).toBe(1);
+    expect((await ledger.get(computeAnchorId(TOKEN_ADDR, 1)))?.loreCid).toBe('second-cid');
 
     const anchors = artifacts.filter((a) => a.kind === 'lore-anchor');
     expect(anchors).toHaveLength(2);

@@ -28,6 +28,7 @@ import type {
   ToolUseEndEventPayload,
   ToolUseStartEventPayload,
 } from '@hack-fourmeme/shared';
+import type { ArtifactLogStore } from '../state/artifact-log-store.js';
 
 export interface RunRecord {
   runId: string;
@@ -93,6 +94,12 @@ const CHANNEL = 'event';
 export class RunStore {
   private readonly records = new Map<string, RunRecord>();
   private readonly emitters = new Map<string, EventEmitter>();
+  /**
+   * Optional persistent log the server `index.ts` wires in at boot. Every
+   * `addArtifact` fans out a fire-and-forget append so a restart survives
+   * with the last 20+ evidence rows intact for Ch12 hydration.
+   */
+  private artifactLog: ArtifactLogStore | undefined;
 
   /**
    * Create a new run in `pending` state. Generates a UUID-flavoured runId
@@ -193,6 +200,25 @@ export class RunStore {
     if (!record) return;
     record.artifacts.push(artifact);
     this.emit(runId, { type: 'artifact', data: artifact });
+    // Fire-and-forget persistence hook. The SSE broadcast above is the
+    // demo's hot path; DB latency (5-50ms, occasional spike) never rides
+    // on the same tick. A crash mid-append only costs the last few rows
+    // from the restart-history view — in-flight run is unaffected.
+    if (this.artifactLog !== undefined) {
+      void this.artifactLog.append(artifact, runId).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[artifacts] append failed (non-fatal): ${message}`);
+      });
+    }
+  }
+
+  /**
+   * Wire a persistent `ArtifactLogStore` so every subsequent `addArtifact`
+   * also writes through to Postgres. Called once from `index.ts` boot after
+   * the pool is ready. Tests leave this unset and run with in-memory only.
+   */
+  setArtifactLog(store: ArtifactLogStore): void {
+    this.artifactLog = store;
   }
 
   // ─── Fine-grained streaming events (V2-P2) ───────────────────────────────

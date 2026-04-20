@@ -127,7 +127,7 @@ export const stubCreatorPaymentPhase: CreatorPaymentPhaseFn = async (deps) => {
   // but we re-normalise defensively so a custom `creatorPaymentImpl` that
   // calls `stubCreatorPaymentPhase` with mixed-case input cannot reintroduce
   // casing drift.
-  shillOrderStore.enqueue({
+  await shillOrderStore.enqueue({
     orderId,
     targetTokenAddr: tokenAddr.toLowerCase(),
     ...(creatorBrief !== undefined ? { creatorBrief } : {}),
@@ -278,13 +278,13 @@ function orchestratorLog(
  * given token yet (the demo must still flow end-to-end, and a URL-free stub
  * will not trip the `post_shill_for` content guard).
  */
-function resolveLoreSnippet(
+async function resolveLoreSnippet(
   loreStore: LoreStore,
   tokenAddr: string,
   store: RunStore,
   runId: string,
-): string {
-  const latest = loreStore.getLatest(tokenAddr);
+): Promise<string> {
+  const latest = await loreStore.getLatest(tokenAddr);
   if (latest !== undefined) {
     return latest.chapterText;
   }
@@ -364,14 +364,14 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
   store.addArtifact(runId, queuedArtifact);
 
   // ─── Phase 2: Lore pull ────────────────────────────────────────────────
-  const loreSnippet = resolveLoreSnippet(loreStore, tokenAddrLower, store, runId);
+  const loreSnippet = await resolveLoreSnippet(loreStore, tokenAddrLower, store, runId);
 
   // ─── Phase 3: Pull this order off the queue ────────────────────────────
   // `pullById` flips only the known orderId from queued → processing, which
   // avoids stranding any orphan queued orders that other producers might have
   // enqueued between phases. Atomicity still holds: a second call for the
   // same id returns undefined because the entry is no longer `queued`.
-  const order = shillOrderStore.pullById(payment.orderId);
+  const order = await shillOrderStore.pullById(payment.orderId);
   if (order === undefined) {
     throw new Error(
       `runShillMarketDemo: payment enqueued order ${payment.orderId} but pullById did not return it (missing or not queued)`,
@@ -403,7 +403,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     shillerResult.tweetUrl !== undefined &&
     shillerResult.tweetText !== undefined
   ) {
-    shillOrderStore.markDone(order.orderId, {
+    await shillOrderStore.markDone(order.orderId, {
       tweetId: shillerResult.tweetId,
       tweetUrl: shillerResult.tweetUrl,
     });
@@ -434,7 +434,7 @@ export async function runShillMarketDemo(deps: RunShillMarketDemoDeps): Promise<
     // orchestrator must mark the order failed and keep flowing (skip is a
     // business path, not an exception — see ShillerAgentOutput docs).
     const errorMessage = shillerResult.errorMessage ?? 'shiller skipped without error detail';
-    shillOrderStore.markFailed(order.orderId, errorMessage);
+    await shillOrderStore.markFailed(order.orderId, errorMessage);
     const failedArtifact: Artifact = {
       kind: 'shill-order',
       orderId: order.orderId,

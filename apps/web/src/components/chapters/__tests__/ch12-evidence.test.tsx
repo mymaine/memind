@@ -30,6 +30,20 @@ import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS, IDLE_STATE } from '@/hooks/useR
 const mockUseRunState = vi.fn<() => RunState>();
 vi.mock('@/hooks/useRunStateContext', () => ({
   useRunState: () => mockUseRunState(),
+  // Persistence migration adds a hydration fetch inside <Ch12Evidence>. The
+  // mirror surface is not relevant to these DOM-shape tests, so we hand
+  // back no-op stubs to keep the component happy when it mounts under SSR.
+  useRunStateMirror: () => ({
+    pushLog: () => {
+      /* no-op */
+    },
+    pushArtifact: () => {
+      /* no-op */
+    },
+    resetMirror: () => {
+      /* no-op */
+    },
+  }),
 }));
 
 const { Ch12Evidence, mapArtifactToEvidenceRow } = await import('../ch12-evidence.js');

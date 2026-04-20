@@ -420,8 +420,8 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // When no chapter has been deposited yet (e.g. user calls `/lore` before
   // `/launch`), fall back to placeholder names — the narrator persona
   // tolerates them and will produce Chapter 1.
-  const resolveTokenMeta = (tokenAddr: string): NarratorTokenMeta => {
-    const chapters = loreStore.getAllChapters(tokenAddr);
+  const resolveTokenMeta = async (tokenAddr: string): Promise<NarratorTokenMeta> => {
+    const chapters = await loreStore.getAllChapters(tokenAddr);
     if (chapters.length === 0) {
       return {
         tokenName: 'HBNB2026-Unknown',
@@ -460,9 +460,12 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // other three tools (creator / narrator / heartbeat) usable.
   const postShillForTool = buildPostShillForTool(config, anthropic);
 
-  const resolveOrder = (tokenAddr: string, _brief: string | undefined): ShillerOrderContext => {
+  const resolveOrder = async (
+    tokenAddr: string,
+    _brief: string | undefined,
+  ): Promise<ShillerOrderContext> => {
     const key = tokenAddr.toLowerCase();
-    const lore = loreStore.getLatest(key);
+    const lore = await loreStore.getLatest(key);
     const loreSnippet = lore?.chapterText ?? fallbackLoreSnippet(key);
     // Token symbol travels on the lore entry itself (creator/narrator both
     // write it on upsert), so LoreStore is the single source of truth here
@@ -472,9 +475,9 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     // payment) so Brain-driven shills correlate to a real paid order when
     // possible. Fallback to a synthetic UUID when no pending order exists —
     // demo path acceptance per brain-conversational-surface.md.
-    const pending = shillOrderStore
-      .findByTokenAddr(key)
-      .filter((o) => o.status === 'queued' || o.status === 'processing');
+    const pending = (await shillOrderStore.findByTokenAddr(key)).filter(
+      (o) => o.status === 'queued' || o.status === 'processing',
+    );
     const orderId = pending[0]?.orderId ?? randomUUID();
     return {
       orderId,

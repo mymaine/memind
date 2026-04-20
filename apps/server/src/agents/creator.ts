@@ -275,16 +275,25 @@ export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
         if (!call || call.name !== 'lore_writer' || call.isError) continue;
         const out = asLoreWriterOutput(call.output);
         if (out === undefined) break;
-        loreStore.upsert({
-          tokenAddr: result.tokenAddr,
-          chapterNumber: 1,
-          chapterText: out.loreText,
-          ipfsHash: out.ipfsCid,
-          ipfsUri: out.gatewayUrl,
-          tokenName: result.metadata.name,
-          tokenSymbol: result.metadata.symbol,
-          publishedAt: new Date().toISOString(),
-        });
+        // Fire-and-forget upsert — see the persistence spec's "await vs
+        // fire-and-forget" matrix. The persona's primary job is to return
+        // the CreatorResult; a slow pg write should not block the UI
+        // pipeline. Failures warn-log so they still surface in Railway logs.
+        void loreStore
+          .upsert({
+            tokenAddr: result.tokenAddr,
+            chapterNumber: 1,
+            chapterText: out.loreText,
+            ipfsHash: out.ipfsCid,
+            ipfsUri: out.gatewayUrl,
+            tokenName: result.metadata.name,
+            tokenSymbol: result.metadata.symbol,
+            publishedAt: new Date().toISOString(),
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`[lore] creator chapter 1 upsert failed: ${message}`);
+          });
         break;
       }
     }

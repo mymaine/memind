@@ -373,7 +373,7 @@ describe('narratorPersona.run delegation', () => {
 
     expect(output.chapterNumber).toBe(1);
     expect(output.ipfsHash).toBe('bafkrei-ch1');
-    expect(store.getLatest(NARRATOR_TOKEN_ADDR)?.chapterNumber).toBe(1);
+    expect((await store.getLatest(NARRATOR_TOKEN_ADDR))?.chapterNumber).toBe(1);
   });
 });
 

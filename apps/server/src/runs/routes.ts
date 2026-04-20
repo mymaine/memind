@@ -9,9 +9,11 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import {
+  artifactSchema,
   chatMessageSchema,
   createRunRequestSchema,
   runSnapshotSchema,
+  type Artifact,
   type ChatMessage,
   type CreateRunRequest,
   type RunSnapshot,
@@ -21,6 +23,7 @@ import type { LoreStore } from '../state/lore-store.js';
 import type { AnchorLedger } from '../state/anchor-ledger.js';
 import { ShillOrderStore } from '../state/shill-order-store.js';
 import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
+import type { ArtifactLogStore } from '../state/artifact-log-store.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
@@ -97,6 +100,12 @@ export interface RegisterRunRoutesDeps {
    */
   heartbeatSessionStore?: HeartbeatSessionStore;
   /**
+   * Shared `ArtifactLogStore` (Postgres migration). When wired, `GET
+   * /api/artifacts` reads from here; otherwise the endpoint 503s with a
+   * clear message so CLI-only boot paths don't silently return empty.
+   */
+  artifactLogStore?: ArtifactLogStore;
+  /**
    * Test hook — overrides the real `runA2ADemo` pure function. Production
    * callers leave this undefined.
    */
@@ -129,6 +138,18 @@ const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 // has something to respond to. Kept at the route boundary so HTTP callers
 // get a 400 for empty / malformed payloads before the orchestrator boots.
 const brainChatMessagesSchema = z.array(chatMessageSchema).min(1);
+
+/**
+ * `GET /api/artifacts?limit=N` parser. Defaults to 20, caps at 100. Zod
+ * rejects negatives / non-integers / non-numeric strings with a 400.
+ */
+const limitSchema = z
+  .string()
+  .optional()
+  .transform((v) => (v ?? '20').trim())
+  .pipe(z.string().regex(/^\d+$/, 'limit must be a positive integer'))
+  .transform((v) => Number.parseInt(v, 10))
+  .pipe(z.number().int().min(1).max(100));
 
 export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): void {
   const { config, anthropic, runStore, loreStore } = deps;
@@ -453,6 +474,48 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
     // in testing, not silent wire corruption.
     const validated = runSnapshotSchema.parse(snapshot);
     res.json(validated);
+  });
+
+  // ─── GET /api/artifacts ──────────────────────────────────────────────────
+  // Ch12 evidence hydration. Returns the most recent artifacts in
+  // `created_at DESC` order so the reviewer sees real on-chain proof even
+  // before kicking off a live run. Every row is revalidated through the
+  // shared `artifactSchema` before leaving the server; invalid legacy rows
+  // are dropped with a warn log so one bad row never 500s the whole page.
+  app.get('/api/artifacts', (req: Request, res: Response) => {
+    void (async () => {
+      const limitParam = typeof req.query.limit === 'string' ? req.query.limit : '20';
+      const parsed = limitSchema.safeParse(limitParam);
+      if (!parsed.success) {
+        res.status(400).json({ error: 'invalid limit', details: parsed.error.issues });
+        return;
+      }
+      const store = deps.artifactLogStore;
+      if (store === undefined) {
+        res.status(503).json({
+          error: 'artifactLogStore not wired — server is running without persistence',
+        });
+        return;
+      }
+      try {
+        const rows = await store.listRecent(parsed.data);
+        // Defensive parse: the store itself already filters, but this keeps
+        // the wire contract honest if a caller subclasses / stubs the store.
+        const artifacts: Artifact[] = [];
+        for (const row of rows) {
+          const check = artifactSchema.safeParse(row);
+          if (check.success) {
+            artifacts.push(check.data);
+          } else {
+            console.warn('[artifacts] /api/artifacts dropped invalid row', check.error.issues);
+          }
+        }
+        res.json({ artifacts });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: `artifactLogStore failed: ${message}` });
+      }
+    })();
   });
 
   // ─── GET /api/runs/:id/events ────────────────────────────────────────────

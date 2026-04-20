@@ -1,0 +1,27 @@
+# Local Postgres for the Memind server's persistence layer.
+# Usage:
+#   docker compose up -d postgres
+# Connects with `DATABASE_URL=postgres://memind:memind@localhost:5432/memind`.
+# The server's `ensureSchema` creates every table on boot; no migration tool.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: memind-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: memind
+      POSTGRES_PASSWORD: memind
+      POSTGRES_DB: memind
+    ports:
+      - '5432:5432'
+    volumes:
+      - memind_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U memind -d memind']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  memind_pg:

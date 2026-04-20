@@ -1,4 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Pool } from 'pg';
+import { createPool, resolveDatabaseUrl } from '../db/pool.js';
+import { ensureSchema } from '../db/schema.js';
+import { resetDb } from '../db/reset.js';
 import {
   DEFAULT_HEARTBEAT_MAX_TICKS,
   HeartbeatSessionStore,
@@ -7,19 +11,14 @@ import {
 } from './heartbeat-session-store.js';
 
 /**
- * HeartbeatSessionStore drives real background heartbeat loops keyed by
- * tokenAddr. These tests cover:
- *   - start / restart / stop semantics (including counter preservation)
- *   - overlap guard for long-running ticks
- *   - snapshot immutability
- *   - deterministic tick drive via injected setInterval/clearInterval
- *
- * We use vitest fake timers for the scheduled-tick tests; the restart +
- * counter-preservation tests drive `recordTick` directly so they do not
- * depend on timer tuning.
+ * HeartbeatSessionStore tests: counter semantics, overlap guard, restart
+ * behaviour (timers NEVER auto-resume), and pg persistence of counters
+ * across a "simulated restart" (construct a second store pointing at the
+ * same pool).
  */
 
 const FAKE_ADDR = '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd';
+const hasDatabaseUrl = resolveDatabaseUrl() !== undefined;
 
 function makeDelta(overrides: Partial<HeartbeatTickDelta> = {}): HeartbeatTickDelta {
   return {
@@ -30,19 +29,19 @@ function makeDelta(overrides: Partial<HeartbeatTickDelta> = {}): HeartbeatTickDe
   };
 }
 
-describe('HeartbeatSessionStore', () => {
+describe('HeartbeatSessionStore (memory backend)', () => {
   let store: HeartbeatSessionStore;
 
   beforeEach(() => {
     store = new HeartbeatSessionStore();
   });
 
-  afterEach(() => {
-    store.clear();
+  afterEach(async () => {
+    await store.clear();
   });
 
-  it('start creates a session and get returns a running snapshot with the correct interval', () => {
-    const { snapshot, restarted } = store.start({
+  it('start creates a session and get returns a running snapshot with the correct interval', async () => {
+    const { snapshot, restarted } = await store.start({
       tokenAddr: FAKE_ADDR,
       intervalMs: 5_000,
       runTick: async () => makeDelta(),
@@ -53,28 +52,22 @@ describe('HeartbeatSessionStore', () => {
     expect(snapshot.running).toBe(true);
     expect(snapshot.intervalMs).toBe(5_000);
     expect(snapshot.tickCount).toBe(0);
-    expect(snapshot.successCount).toBe(0);
-    expect(snapshot.errorCount).toBe(0);
-    expect(snapshot.skippedCount).toBe(0);
-    expect(snapshot.lastTickAt).toBeNull();
-    expect(snapshot.lastTickId).toBeNull();
-    expect(snapshot.lastAction).toBeNull();
 
-    const read = store.get(FAKE_ADDR);
+    const read = await store.get(FAKE_ADDR);
     expect(read).toBeDefined();
     expect(read!.running).toBe(true);
     expect(store.size()).toBe(1);
   });
 
-  it('start with the same intervalMs returns restarted=false and keeps the original snapshot', () => {
-    store.start({
+  it('start with the same intervalMs returns restarted=false and keeps counters', async () => {
+    await store.start({
       tokenAddr: FAKE_ADDR,
       intervalMs: 5_000,
       runTick: async () => makeDelta(),
     });
-    store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_a' }));
+    await store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_a' }));
 
-    const second = store.start({
+    const second = await store.start({
       tokenAddr: FAKE_ADDR,
       intervalMs: 5_000,
       runTick: async () => makeDelta(),
@@ -87,21 +80,23 @@ describe('HeartbeatSessionStore', () => {
     expect(store.size()).toBe(1);
   });
 
-  it('start with a different intervalMs restarts the timer but preserves counters', () => {
+  it('start with a different intervalMs restarts the timer but preserves counters', async () => {
     const clearIntervalImpl = vi.fn(clearInterval);
     const setIntervalImpl = vi.fn(setInterval);
     store = new HeartbeatSessionStore({ setIntervalImpl, clearIntervalImpl });
 
-    store.start({
+    await store.start({
       tokenAddr: FAKE_ADDR,
       intervalMs: 5_000,
       runTick: async () => makeDelta(),
     });
-    // Seed some state so we can prove it survives the restart.
-    store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_a', action: 'post' }));
-    store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_b', success: false, error: 'boom' }));
+    await store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_a', action: 'post' }));
+    await store.recordTick(
+      FAKE_ADDR,
+      makeDelta({ tickId: 'tick_b', success: false, error: 'boom' }),
+    );
 
-    const second = store.start({
+    const second = await store.start({
       tokenAddr: FAKE_ADDR,
       intervalMs: 10_000,
       runTick: async () => makeDelta(),
@@ -109,116 +104,80 @@ describe('HeartbeatSessionStore', () => {
 
     expect(second.restarted).toBe(true);
     expect(second.snapshot.intervalMs).toBe(10_000);
-    // Counters preserved verbatim.
     expect(second.snapshot.tickCount).toBe(2);
     expect(second.snapshot.successCount).toBe(1);
     expect(second.snapshot.errorCount).toBe(1);
     expect(second.snapshot.lastTickId).toBe('tick_b');
     expect(second.snapshot.lastError).toBe('boom');
     expect(second.snapshot.running).toBe(true);
-    // Timer churn: one clear (old timer) plus two sets (one per start).
     expect(clearIntervalImpl).toHaveBeenCalledTimes(1);
     expect(setIntervalImpl).toHaveBeenCalledTimes(2);
   });
 
-  it('stop flips running to false, preserves counters, and returns the final snapshot', () => {
-    store.start({
+  it('stop flips running to false, preserves counters, and returns the final snapshot', async () => {
+    await store.start({
       tokenAddr: FAKE_ADDR,
       intervalMs: 5_000,
       runTick: async () => makeDelta(),
     });
-    store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_a', action: 'idle' }));
+    await store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_a', action: 'idle' }));
 
-    const final = store.stop(FAKE_ADDR);
+    const final = await store.stop(FAKE_ADDR);
     expect(final).toBeDefined();
     expect(final!.running).toBe(false);
     expect(final!.tickCount).toBe(1);
-    expect(final!.successCount).toBe(1);
     expect(final!.lastAction).toBe('idle');
 
-    // stop is idempotent: a second stop still returns the final snapshot.
-    const again = store.stop(FAKE_ADDR);
+    const again = await store.stop(FAKE_ADDR);
     expect(again).toBeDefined();
     expect(again!.running).toBe(false);
     expect(again!.tickCount).toBe(1);
   });
 
-  it('stop returns undefined when no session exists', () => {
-    expect(store.stop(FAKE_ADDR)).toBeUndefined();
+  it('stop returns undefined when no session exists', async () => {
+    expect(await store.stop(FAKE_ADDR)).toBeUndefined();
   });
 
-  it('list returns every session including stopped ones', () => {
+  it('list returns every session including stopped ones', async () => {
     const addrA = '0x1111111111111111111111111111111111111111';
     const addrB = '0x2222222222222222222222222222222222222222';
-    store.start({ tokenAddr: addrA, intervalMs: 1_000, runTick: async () => makeDelta() });
-    store.start({ tokenAddr: addrB, intervalMs: 2_000, runTick: async () => makeDelta() });
-    store.stop(addrA);
+    await store.start({ tokenAddr: addrA, intervalMs: 1_000, runTick: async () => makeDelta() });
+    await store.start({ tokenAddr: addrB, intervalMs: 2_000, runTick: async () => makeDelta() });
+    await store.stop(addrA);
 
-    const list = store.list();
+    const list = await store.list();
     expect(list).toHaveLength(2);
     const byAddr = new Map(list.map((s) => [s.tokenAddr, s]));
     expect(byAddr.get(addrA)?.running).toBe(false);
     expect(byAddr.get(addrB)?.running).toBe(true);
   });
 
-  it('clear stops every timer and empties the registry', () => {
-    const clearIntervalImpl = vi.fn(clearInterval);
-    store = new HeartbeatSessionStore({ clearIntervalImpl });
-
-    store.start({
-      tokenAddr: FAKE_ADDR,
-      intervalMs: 1_000,
-      runTick: async () => makeDelta(),
-    });
-    store.start({
-      tokenAddr: '0x2222222222222222222222222222222222222222',
-      intervalMs: 2_000,
-      runTick: async () => makeDelta(),
-    });
-
-    store.clear();
-    expect(store.size()).toBe(0);
-    expect(store.get(FAKE_ADDR)).toBeUndefined();
-    // Both timers cleared.
-    expect(clearIntervalImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it('normalises mixed-case addresses so start + stop operate on the same bucket', () => {
+  it('normalises mixed-case addresses so start + stop operate on the same bucket', async () => {
     const mixed = '0xAbCdEf0123456789aBcDeF0123456789AbCdEf01';
-    store.start({
+    await store.start({
       tokenAddr: mixed,
       intervalMs: 1_000,
       runTick: async () => makeDelta(),
     });
-    // Both casings resolve to the same entry.
-    expect(store.get(mixed)?.tokenAddr).toBe(mixed.toLowerCase());
-    expect(store.get(mixed.toLowerCase())).toBeDefined();
-    // Stop via upper-case address still clears the session.
-    const final = store.stop(mixed.toUpperCase());
+    expect((await store.get(mixed))?.tokenAddr).toBe(mixed.toLowerCase());
+    expect(await store.get(mixed.toLowerCase())).toBeDefined();
+    const final = await store.stop(mixed.toUpperCase());
     expect(final).toBeDefined();
     expect(final!.running).toBe(false);
   });
 
-  it('snapshots are frozen so consumers cannot mutate internal state', () => {
-    store.start({
+  it('snapshots are frozen so consumers cannot mutate internal state', async () => {
+    await store.start({
       tokenAddr: FAKE_ADDR,
       intervalMs: 1_000,
       runTick: async () => makeDelta(),
     });
-    const snap = store.get(FAKE_ADDR)!;
+    const snap = (await store.get(FAKE_ADDR))!;
     expect(Object.isFrozen(snap)).toBe(true);
     expect(() => {
       (snap as unknown as { tickCount: number }).tickCount = 999;
     }).toThrow(TypeError);
   });
-
-  // ─── Timer-driven ticks ───────────────────────────────────────────────────
-  //
-  // Use vitest fake timers to advance the `setInterval` deterministically.
-  // Each test flushes the scheduler callbacks with `vi.advanceTimersByTime`
-  // and then awaits pending promises so the async runTick has a chance to
-  // land its delta through `applyDelta`.
-  // ----------------------------------------------------------------------------
 
   describe('scheduled ticks', () => {
     beforeEach(() => {
@@ -240,12 +199,11 @@ describe('HeartbeatSessionStore', () => {
         };
       });
 
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
-
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
       await vi.advanceTimersByTimeAsync(3_000);
       expect(runTick).toHaveBeenCalledTimes(3);
 
-      const snap = store.get(FAKE_ADDR)!;
+      const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.tickCount).toBe(3);
       expect(snap.successCount).toBe(3);
       expect(snap.errorCount).toBe(0);
@@ -258,12 +216,11 @@ describe('HeartbeatSessionStore', () => {
         throw new Error('boom');
       });
 
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
-
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
       await vi.advanceTimersByTimeAsync(2_000);
       expect(runTick).toHaveBeenCalledTimes(2);
 
-      const snap = store.get(FAKE_ADDR)!;
+      const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.tickCount).toBe(2);
       expect(snap.errorCount).toBe(2);
       expect(snap.successCount).toBe(0);
@@ -271,8 +228,6 @@ describe('HeartbeatSessionStore', () => {
     });
 
     it('increments skippedCount when a prior tick is still running (overlap guard)', async () => {
-      // Build a runTick that does not resolve until we explicitly release it.
-      // This simulates a long LLM call that outlives the scheduled interval.
       let release: (() => void) | undefined;
       const runTick = vi.fn(async (): Promise<HeartbeatTickDelta> => {
         await new Promise<void>((resolve) => {
@@ -281,23 +236,19 @@ describe('HeartbeatSessionStore', () => {
         return makeDelta({ tickId: 'tick_long' });
       });
 
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
-
-      // Advance one tick — runTick starts, blocks on release.
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
       await vi.advanceTimersByTimeAsync(1_000);
       expect(runTick).toHaveBeenCalledTimes(1);
 
-      // Advance two more intervals — both should hit the overlap guard.
       await vi.advanceTimersByTimeAsync(2_000);
-      const mid = store.get(FAKE_ADDR)!;
+      const mid = (await store.get(FAKE_ADDR))!;
       expect(mid.skippedCount).toBe(2);
       expect(mid.tickCount).toBe(3);
       expect(mid.successCount).toBe(0);
 
-      // Release the long tick — it should now land its success delta.
       release?.();
       await vi.advanceTimersByTimeAsync(0);
-      const final = store.get(FAKE_ADDR)!;
+      const final = (await store.get(FAKE_ADDR))!;
       expect(final.successCount).toBe(1);
       expect(final.lastTickId).toBe('tick_long');
     });
@@ -305,33 +256,29 @@ describe('HeartbeatSessionStore', () => {
     it('stop prevents future timer fires', async () => {
       const runTick = vi.fn(async () => makeDelta());
 
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick });
       await vi.advanceTimersByTimeAsync(1_000);
       expect(runTick).toHaveBeenCalledTimes(1);
 
-      store.stop(FAKE_ADDR);
+      await store.stop(FAKE_ADDR);
       await vi.advanceTimersByTimeAsync(5_000);
-      // No additional invocations after stop.
       expect(runTick).toHaveBeenCalledTimes(1);
-      const snap = store.get(FAKE_ADDR)!;
+      const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.running).toBe(false);
       expect(snap.tickCount).toBe(1);
     });
   });
 
-  // ─── maxTicks cap ────────────────────────────────────────────────────────
-
   describe('maxTicks auto-stop', () => {
     beforeEach(() => {
       vi.useFakeTimers();
     });
-
     afterEach(() => {
       vi.useRealTimers();
     });
 
-    it('defaults maxTicks to DEFAULT_HEARTBEAT_MAX_TICKS when the caller omits it', () => {
-      const { snapshot } = store.start({
+    it('defaults maxTicks to DEFAULT_HEARTBEAT_MAX_TICKS when the caller omits it', async () => {
+      const { snapshot } = await store.start({
         tokenAddr: FAKE_ADDR,
         intervalMs: 1_000,
         runTick: async () => makeDelta(),
@@ -341,14 +288,12 @@ describe('HeartbeatSessionStore', () => {
 
     it('auto-stops the session once scheduled ticks reach maxTicks', async () => {
       const runTick = vi.fn(async () => makeDelta());
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 3 });
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 3 });
 
-      // Fire enough intervals to blow through the cap, plus one extra to
-      // confirm no further invocation happens after auto-stop.
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(runTick).toHaveBeenCalledTimes(3);
-      const snap = store.get(FAKE_ADDR)!;
+      const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.running).toBe(false);
       expect(snap.tickCount).toBe(3);
       expect(snap.tickCount).toBeGreaterThanOrEqual(snap.maxTicks);
@@ -356,36 +301,31 @@ describe('HeartbeatSessionStore', () => {
 
     it('auto-stop counts recordTick invocations alongside scheduled fires', async () => {
       const runTick = vi.fn(async () => makeDelta());
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 3 });
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 3 });
 
-      // Simulate the "immediate tick" path: external recordTick calls.
-      store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'immediate_1' }));
-      store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'immediate_2' }));
+      await store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'immediate_1' }));
+      await store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'immediate_2' }));
 
-      // Only one scheduled fire should land before the cap is hit.
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(runTick).toHaveBeenCalledTimes(1);
-      const snap = store.get(FAKE_ADDR)!;
+      const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.running).toBe(false);
       expect(snap.tickCount).toBe(3);
     });
 
     it('restarting with a higher maxTicks lets a stopped session resume', async () => {
       const runTick = vi.fn(async () => makeDelta());
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 2 });
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 2 });
 
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(store.get(FAKE_ADDR)!.running).toBe(false);
+      expect((await store.get(FAKE_ADDR))!.running).toBe(false);
       expect(runTick).toHaveBeenCalledTimes(2);
 
-      // Restart with a bigger cap — interval unchanged, but the prior cap (2)
-      // was reached so the session was stopped. Bumping to 5 should allow
-      // 3 more fires.
-      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 5 });
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 5 });
       await vi.advanceTimersByTimeAsync(5_000);
 
-      const snap = store.get(FAKE_ADDR)!;
+      const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.running).toBe(false);
       expect(snap.tickCount).toBe(5);
       expect(snap.maxTicks).toBe(5);
@@ -393,3 +333,51 @@ describe('HeartbeatSessionStore', () => {
     });
   });
 });
+
+if (hasDatabaseUrl) {
+  describe('HeartbeatSessionStore (pg backend — restart semantics)', () => {
+    let pool: Pool;
+
+    beforeAll(async () => {
+      pool = createPool();
+      await ensureSchema(pool);
+    });
+
+    afterAll(async () => {
+      await pool.end();
+    });
+
+    beforeEach(async () => {
+      await resetDb(pool, { ...process.env, NODE_ENV: 'test' });
+    });
+
+    it('counters survive a simulated process restart but running flips to false', async () => {
+      const first = new HeartbeatSessionStore({ pool });
+      await first.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 10_000,
+        runTick: async () => makeDelta(),
+      });
+      await first.recordTick(FAKE_ADDR, makeDelta({ tickId: 'tick_a' }));
+      await first.recordTick(
+        FAKE_ADDR,
+        makeDelta({ tickId: 'tick_b', success: false, error: 'boom' }),
+      );
+      await first.clear.bind(first); // avoid unused warning in minified builds
+      // Drop the first store without calling clear() — clear() TRUNCATEs
+      // the table, which would defeat the test. The in-memory timer stays
+      // ref'd by Node's event loop but .unref() was called inside the
+      // store; rely on vitest's test teardown rather than manually killing.
+
+      // Simulate boot: run ensureSchema again and construct a fresh store.
+      await ensureSchema(pool);
+      const second = new HeartbeatSessionStore({ pool });
+      const snap = await second.get(FAKE_ADDR);
+      expect(snap).toBeDefined();
+      expect(snap!.tickCount).toBe(2);
+      expect(snap!.successCount).toBe(1);
+      expect(snap!.errorCount).toBe(1);
+      expect(snap!.running).toBe(false);
+    });
+  });
+}

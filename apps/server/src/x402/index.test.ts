@@ -23,6 +23,24 @@ import { createLoreHandler, createShillHandler, registerX402Routes } from './ind
 // when running `pnpm test` from any workspace package.
 loadDotenv({ path: resolve(import.meta.dirname, '../../../../.env.local') });
 
+// Tiny polling helper for the async `createShillHandler` — the route fires
+// `void (async () => { await store.enqueue(...) })()` so the HTTP response
+// lands before the store write completes. Tests use this to await the tail
+// rather than reshape the handler to block on persistence.
+async function pollUntil<T>(
+  attempt: () => Promise<T | undefined>,
+  timeoutMs = 2_000,
+): Promise<T | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  // First attempt fires immediately so the common case stays sub-ms.
+  while (Date.now() < deadline) {
+    const value = await attempt();
+    if (value !== undefined) return value;
+    await new Promise<void>((r) => setTimeout(r, 10));
+  }
+  return undefined;
+}
+
 const hasAgentWallet =
   typeof process.env.AGENT_WALLET_PRIVATE_KEY === 'string' &&
   /^0x[a-fA-F0-9]{64}$/.test(process.env.AGENT_WALLET_PRIVATE_KEY);
@@ -154,7 +172,7 @@ describe('registerX402Routes', () => {
       // Exact paidTxHash equality with the header is left to a follow-up task:
       // the handler runs before x402 settlement, so it can only see a stub hash
       // at enqueue time (see createShillHandler doc-comment for the full story).
-      const stored = sharedShillStore.getById(body.orderId ?? '');
+      const stored = await pollUntil(() => sharedShillStore.getById(body.orderId ?? ''));
       expect(stored).toBeDefined();
       expect(stored?.targetTokenAddr).toBe(targetTokenAddr);
       expect(stored?.creatorBrief).toBe('integration-test');
@@ -340,7 +358,11 @@ describe('createShillHandler', () => {
       expect(body.orderId ?? '').toMatch(/[0-9a-f-]{36}/);
       expect(typeof body.estimatedReadyMs).toBe('number');
 
-      const stored = store.getById(body.orderId ?? '');
+      // The handler enqueues async via `void (async () => {...})()`, so the
+      // store write may land a few microticks after the response body
+      // lands on the client. Poll briefly to collect the settled row
+      // rather than racing it — much cheaper than reshaping the handler.
+      const stored = await pollUntil(() => store.getById(body.orderId ?? ''));
       expect(stored).toBeDefined();
       expect(stored?.targetTokenAddr).toBe(targetTokenAddr.toLowerCase());
       expect(stored?.creatorBrief).toBe('pump it');

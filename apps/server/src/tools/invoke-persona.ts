@@ -361,11 +361,12 @@ export interface CreateInvokeNarratorToolDeps extends PersonaInvokeEventCallback
   store: LoreStore;
   /**
    * Orchestrator-supplied lookup: given a tokenAddr, return the narrative
-   * metadata needed by the narrator persona. The Brain LLM only supplies the
-   * address; everything else (name, symbol, previous chapters, target
-   * chapter number) comes from run-local state.
+   * metadata needed by the narrator persona. The Brain LLM only supplies
+   * the address; everything else (name, symbol, previous chapters, target
+   * chapter number) comes from run-local state. Async so the resolver can
+   * `await loreStore.getAllChapters(...)` on the pg backend.
    */
-  resolveTokenMeta: (tokenAddr: string) => NarratorTokenMeta;
+  resolveTokenMeta: (tokenAddr: string) => Promise<NarratorTokenMeta> | NarratorTokenMeta;
 }
 
 export function createInvokeNarratorTool(
@@ -391,7 +392,7 @@ export function createInvokeNarratorTool(
     outputSchema: z.any() as unknown as z.ZodType<NarratorPersonaOutput>,
     async execute(input): Promise<NarratorPersonaOutput> {
       const parsed = invokeNarratorInputSchema.parse(input);
-      const meta = resolveTokenMeta(parsed.tokenAddr);
+      const meta = await resolveTokenMeta(parsed.tokenAddr);
       const personaInput: NarratorPersonaInput = {
         tokenAddr: parsed.tokenAddr,
         tokenName: meta.tokenName,
@@ -482,9 +483,12 @@ export interface CreateInvokeShillerToolDeps extends PersonaInvokeEventCallbacks
    * Brain-provided `brief`), resolve the order-level context — orderId,
    * latest lore snippet, tokenSymbol, and the URL mode toggle. `brief` is
    * forwarded separately so it reaches the shiller persona's `creatorBrief`
-   * slot verbatim.
+   * slot verbatim. Async so the resolver can consult pg-backed stores.
    */
-  resolveOrder: (tokenAddr: string, brief: string | undefined) => ShillerOrderContext;
+  resolveOrder: (
+    tokenAddr: string,
+    brief: string | undefined,
+  ) => Promise<ShillerOrderContext> | ShillerOrderContext;
 }
 
 export function createInvokeShillerTool(
@@ -508,7 +512,7 @@ export function createInvokeShillerTool(
     outputSchema: z.any() as unknown as z.ZodType<ShillerPersonaOutput>,
     async execute(input): Promise<ShillerPersonaOutput> {
       const parsed = invokeShillerInputSchema.parse(input);
-      const order = resolveOrder(parsed.tokenAddr, parsed.brief);
+      const order = await resolveOrder(parsed.tokenAddr, parsed.brief);
       const personaInput: ShillerPersonaInput = {
         postShillForTool,
         orderId: order.orderId,
@@ -752,7 +756,7 @@ export function createInvokeHeartbeatTickTool(
     async execute(input): Promise<InvokeHeartbeatTickOutput> {
       const parsed = invokeHeartbeatTickInputSchema.parse(input);
       const tokenAddr = parsed.tokenAddr;
-      const existing = sessionStore.get(tokenAddr);
+      const existing = await sessionStore.get(tokenAddr);
 
       // ─── Branch 1: no intervalMs, session exists → snapshot-only ────────
       if (parsed.intervalMs === undefined && existing !== undefined) {
@@ -834,7 +838,7 @@ export function createInvokeHeartbeatTickTool(
       };
 
       const wasExisting = existing !== undefined;
-      const { restarted } = sessionStore.start({
+      const { restarted } = await sessionStore.start({
         tokenAddr,
         intervalMs,
         runTick,
@@ -860,7 +864,7 @@ export function createInvokeHeartbeatTickTool(
         const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
         const tickAt = result.lastTickAt ?? new Date().toISOString();
         const action = inferActionFromSnapshotDelta(null, result);
-        sessionStore.recordTick(tokenAddr, {
+        await sessionStore.recordTick(tokenAddr, {
           tickId,
           tickAt,
           success: result.lastError === null,
@@ -885,7 +889,7 @@ export function createInvokeHeartbeatTickTool(
           level: 'error',
           message: `heartbeat immediate tick failed: ${message}`,
         });
-        sessionStore.recordTick(tokenAddr, {
+        await sessionStore.recordTick(tokenAddr, {
           tickId: `tick_err_${Date.now().toString(36)}`,
           tickAt: new Date().toISOString(),
           success: false,
@@ -893,7 +897,7 @@ export function createInvokeHeartbeatTickTool(
         });
       }
 
-      const snap = sessionStore.get(tokenAddr);
+      const snap = await sessionStore.get(tokenAddr);
       if (snap === undefined) {
         // Unreachable: start(...) always creates the session. Fall back to
         // a synthetic output so the tool always returns something well-typed.
@@ -950,7 +954,7 @@ export function createStopHeartbeatTool(
         level: 'info',
         message: `stop_heartbeat requested (token: ${tokenAddr})`,
       });
-      const final = sessionStore.stop(tokenAddr);
+      const final = await sessionStore.stop(tokenAddr);
       if (final === undefined) {
         onLog?.({
           ts: new Date().toISOString(),
@@ -1020,8 +1024,7 @@ export function createListHeartbeatsTool(
         level: 'info',
         message: 'list_heartbeats requested',
       });
-      const sessions = sessionStore
-        .list()
+      const sessions = (await sessionStore.list())
         .filter((s) => s.running)
         .map(
           (s): ListHeartbeatsSessionSnapshot => ({
