@@ -30,8 +30,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { AgentId, Artifact, LogEvent } from '@hack-fourmeme/shared';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
-import { computeAnchorId, computeContentHash, type AnchorLedger } from '../state/anchor-ledger.js';
-import { isAnchorOnChainEnabled, sendAnchorMemoTx } from '../chain/anchor-tx.js';
+import { type AnchorLedger } from '../state/anchor-ledger.js';
+import { maybeAnchorContent } from '../chain/anchor-tx.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createLoreExtendTool } from '../tools/lore-extend.js';
 import { createCheckTokenStatusTool } from '../tools/token-status.js';
@@ -331,65 +331,22 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
   });
 
   // ─── AC3 layer 2 (optional, env-gated) ───────────────────────────────────
-  // When ANCHOR_ON_CHAIN=true and a BSC deployer key is configured, fire a
-  // zero-value memo tx on BSC mainnet carrying the contentHash. Success
-  // stamps the ledger row + emits a second lore-anchor artifact with the
-  // on-chain trio so the dashboard upgrades from "commitment captured" to
-  // "commitment anchored on-chain" without a full refresh. Failures are
-  // downgraded to a warn log so the narrator happy path continues.
-  if (anchorLedger && isAnchorOnChainEnabled(process.env)) {
-    const deployerPk = config.wallets.bscDeployer.privateKey;
-    if (deployerPk === undefined) {
-      orchestratorLog(
-        store,
-        runId,
-        'narrator',
-        'ANCHOR_ON_CHAIN=true but BSC_DEPLOYER_PRIVATE_KEY missing — skipping layer-2 memo',
-        'warn',
-      );
-    } else {
-      const anchorId = computeAnchorId(narrator.tokenAddr, narrator.chapterNumber);
-      const contentHash = computeContentHash(
-        narrator.tokenAddr,
-        narrator.chapterNumber,
-        narrator.ipfsHash,
-      );
-      try {
-        const settlement = await sendAnchorMemoTx({
-          contentHash,
-          deps: { privateKey: deployerPk as `0x${string}` },
-        });
-        await anchorLedger.markOnChain(anchorId, settlement);
-        store.addArtifact(runId, {
-          kind: 'lore-anchor',
-          anchorId,
-          tokenAddr: narrator.tokenAddr,
-          chapterNumber: narrator.chapterNumber,
-          loreCid: narrator.ipfsHash,
-          contentHash,
-          onChainTxHash: settlement.onChainTxHash,
-          chain: settlement.chain,
-          explorerUrl: settlement.explorerUrl,
-          ts: new Date().toISOString(),
-          label: 'lore anchor (on-chain)',
-        });
-        orchestratorLog(
-          store,
-          runId,
-          'narrator',
-          `lore-anchor layer-2 settled on BSC mainnet: ${settlement.onChainTxHash}`,
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        orchestratorLog(
-          store,
-          runId,
-          'narrator',
-          `lore-anchor layer-2 send failed (layer-1 evidence still emitted): ${msg}`,
-          'warn',
-        );
-      }
-    }
+  // Replaced the inline block with `maybeAnchorContent` so the a2a CLI path
+  // shares the same env gate + tx + markOnChain + upgraded-artifact pipeline
+  // the brain-chat `/lore` / `/launch` paths already use. The helper emits
+  // its own info/warn logs directly onto `onLog`, so we forward the
+  // orchestrator RunStore's `addLog` verbatim — no need to route through
+  // `orchestratorLog` anymore.
+  if (anchorLedger) {
+    await maybeAnchorContent({
+      anchorLedger,
+      tokenAddr: narrator.tokenAddr as `0x${string}`,
+      chapterNumber: narrator.chapterNumber,
+      loreCid: narrator.ipfsHash,
+      bscDeployerPrivateKey: config.wallets.bscDeployer.privateKey as `0x${string}` | undefined,
+      onArtifact: (artifact) => store.addArtifact(runId, artifact),
+      onLog: (event) => store.addLog(runId, event),
+    });
   }
 
   return {
