@@ -40,6 +40,7 @@ import { Ch9SKU } from '@/components/chapters/ch9-sku';
 import { Ch10Phase } from '@/components/chapters/ch10-phase';
 import { Ch11Evidence } from '@/components/chapters/ch11-evidence';
 import { BrainPanel } from '@/components/brain-panel';
+import { FooterCredit } from '@/components/footer-credit';
 import { Header } from '@/components/header';
 import { LogsDrawer } from '@/components/logs-drawer';
 import { ScanlinesOverlay } from '@/components/scanlines-overlay';
@@ -284,6 +285,7 @@ export default function HomePage(): ReactElement {
        * `hooks/useRunStateContext.tsx` docblock for the mirror contract.
        */}
       <LogsDrawer />
+      <FooterCredit />
       {tweakActive && <TweaksPanel tweaks={tweaks} setTweak={setTweak} />}
     </div>
   );
