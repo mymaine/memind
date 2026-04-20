@@ -25,6 +25,7 @@ import { createNarrativeTool } from '../tools/narrative.js';
 import { createImageTool, type ImageOutput } from '../tools/image.js';
 import { createLoreTool, type LoreOutput } from '../tools/lore.js';
 import { createOnchainDeployerTool } from '../tools/deployer.js';
+import { anchorChapterOne } from '../chain/anchor-tx.js';
 import type { RunCreatorPhaseFn } from './a2a.js';
 
 // OpenRouter Anthropic-compatible gateway base — the SDK appends /v1/messages.
@@ -49,7 +50,7 @@ function findToolOutput(
 }
 
 export const runCreatorPhase: RunCreatorPhaseFn = async (deps) => {
-  const { config, store, runId, theme } = deps;
+  const { config, store, runId, theme, anchorLedger } = deps;
 
   // Cross-check secrets that the Creator phase needs but a2a's outer guard
   // does not enforce (BSC deployer key + Google API key live outside the
@@ -138,6 +139,26 @@ export const runCreatorPhase: RunCreatorPhaseFn = async (deps) => {
       author: 'creator',
       label: 'Creator lore chapter',
     });
+
+    // AC3 — anchor Chapter 1 so `demo:creator` (and any other orchestrator
+    // that drives `runCreatorPhase`) produces the same on-chain evidence
+    // surface as the narrator path. Layer 1 (ledger + initial artifact)
+    // always runs when a ledger is wired; layer 2 is gated inside
+    // `anchorChapterOne` by the `ANCHOR_ON_CHAIN` env flag. The helper is
+    // non-fatal on every failure branch so the Creator's return contract
+    // (tokenAddr + tokenDeployTx + metadata) is unchanged.
+    if (anchorLedger !== undefined) {
+      await anchorChapterOne({
+        anchorLedger,
+        tokenAddr: result.tokenAddr,
+        loreCid: loreOut.ipfsCid,
+        ...(bscDeployerKey !== undefined
+          ? { bscDeployerPrivateKey: bscDeployerKey as `0x${string}` }
+          : {}),
+        onArtifact: (artifact) => store.addArtifact(runId, artifact),
+        onLog: (event) => store.addLog(runId, event),
+      });
+    }
   }
 
   return {

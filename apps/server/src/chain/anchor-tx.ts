@@ -27,7 +27,12 @@ import {
 import { bsc } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
-import { type AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
+import {
+  type AnchorLedger,
+  type AnchorLedgerAppendInput,
+  computeAnchorId,
+  computeContentHash,
+} from '../state/anchor-ledger.js';
 
 const CONTENT_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
@@ -327,4 +332,94 @@ export async function maybeAnchorContent(
     );
     return null;
   }
+}
+
+/**
+ * Arguments passed to `anchorChapterOne`. Only the ledger + tokenAddr + loreCid
+ * are required; the layer-2 fields mirror `MaybeAnchorContentArgs` one-for-one.
+ */
+export interface AnchorChapterOneArgs extends Omit<
+  MaybeAnchorContentArgs,
+  'chapterNumber' | 'tokenAddr'
+> {
+  /** Creator-path token address (mixed case — normalised by `computeAnchorId`). */
+  tokenAddr: string;
+}
+
+/**
+ * Convenience wrapper that performs the full Chapter 1 anchor dance in one
+ * call: layer-1 ledger `append` + initial `lore-anchor` artifact + optional
+ * layer-2 memo tx via `maybeAnchorContent`. Used by the Creator paths
+ * (`invoke_creator` + `runCreatorPhase`) which emit the FIRST anchor for a
+ * token — the narrator already owns layer-1 append for subsequent chapters,
+ * but Creator's `lore_writer` is the first touch and needs its own ledger
+ * row before layer 2 can stamp one. Chapter 1 is hard-coded because this
+ * helper is only ever invoked on the initial launch.
+ *
+ * Non-fatal by contract: append / markOnChain / send failures are logged as
+ * warns and the helper resolves null rather than throwing, so a flaky BSC
+ * RPC or pg write never blocks the Creator happy path.
+ */
+export async function anchorChapterOne(
+  args: AnchorChapterOneArgs,
+): Promise<AnchorTxSettlement | null> {
+  const {
+    anchorLedger,
+    tokenAddr,
+    loreCid,
+    env,
+    bscDeployerPrivateKey,
+    onArtifact,
+    onLog,
+    sendAnchorMemoTxImpl,
+  } = args;
+
+  const chapterNumber = 1;
+  const anchorId = computeAnchorId(tokenAddr, chapterNumber);
+  const contentHash = computeContentHash(tokenAddr, chapterNumber, loreCid);
+  const ts = new Date().toISOString();
+
+  // Layer-1: ledger row + initial lore-anchor artifact. Tolerate pg hiccups
+  // so Creator path continues to return its result. The append itself is
+  // idempotent (upsert on anchorId) so replays of the same chapter 1 are
+  // safe.
+  const layer1Input: AnchorLedgerAppendInput = {
+    anchorId,
+    tokenAddr,
+    chapterNumber,
+    loreCid,
+    contentHash,
+    ts,
+  };
+  try {
+    await anchorLedger.append(layer1Input);
+    if (onArtifact !== undefined) {
+      onArtifact({
+        kind: 'lore-anchor',
+        anchorId,
+        tokenAddr,
+        chapterNumber,
+        loreCid,
+        contentHash,
+        ts,
+      });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    narratorLog(onLog, 'warn', `creator chapter 1 anchor append failed: ${msg}`);
+    return null;
+  }
+
+  // Layer-2: optional, gated by `ANCHOR_ON_CHAIN` inside `maybeAnchorContent`.
+  return maybeAnchorContent({
+    anchorLedger,
+    tokenAddr: tokenAddr as `0x${string}`,
+    chapterNumber,
+    loreCid,
+    ...(env !== undefined ? { env } : {}),
+    ...(bscDeployerPrivateKey !== undefined ? { bscDeployerPrivateKey } : {}),
+    ...(onArtifact !== undefined ? { onArtifact } : {}),
+    ...(onLog !== undefined ? { onLog } : {}),
+    ...(sendAnchorMemoTxImpl !== undefined ? { sendAnchorMemoTxImpl } : {}),
+  });
 }

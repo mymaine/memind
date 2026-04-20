@@ -19,7 +19,7 @@ import type { HeartbeatPersonaInput, HeartbeatPersonaOutput } from '../agents/he
 import type { PostShillForInput, PostShillForOutput } from './post-shill-for.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { AnchorLedger } from '../state/anchor-ledger.js';
-import { maybeAnchorContent, type sendAnchorMemoTx } from '../chain/anchor-tx.js';
+import { anchorChapterOne, maybeAnchorContent, type sendAnchorMemoTx } from '../chain/anchor-tx.js';
 import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type {
   HeartbeatSessionAction,
@@ -239,6 +239,23 @@ export interface CreateInvokeCreatorToolDeps extends PersonaInvokeEventCallbacks
    * still returns its CreatorResult but the LoreStore hand-off is skipped.
    */
   store?: LoreStore;
+  /**
+   * Optional AC3 anchor ledger. When wired, Chapter 1 gets the same
+   * layer-1 keccak256 commitment row + (env-gated) layer-2 BSC mainnet
+   * memo tx the narrator path already provides. Chapter 1 anchoring makes
+   * `/launch` produce on-chain evidence symmetric with `/lore`.
+   */
+  anchorLedger?: AnchorLedger;
+  /**
+   * BSC deployer key for the layer-2 memo tx. Resolved from
+   * `config.wallets.bscDeployer.privateKey` in production; left undefined
+   * for tests that disable layer 2.
+   */
+  bscDeployerPrivateKey?: `0x${string}`;
+  /** Env bag for the `ANCHOR_ON_CHAIN` gate; defaults to `process.env`. */
+  env?: NodeJS.ProcessEnv;
+  /** Test seam — override the real `sendAnchorMemoTx`. */
+  sendAnchorMemoTxImpl?: typeof sendAnchorMemoTx;
 }
 
 export function createInvokeCreatorTool(
@@ -249,6 +266,10 @@ export function createInvokeCreatorTool(
     client,
     registry,
     store,
+    anchorLedger,
+    bscDeployerPrivateKey,
+    env,
+    sendAnchorMemoTxImpl,
     onLog,
     onArtifact,
     onToolUseStart,
@@ -325,6 +346,32 @@ export function createInvokeCreatorTool(
             gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.loreIpfsCid}`,
             author: 'creator',
             label: 'Creator lore chapter 1',
+          });
+        }
+        // AC3 — anchor Chapter 1 so `/launch` produces on-chain evidence
+        // symmetric with the `/lore` path. Layer 1 (keccak256 ledger row +
+        // initial lore-anchor artifact) runs unconditionally when the
+        // anchorLedger is wired; layer 2 (BSC mainnet memo) is gated by
+        // the same `ANCHOR_ON_CHAIN` env flag `maybeAnchorContent`
+        // consults. Anchor happens only when the creator actually pinned
+        // the lore — an empty `loreIpfsCid` would produce a meaningless
+        // commitment.
+        if (
+          anchorLedger !== undefined &&
+          typeof result.loreIpfsCid === 'string' &&
+          result.loreIpfsCid !== '' &&
+          typeof result.tokenAddr === 'string' &&
+          result.tokenAddr !== ''
+        ) {
+          await anchorChapterOne({
+            anchorLedger,
+            tokenAddr: result.tokenAddr,
+            loreCid: result.loreIpfsCid,
+            ...(bscDeployerPrivateKey !== undefined ? { bscDeployerPrivateKey } : {}),
+            ...(env !== undefined ? { env } : {}),
+            ...(sendAnchorMemoTxImpl !== undefined ? { sendAnchorMemoTxImpl } : {}),
+            ...(onArtifact !== undefined ? { onArtifact } : {}),
+            ...(onLog !== undefined ? { onLog } : {}),
           });
         }
         const durationMs = Date.now() - startedAt;

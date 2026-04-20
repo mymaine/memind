@@ -347,6 +347,155 @@ describe('createInvokeCreatorTool', () => {
     expect(errorLogs.length).toBeGreaterThanOrEqual(1);
     expect(errorLogs[0]![0].message).toContain('boom');
   });
+
+  // ─── AC3 anchor wiring (cross-path) ────────────────────────────────────
+  //
+  // Chapter 1 produced by the Creator persona gets the same anchor surface
+  // the narrator path already provides. Layer-1 ledger row + initial
+  // lore-anchor artifact are unconditional when an anchorLedger is wired;
+  // layer-2 memo tx is gated by ANCHOR_ON_CHAIN.
+
+  it('skips anchor when anchorLedger is not wired (back-compat)', async () => {
+    const run = async (): Promise<CreatorResult> => ({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      tokenDeployTx: FAKE_TX,
+      loreIpfsCid: 'bafkrei-ch1',
+      metadata: {
+        name: 'HBNB2026-Z',
+        symbol: 'HBNB2026-Z',
+        description: 'z',
+        imageLocalPath: '/tmp/z.png',
+      },
+    });
+    const persona = makeCreatorPersona(run);
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      onArtifact,
+    });
+
+    await tool.execute({ theme: 'anchor off' });
+
+    // No lore-anchor in the artifact stream when anchorLedger is undefined.
+    const anchorArtifacts = onArtifact.mock.calls
+      .map((c) => c[0])
+      .filter((a) => a.kind === 'lore-anchor');
+    expect(anchorArtifacts).toHaveLength(0);
+  });
+
+  it('appends chapter 1 anchor row + initial lore-anchor artifact when ANCHOR_ON_CHAIN=false', async () => {
+    const ledger = new AnchorLedger();
+    const run = async (): Promise<CreatorResult> => ({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      tokenDeployTx: FAKE_TX,
+      loreIpfsCid: 'bafkrei-ch1-off',
+      metadata: {
+        name: 'HBNB2026-OFF',
+        symbol: 'HBNB2026-OFF',
+        description: 'off',
+        imageLocalPath: '/tmp/off.png',
+      },
+    });
+    const persona = makeCreatorPersona(run);
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => {
+      throw new Error('send must not run when ANCHOR_ON_CHAIN=false');
+    });
+
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      anchorLedger: ledger,
+      bscDeployerPrivateKey: `0x${'9'.repeat(64)}`,
+      env: { ANCHOR_ON_CHAIN: 'false' },
+      sendAnchorMemoTxImpl: sendSpy,
+      onArtifact,
+    });
+
+    await tool.execute({ theme: 'anchor layer 1 only' });
+
+    // Ledger row appended.
+    const rows = await ledger.list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.chapterNumber).toBe(1);
+    expect(rows[0]?.loreCid).toBe('bafkrei-ch1-off');
+    expect(rows[0]?.onChainTxHash).toBeUndefined();
+
+    // lore-anchor artifact emitted WITHOUT on-chain fields.
+    const anchorArtifacts = onArtifact.mock.calls
+      .map((c) => c[0])
+      .filter((a) => a.kind === 'lore-anchor');
+    expect(anchorArtifacts).toHaveLength(1);
+    if (anchorArtifacts[0]?.kind === 'lore-anchor') {
+      expect(anchorArtifacts[0].chapterNumber).toBe(1);
+      expect(anchorArtifacts[0].onChainTxHash).toBeUndefined();
+    }
+
+    // Layer 2 send was skipped.
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('fires layer-2 memo + upgrades artifact when ANCHOR_ON_CHAIN=true', async () => {
+    const ledger = new AnchorLedger();
+    const run = async (): Promise<CreatorResult> => ({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      tokenDeployTx: FAKE_TX,
+      loreIpfsCid: 'bafkrei-ch1-on',
+      metadata: {
+        name: 'HBNB2026-ON',
+        symbol: 'HBNB2026-ON',
+        description: 'on',
+        imageLocalPath: '/tmp/on.png',
+      },
+    });
+    const persona = makeCreatorPersona(run);
+    const settlement: AnchorTxSettlement = {
+      onChainTxHash: `0x${'d'.repeat(64)}`,
+      chain: 'bsc-mainnet',
+      explorerUrl: `https://bscscan.com/tx/0x${'d'.repeat(64)}`,
+    };
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => settlement);
+    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      anchorLedger: ledger,
+      bscDeployerPrivateKey: `0x${'9'.repeat(64)}`,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      sendAnchorMemoTxImpl: sendSpy,
+      onArtifact,
+    });
+
+    await tool.execute({ theme: 'anchor on' });
+
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const rows = await ledger.list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.onChainTxHash).toBe(settlement.onChainTxHash);
+
+    // Two lore-anchor artifacts: the initial layer-1 emission + the
+    // layer-2 upgrade with the on-chain trio.
+    const anchorArtifacts = onArtifact.mock.calls
+      .map((c) => c[0])
+      .filter((a) => a.kind === 'lore-anchor');
+    expect(anchorArtifacts).toHaveLength(2);
+    const upgraded = anchorArtifacts.find(
+      (a) => a.kind === 'lore-anchor' && 'onChainTxHash' in a && a.onChainTxHash !== undefined,
+    );
+    expect(upgraded).toBeDefined();
+    if (upgraded?.kind === 'lore-anchor') {
+      expect(upgraded.onChainTxHash).toBe(settlement.onChainTxHash);
+      expect(upgraded.chain).toBe('bsc-mainnet');
+      expect(upgraded.explorerUrl).toBe(settlement.explorerUrl);
+    }
+  });
 });
 
 // ─── invoke_narrator ────────────────────────────────────────────────────────

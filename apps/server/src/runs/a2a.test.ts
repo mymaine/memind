@@ -335,6 +335,63 @@ describe('runA2ADemo (V2-P1)', () => {
     expect(deps?.anchorLedger).toBeUndefined();
   });
 
+  // Symmetric plumbing for the Creator phase — `anchorChapterOne` inside
+  // `runCreatorPhase` can only fire when the orchestrator hands the ledger
+  // through. Both branches (present / absent) are asserted so any future
+  // refactor that drops the forward would be caught here.
+  it('forwards the anchorLedger dependency to the Creator phase', async () => {
+    const record = store.create('a2a');
+    const anchorLedger = new AnchorLedger();
+    const creatorSpy = vi.fn<RunCreatorPhaseFn>().mockResolvedValue({
+      tokenAddr: SAMPLE_TOKEN,
+      tokenName: 'x',
+      tokenSymbol: 'y',
+      tokenDeployTx: SAMPLE_DEPLOY_TX,
+    });
+
+    await runA2ADemo({
+      config: makeConfigStub(),
+      anthropic,
+      store,
+      runId: record.runId,
+      args: { tokenAddr: SAMPLE_TOKEN, tokenName: 'x', tokenSymbol: 'y' },
+      loreStore,
+      anchorLedger,
+      runCreatorImpl: creatorSpy,
+      runNarratorImpl: fakeNarrator,
+      runMarketMakerImpl: fakeMarketMaker,
+    });
+
+    expect(creatorSpy).toHaveBeenCalledTimes(1);
+    const deps = creatorSpy.mock.calls[0]?.[0];
+    expect(deps?.anchorLedger).toBe(anchorLedger);
+  });
+
+  it('omitting anchorLedger keeps the Creator phase deps.anchorLedger undefined', async () => {
+    const record = store.create('a2a');
+    const creatorSpy = vi.fn<RunCreatorPhaseFn>().mockResolvedValue({
+      tokenAddr: SAMPLE_TOKEN,
+      tokenName: 'x',
+      tokenSymbol: 'y',
+      tokenDeployTx: SAMPLE_DEPLOY_TX,
+    });
+
+    await runA2ADemo({
+      config: makeConfigStub(),
+      anthropic,
+      store,
+      runId: record.runId,
+      args: { tokenAddr: SAMPLE_TOKEN, tokenName: 'x', tokenSymbol: 'y' },
+      loreStore,
+      runCreatorImpl: creatorSpy,
+      runNarratorImpl: fakeNarrator,
+      runMarketMakerImpl: fakeMarketMaker,
+    });
+
+    const deps = creatorSpy.mock.calls[0]?.[0];
+    expect(deps?.anchorLedger).toBeUndefined();
+  });
+
   it('throws when secrets are missing (preserves Phase 4 fail-fast behaviour)', async () => {
     const record = store.create('a2a');
     const config = makeConfigStub();

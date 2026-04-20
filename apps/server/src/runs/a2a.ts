@@ -102,6 +102,10 @@ export interface RunA2ADemoDeps {
  * Creator phase callback. Returns the deployed token's address + tx hash so
  * the orchestrator can hand them to the Narrator phase. Implementations must
  * also push their own logs/artifacts into the store.
+ *
+ * Receives the orchestrator's optional AnchorLedger so the Creator path can
+ * anchor Chapter 1 (AC3 symmetry with the narrator path). Tests + legacy
+ * fixtures that omit the ledger continue to run without anchor emissions.
  */
 export type RunCreatorPhaseFn = (deps: {
   config: AppConfig;
@@ -109,6 +113,7 @@ export type RunCreatorPhaseFn = (deps: {
   store: RunStore;
   runId: string;
   theme: string;
+  anchorLedger?: AnchorLedger;
 }) => Promise<{
   tokenAddr: string;
   tokenName: string;
@@ -532,6 +537,11 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
       store,
       runId,
       theme: resolvedTheme,
+      // Thread the orchestrator's optional AnchorLedger so the Creator path
+      // anchors Chapter 1 symmetrically with the narrator path. Omit when
+      // absent so legacy a2a.test fixtures (which never wire a ledger) keep
+      // their artifact set unchanged.
+      ...(deps.anchorLedger !== undefined ? { anchorLedger: deps.anchorLedger } : {}),
     });
     nextTokenAddr = creatorOut.tokenAddr;
     nextTokenName = creatorOut.tokenName;
