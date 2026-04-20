@@ -1,0 +1,17 @@
+# Force nixpacks to use pnpm (via corepack) for this monorepo. Without this,
+# nixpacks sees a Node project and defaults to `npm install`, which chokes on
+# the `workspace:*` protocol used by pnpm workspaces.
+#
+# Each Railway service (server / web) sets its own Build Command + Start
+# Command in the dashboard, using `pnpm --filter` to target the right
+# workspace package. Do NOT set a Root Directory per service — builds must
+# run from the repo root so the full workspace resolves.
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = [
+  "corepack enable",
+  "pnpm install --frozen-lockfile",
+]
