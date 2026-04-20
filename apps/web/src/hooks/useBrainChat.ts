@@ -76,6 +76,13 @@ export interface UseBrainChatResult {
    * renders as a plain-text Memind reply (no pills, no nested blocks).
    */
   appendLocalAssistant(content: string): void;
+  /**
+   * Append an arbitrary pre-built turn (user / assistant / heartbeat) to the
+   * transcript without touching the server. Used by SSE-driven surfaces such
+   * as the Heartbeat stream, which pushes tick results as new bubbles while
+   * the Brain run itself has already finished.
+   */
+  appendTurn(turn: BrainChatTurn): void;
 }
 
 /**
@@ -370,6 +377,13 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
     setState((prev) => ({ ...prev, turns: [...prev.turns, synthetic] }));
   }, []);
 
+  const appendTurn = useCallback((turn: BrainChatTurn): void => {
+    // Keep the ref in sync so a follow-up `send` in the same tick sees the
+    // newly-appended turn in the prior-transcript snapshot.
+    turnsRef.current = [...turnsRef.current, turn];
+    setState((prev) => ({ ...prev, turns: [...prev.turns, turn] }));
+  }, []);
+
   return {
     turns: state.turns,
     status: state.status,
@@ -377,5 +391,6 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
     send,
     reset,
     appendLocalAssistant,
+    appendTurn,
   };
 }

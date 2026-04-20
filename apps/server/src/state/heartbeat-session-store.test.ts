@@ -347,6 +347,111 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect(runTick).toHaveBeenCalledTimes(4); // 2 from first run + 2 from fresh restart
     });
 
+    it('fires onAfterTick for scheduled ticks, overlap skips, and recordTick calls with post-autoStop snapshots', async () => {
+      // Drive 3 scheduled fires + 1 overlap + 1 external recordTick and
+      // assert the hook observes every event (5 total) with the correct
+      // delta types and a snapshot reflecting any auto-stop that fired
+      // inside the same tick. maxTicks=4 forces the auto-stop to land on
+      // the last scheduled fire so we can prove `running=false` reaches
+      // the hook in one transaction with the delta.
+      const afterTickCalls: Array<{
+        snapshot: HeartbeatSessionState;
+        delta: HeartbeatTickDelta;
+      }> = [];
+      const store2 = new HeartbeatSessionStore({
+        onAfterTick: (snapshot, delta) => {
+          afterTickCalls.push({ snapshot, delta });
+        },
+      });
+
+      let release: (() => void) | undefined;
+      let firstTickEntered = false;
+      const runTick = vi.fn(async (snap: HeartbeatSessionState): Promise<HeartbeatTickDelta> => {
+        if (!firstTickEntered) {
+          firstTickEntered = true;
+          // Block the first fire so the next scheduler tick collides and
+          // goes down the overlap-skip branch.
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return {
+          tickId: `tick_${snap.tickCount.toString()}`,
+          tickAt: new Date().toISOString(),
+          success: true,
+        };
+      });
+
+      await store2.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 4 });
+
+      // Fire 1 starts and blocks; fire 2 is skipped (overlap); release
+      // fire 1; fire 3 + fire 4 complete in quick succession (4 == cap so
+      // the session auto-stops).
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(afterTickCalls).toHaveLength(0); // fire 1 still in-flight
+      await vi.advanceTimersByTimeAsync(1_000);
+      // Fire 2 hit the overlap-skip branch synchronously.
+      expect(afterTickCalls).toHaveLength(1);
+      expect(afterTickCalls[0]!.delta.error).toBe('overlap-skipped');
+      expect(afterTickCalls[0]!.delta.success).toBe(false);
+      expect(afterTickCalls[0]!.snapshot.skippedCount).toBe(1);
+
+      release?.();
+      await vi.advanceTimersByTimeAsync(0);
+      // Fire 1 finished → tickCount now 3 (incremented per overlap + per
+      // real fires). advanceTimersByTimeAsync re-runs any pending timers
+      // synchronously.
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      // One external immediate tick.
+      await store2.recordTick(FAKE_ADDR, {
+        tickId: 'external_tick',
+        tickAt: '2026-04-20T01:00:00.000Z',
+        success: true,
+      });
+
+      // Five callbacks total: fire1 success, overlap, fire3, fire4 (cap),
+      // recordTick. The last scheduled callback's snapshot should reflect
+      // the auto-stop.
+      expect(afterTickCalls.length).toBeGreaterThanOrEqual(4);
+      const lastScheduled = afterTickCalls.filter((c) => c.delta.tickId.startsWith('tick_')).pop();
+      expect(lastScheduled).toBeDefined();
+      expect(lastScheduled!.snapshot.running).toBe(false);
+      expect(lastScheduled!.snapshot.tickCount).toBeGreaterThanOrEqual(
+        lastScheduled!.snapshot.maxTicks,
+      );
+
+      const external = afterTickCalls.find((c) => c.delta.tickId === 'external_tick');
+      expect(external).toBeDefined();
+      expect(external!.snapshot.lastTickId).toBe('external_tick');
+
+      await store2.clear();
+    });
+
+    it('onAfterTick fires the error branch when runTick throws', async () => {
+      const afterTickCalls: Array<{
+        snapshot: HeartbeatSessionState;
+        delta: HeartbeatTickDelta;
+      }> = [];
+      const store2 = new HeartbeatSessionStore({
+        onAfterTick: (snapshot, delta) => {
+          afterTickCalls.push({ snapshot, delta });
+        },
+      });
+
+      const runTick = vi.fn(async (): Promise<HeartbeatTickDelta> => {
+        throw new Error('boom-err');
+      });
+      await store2.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 5 });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(afterTickCalls).toHaveLength(1);
+      expect(afterTickCalls[0]!.delta.success).toBe(false);
+      expect(afterTickCalls[0]!.delta.error).toBe('boom-err');
+
+      await store2.clear();
+    });
+
     it('restarting a still-running session (interval change) preserves counters', async () => {
       // The counter-preservation contract is still honoured when the user
       // tweaks the cadence of a running session (NOT a stopped one).

@@ -7,6 +7,7 @@ import express from 'express';
 import type { AppConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
 import { ShillOrderStore } from '../state/shill-order-store.js';
+import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
 import { RunStore } from './store.js';
 import {
   registerRunRoutes,
@@ -16,6 +17,7 @@ import {
   type RunShillMarketDemoFn,
 } from './routes.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
+import { HeartbeatEventBus } from './heartbeat-events.js';
 import type { AgentLoopResult, runAgentLoop } from '../agents/runtime.js';
 
 /**
@@ -946,5 +948,215 @@ describe('registerRunRoutes', () => {
       expect(received).toMatch(/"onChainTxHash":"0xcccccccc/);
       expect(received).toMatch(/"explorerUrl":"https:\/\/bscscan.com\/tx\/0xcccccccc/);
     }, 10_000);
+  });
+
+  // ─── GET /api/heartbeats/:tokenAddr/events (SSE) ────────────────────────
+  // End-to-end check that the heartbeat tick event bus round-trips through
+  // the new SSE endpoint. We stub the bus + session store with purpose-
+  // built fixtures so the test never touches the real scheduler.
+  describe('GET /api/heartbeats/:tokenAddr/events (SSE)', () => {
+    const tokenAddr = '0x4e39d254c716d88ae52d9ca136f0a029c5f74444';
+
+    async function startHarnessWithHeartbeatWires(
+      heartbeatEventBus: HeartbeatEventBus,
+      heartbeatSessionStore: HeartbeatSessionStore,
+    ): Promise<Harness> {
+      const app = express();
+      app.use(express.json({ limit: '1mb' }));
+      const runStore = new RunStore();
+      const loreStore = new LoreStore();
+      const anthropic = {} as Anthropic;
+      registerRunRoutes(app, {
+        config: makeConfigStub(),
+        anthropic,
+        runStore,
+        loreStore,
+        heartbeatEventBus,
+        heartbeatSessionStore,
+        runA2ADemoImpl: async () => {},
+      });
+      const server = app.listen(0);
+      return new Promise<Harness>((resolveFn) => {
+        server.once('listening', () => {
+          const address = server.address() as AddressInfo;
+          const baseUrl = `http://127.0.0.1:${address.port.toString()}`;
+          resolveFn({
+            app,
+            server,
+            baseUrl,
+            runStore,
+            loreStore,
+            close: () => new Promise<void>((r) => server.close(() => r())),
+          });
+        });
+      });
+    }
+
+    it('rejects malformed tokenAddr with 400', async () => {
+      const bus = new HeartbeatEventBus();
+      const store = new HeartbeatSessionStore();
+      harness = await startHarnessWithHeartbeatWires(bus, store);
+
+      const response = await fetch(`${harness.baseUrl}/api/heartbeats/not-an-addr/events`);
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error?: string };
+      expect(body.error).toMatch(/invalid tokenAddr/);
+    });
+
+    it('streams initial snapshot + tick events and auto-closes on session-ended', async () => {
+      const bus = new HeartbeatEventBus();
+      const store = new HeartbeatSessionStore();
+      // Seed a running session so the `initial` event carries a non-null
+      // snapshot. We use recordTick to advance the counter without running
+      // a real tick.
+      await store.start({
+        tokenAddr,
+        intervalMs: 60_000,
+        runTick: async () => ({
+          tickId: 'unused',
+          tickAt: '2026-04-20T00:00:00.000Z',
+          success: true,
+        }),
+      });
+
+      harness = await startHarnessWithHeartbeatWires(bus, store);
+
+      const received = await new Promise<string>((resolveFn, rejectFn) => {
+        const url = new URL(`${harness.baseUrl}/api/heartbeats/${tokenAddr}/events`);
+        const req = http.request(
+          {
+            hostname: url.hostname,
+            port: Number(url.port),
+            path: url.pathname,
+            method: 'GET',
+            headers: { accept: 'text/event-stream' },
+          },
+          (res) => {
+            expect(res.statusCode).toBe(200);
+            expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+            let buf = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => {
+              buf += chunk;
+            });
+            res.on('end', () => resolveFn(buf));
+            res.on('error', rejectFn);
+          },
+        );
+        req.on('error', rejectFn);
+        req.end();
+
+        // Give the handler a moment to flush the `initial` event, then
+        // drive one live tick + a terminal session-ended tick through the
+        // bus. The second emit flips running=false, which the handler
+        // must recognise and close the stream.
+        setTimeout(() => {
+          bus.emit(tokenAddr, {
+            tokenAddr,
+            snapshot: {
+              tokenAddr,
+              intervalMs: 60_000,
+              startedAt: '2026-04-20T00:00:00.000Z',
+              running: true,
+              maxTicks: 5,
+              tickCount: 1,
+              successCount: 1,
+              errorCount: 0,
+              skippedCount: 0,
+              lastTickAt: '2026-04-20T00:00:01.000Z',
+              lastTickId: 'tick_1',
+              lastAction: null,
+              lastError: null,
+            },
+            delta: {
+              tickId: 'tick_1',
+              tickAt: '2026-04-20T00:00:01.000Z',
+              success: true,
+            },
+            emittedAt: '2026-04-20T00:00:01.050Z',
+          });
+          setTimeout(() => {
+            bus.emit(tokenAddr, {
+              tokenAddr,
+              snapshot: {
+                tokenAddr,
+                intervalMs: 60_000,
+                startedAt: '2026-04-20T00:00:00.000Z',
+                running: false,
+                maxTicks: 5,
+                tickCount: 5,
+                successCount: 5,
+                errorCount: 0,
+                skippedCount: 0,
+                lastTickAt: '2026-04-20T00:00:05.000Z',
+                lastTickId: 'tick_5',
+                lastAction: null,
+                lastError: null,
+              },
+              delta: {
+                tickId: 'tick_5',
+                tickAt: '2026-04-20T00:00:05.000Z',
+                success: true,
+              },
+              emittedAt: '2026-04-20T00:00:05.050Z',
+            });
+          }, 30);
+        }, 50);
+      });
+
+      // Initial frame with the seeded snapshot.
+      expect(received).toMatch(/event: initial\ndata: \{[^\n]*"tokenAddr":"0x4e39/);
+      expect(received).toMatch(/"snapshot":\{[^\n]*"running":true/);
+      // At least one tick frame.
+      expect(received).toMatch(/event: tick\ndata: \{[^\n]*"tickId":"tick_1"/);
+      // Session-ended sentinel.
+      expect(received).toMatch(/event: session-ended\ndata: \{[^\n]*"running":false/);
+
+      await store.clear();
+    }, 5_000);
+
+    it('initial event carries snapshot=null when no session exists', async () => {
+      const bus = new HeartbeatEventBus();
+      const store = new HeartbeatSessionStore();
+      harness = await startHarnessWithHeartbeatWires(bus, store);
+
+      const received = await new Promise<string>((resolveFn, rejectFn) => {
+        const url = new URL(`${harness.baseUrl}/api/heartbeats/${tokenAddr}/events`);
+        const req = http.request(
+          {
+            hostname: url.hostname,
+            port: Number(url.port),
+            path: url.pathname,
+            method: 'GET',
+            headers: { accept: 'text/event-stream' },
+          },
+          (res) => {
+            let buf = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => {
+              buf += chunk;
+              // Wait for the full SSE frame (terminated by a blank line)
+              // before closing so we can assert on the data payload.
+              if (buf.includes('event: initial') && buf.includes('\n\n')) {
+                req.destroy();
+                resolveFn(buf);
+              }
+            });
+            res.on('error', rejectFn);
+          },
+        );
+        req.on('error', (err) => {
+          // Destroying the request races with reject; treat ECONNRESET as
+          // expected.
+          if (err instanceof Error && /aborted|ECONNRESET|socket hang up/i.test(err.message)) {
+            return;
+          }
+          rejectFn(err);
+        });
+        req.end();
+      });
+
+      expect(received).toMatch(/event: initial\ndata: \{[^\n]*"snapshot":null/);
+    }, 5_000);
   });
 });

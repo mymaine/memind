@@ -25,6 +25,7 @@ import { ShillOrderStore } from '../state/shill-order-store.js';
 import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
 import type { ArtifactLogStore } from '../state/artifact-log-store.js';
 import type { RunStore, RunEvent } from './store.js';
+import { HeartbeatEventBus, type HeartbeatTickEvent } from './heartbeat-events.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
 import {
@@ -100,6 +101,16 @@ export interface RegisterRunRoutesDeps {
    */
   heartbeatSessionStore?: HeartbeatSessionStore;
   /**
+   * Shared `HeartbeatEventBus` that receives every tick the shared
+   * `heartbeatSessionStore` records. The `/api/heartbeats/:tokenAddr/events`
+   * SSE endpoint subscribes to this bus so web clients see every tick in
+   * real time. Optional: the route falls back to a fresh per-request bus
+   * when omitted so CLI-only boot paths still compile, but production MUST
+   * wire the same bus instance that the session store's `onAfterTick` hook
+   * emits into — otherwise the SSE stream will never fire.
+   */
+  heartbeatEventBus?: HeartbeatEventBus;
+  /**
    * Shared `ArtifactLogStore` (Postgres migration). When wired, `GET
    * /api/artifacts` reads from here; otherwise the endpoint 503s with a
    * clear message so CLI-only boot paths don't silently return empty.
@@ -157,6 +168,11 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
   const heartbeatImpl = deps.runHeartbeatDemoImpl ?? runHeartbeatDemo;
   const shillMarketImpl = deps.runShillMarketDemoImpl ?? runShillMarketDemo;
   const brainChatImpl = deps.runBrainChatImpl ?? runBrainChat;
+  // Fresh per-request bus if none was wired — matches the other store
+  // fallbacks. Note: without a shared instance, ticks produced elsewhere in
+  // the process will never reach this subscription (the onAfterTick hook on
+  // the session store only knows about the bus wired into `index.ts`).
+  const heartbeatEventBus = deps.heartbeatEventBus ?? new HeartbeatEventBus();
 
   // ─── POST /api/runs ──────────────────────────────────────────────────────
   app.post('/api/runs', (req: Request, res: Response) => {
@@ -581,6 +597,90 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
     req.on('close', () => {
       // Client hung up — release the subscription and timer but do NOT call
       // res.end(): the socket is already gone.
+      teardown(false);
+    });
+  });
+
+  // ─── GET /api/heartbeats/:tokenAddr/events ───────────────────────────────
+  // Live SSE feed for a single heartbeat session. On subscribe we emit one
+  // `initial` event carrying the current session snapshot (or `null` when
+  // no session exists) so reconnecting clients can render "tick 3/5 running"
+  // without waiting for the next scheduler fire. Each subsequent
+  // `HeartbeatTickEvent` lands as a `tick` event. When a tick transitions
+  // the session into `running=false` we also emit a terminal `session-ended`
+  // event and close the stream — the client can wrap its UI state cleanly
+  // without polling.
+  app.get('/api/heartbeats/:tokenAddr/events', (req: Request, res: Response) => {
+    const rawAddr = req.params.tokenAddr;
+    if (typeof rawAddr !== 'string' || !EVM_ADDRESS_REGEX.test(rawAddr)) {
+      res.status(400).json({ error: 'invalid tokenAddr', tokenAddr: rawAddr });
+      return;
+    }
+    const tokenAddr = rawAddr.toLowerCase();
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    let terminated = false;
+    let unsubscribe: (() => void) | null = null;
+
+    const keepalive = setInterval(() => {
+      if (terminated) return;
+      res.write(': ping\n\n');
+    }, SSE_KEEPALIVE_MS);
+    keepalive.unref();
+
+    function teardown(endResponse: boolean): void {
+      if (terminated) return;
+      terminated = true;
+      clearInterval(keepalive);
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+      if (endResponse) {
+        res.end();
+      }
+    }
+
+    // Send the initial snapshot BEFORE subscribing so the client always sees
+    // the replay frame first. If the session store read fails we still
+    // advertise an explicit `null` snapshot so the client's state machine
+    // can flip to "no session" without timing out.
+    void (async () => {
+      let snapshot = null;
+      if (deps.heartbeatSessionStore !== undefined) {
+        try {
+          const result = await deps.heartbeatSessionStore.get(tokenAddr);
+          snapshot = result ?? null;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[heartbeat-events] initial snapshot read failed: ${message}`);
+        }
+      }
+      if (terminated) return;
+      res.write(`event: initial\n`);
+      res.write(`data: ${JSON.stringify({ tokenAddr, snapshot })}\n\n`);
+
+      unsubscribe = heartbeatEventBus.subscribe(tokenAddr, (event: HeartbeatTickEvent) => {
+        if (terminated) return;
+        res.write(`event: tick\n`);
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        // Auto-close once the session transitions to stopped (explicit stop,
+        // hit the cap, etc.). Emit an explicit `session-ended` sentinel so
+        // the client can branch on it instead of inferring from snapshot.
+        if (event.snapshot.running === false) {
+          res.write(`event: session-ended\n`);
+          res.write(`data: ${JSON.stringify({ tokenAddr, snapshot: event.snapshot })}\n\n`);
+          teardown(true);
+        }
+      });
+    })();
+
+    req.on('close', () => {
       teardown(false);
     });
   });

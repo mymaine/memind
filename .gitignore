@@ -44,3 +44,4 @@ apps/server/tmp/
 
 # local-only tooling (hidden from submission)
 apps/video/
+apps/video.trash-20260420/

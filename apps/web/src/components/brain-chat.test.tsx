@@ -36,6 +36,7 @@ function makeController(overrides: {
     send: noopAsync,
     reset: noop,
     appendLocalAssistant: noop,
+    appendTurn: noop,
   };
 }
 
@@ -182,5 +183,87 @@ describe('<BrainChat /> — slash hint (BRAIN-P6 AC-BRAIN-15)', () => {
       <BrainChat scope="launch" controller={makeController({ turns: [] })} />,
     );
     expect(out).toMatch(/type\s*\/\s*for commands/i);
+  });
+});
+
+describe('<BrainChat /> — heartbeat tick bubble integration', () => {
+  it('renders heartbeat turns inline with assistant turns in wire order', () => {
+    // Simulates the state after `/heartbeat <addr> <ms> <n>` landed a
+    // background-started session and one tick event fired. The assistant
+    // turn is the Brain's initial ack; the heartbeat turn is the first
+    // tick summary that landed via the SSE stream.
+    const out = renderToStaticMarkup(
+      <BrainChat
+        scope="global"
+        controller={makeController({
+          turns: [
+            { id: 'u1', role: 'user', content: '/heartbeat 0xabc 30000 3' },
+            {
+              id: 'a1',
+              role: 'assistant',
+              content: 'Heartbeat loop started.',
+              brainEvents: [
+                {
+                  kind: 'tool-use-start',
+                  agent: 'brain',
+                  toolName: 'invoke_heartbeat_tick',
+                  toolUseId: 'tu-hb-1',
+                  input: {
+                    tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+                    intervalMs: 30_000,
+                    maxTicks: 3,
+                  },
+                },
+                {
+                  kind: 'tool-use-end',
+                  agent: 'brain',
+                  toolName: 'invoke_heartbeat_tick',
+                  toolUseId: 'tu-hb-1',
+                  output: {
+                    tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+                    mode: 'background-started',
+                    running: true,
+                    intervalMs: 30_000,
+                    maxTicks: 3,
+                    tickCount: 0,
+                    successCount: 0,
+                    errorCount: 0,
+                    skippedCount: 0,
+                  },
+                  isError: false,
+                },
+              ],
+            },
+            {
+              id: 'hb-1',
+              role: 'heartbeat',
+              content: 'Heartbeat tick 1/3: idle',
+              heartbeat: {
+                tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+                tickId: 'tick-1',
+                tickNumber: 1,
+                maxTicks: 3,
+                success: true,
+                action: 'idle',
+                tickAt: '2026-04-20T00:01:00.000Z',
+                running: true,
+              },
+            },
+          ],
+        })}
+      />,
+    );
+    expect(out).toContain('data-role="user"');
+    expect(out).toContain('data-role="assistant"');
+    expect(out).toContain('data-role="heartbeat"');
+    // Ordering: user < assistant < heartbeat.
+    const idxUser = out.indexOf('data-role="user"');
+    const idxAssistant = out.indexOf('data-role="assistant"');
+    const idxHeartbeat = out.indexOf('data-role="heartbeat"');
+    expect(idxUser).toBeGreaterThanOrEqual(0);
+    expect(idxAssistant).toBeGreaterThan(idxUser);
+    expect(idxHeartbeat).toBeGreaterThan(idxAssistant);
+    // Tick chip text.
+    expect(out).toMatch(/tick 1\/3/);
   });
 });

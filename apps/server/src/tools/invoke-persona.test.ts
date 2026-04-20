@@ -24,7 +24,10 @@ import {
   LIST_HEARTBEATS_TOOL_NAME,
   STOP_HEARTBEAT_TOOL_NAME,
 } from './invoke-persona.js';
-import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
+import {
+  HeartbeatSessionStore,
+  type HeartbeatTickDelta,
+} from '../state/heartbeat-session-store.js';
 import type { CreatorPersonaInput } from '../agents/creator.js';
 import type { NarratorPersonaInput, NarratorPersonaOutput } from '../agents/narrator.js';
 import type { ShillerPersonaInput, ShillerPersonaOutput } from '../agents/market-maker.js';
@@ -921,10 +924,111 @@ describe('createInvokeHeartbeatTickTool', () => {
 
     const [, ctx] = run.mock.calls[0]!;
     expect(ctx.onLog).toBe(onLog);
-    expect(ctx.onArtifact).toBe(onArtifact);
+    // `ctx.onArtifact` is a wrapper installed by the heartbeat invoke
+    // layer so it can capture tweet-url / lore-cid artifacts for the
+    // session store delta. Verify the wrapper still forwards to the
+    // outer listener rather than pointer-equality on the callback.
+    expect(typeof ctx.onArtifact).toBe('function');
+    const wrapper = ctx.onArtifact as (a: Artifact) => void;
+    wrapper({
+      kind: 'tweet-url',
+      url: 'https://x.com/stub/status/forwarded',
+      tweetId: 'forwarded',
+    });
+    expect(onArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'tweet-url', tweetId: 'forwarded' }),
+    );
     expect(ctx.onToolUseStart).toBe(onToolUseStart);
     expect(ctx.onToolUseEnd).toBe(onToolUseEnd);
     expect(ctx.onAssistantDelta).toBe(onAssistantDelta);
+  });
+
+  it('captures tweet-url + lore-cid artifacts emitted during a background tick and threads them onto the recorded delta', async () => {
+    // When the heartbeat persona emits a tweet-url or lore-cid artifact
+    // during a tick, the invoke layer must (a) forward the artifact to the
+    // outer `onArtifact` so the Brain run SSE still sees it, and (b) fold
+    // it into `recordTick`'s delta so the session store's `onAfterTick`
+    // hook (and thus the heartbeat SSE bus) can surface it. Artifact kinds
+    // outside the tick filter set must NOT contribute to the delta.
+    const capturedDeltas: HeartbeatTickDelta[] = [];
+    const sessionStore = new HeartbeatSessionStore({
+      onAfterTick: (_snap, delta) => {
+        capturedDeltas.push(delta);
+      },
+    });
+
+    const run = vi.fn(
+      async (
+        _input: HeartbeatPersonaInput,
+        ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => {
+        const onArtifact = ctx.onArtifact as ((a: Artifact) => void) | undefined;
+        // Persona emits one tweet-url + one lore-cid + one bsc-token (the
+        // last kind is NOT a heartbeat tick artifact and must be filtered
+        // out of the delta even though the outer forwarder still sees it).
+        onArtifact?.({
+          kind: 'tweet-url',
+          url: 'https://x.com/agent/status/tid-hb',
+          tweetId: 'tid-hb',
+          label: 'Heartbeat tweet',
+        });
+        onArtifact?.({
+          kind: 'lore-cid',
+          cid: 'bafkrei-hb',
+          gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafkrei-hb',
+          author: 'narrator',
+          chapterNumber: 4,
+        });
+        onArtifact?.({
+          kind: 'bsc-token',
+          chain: 'bsc-mainnet',
+          address: FAKE_TOKEN_ADDR,
+          explorerUrl: `https://bscscan.com/token/${FAKE_TOKEN_ADDR}`,
+        });
+        return {
+          lastTickAt: '2026-04-19T00:00:00.000Z',
+          lastTickId: 'tick_hb',
+          successCount: 1,
+          errorCount: 0,
+          skippedCount: 0,
+          lastError: null,
+        };
+      },
+    );
+    const persona = makeHeartbeatPersona(run);
+
+    const outerOnArtifact = vi.fn<(artifact: Artifact) => void>();
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'm',
+      systemPrompt: 'p',
+      buildUserInput: () => 'tick',
+      sessionStore,
+      onArtifact: outerOnArtifact,
+    });
+
+    // Drive the background-started branch so we exercise the recordTick
+    // path (one-shot would bypass the session store entirely).
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, intervalMs: 30_000 });
+    expect(output.mode).toBe('background-started');
+
+    // Outer listener still sees every artifact exactly once.
+    expect(outerOnArtifact).toHaveBeenCalledTimes(3);
+    const outerKinds = outerOnArtifact.mock.calls.map((c) => c[0].kind);
+    expect(outerKinds).toEqual(expect.arrayContaining(['tweet-url', 'lore-cid', 'bsc-token']));
+
+    // The immediate recordTick delta must carry only the tick-relevant
+    // artifacts (tweet-url + lore-cid); bsc-token must be filtered out.
+    expect(capturedDeltas.length).toBeGreaterThanOrEqual(1);
+    const recordedDelta = capturedDeltas[capturedDeltas.length - 1]!;
+    expect(recordedDelta.artifacts).toBeDefined();
+    expect(recordedDelta.artifacts).toHaveLength(2);
+    const deltaKinds = (recordedDelta.artifacts ?? []).map((a) => a.kind);
+    expect(deltaKinds.sort()).toEqual(['lore-cid', 'tweet-url']);
+
+    await sessionStore.clear();
   });
 });
 

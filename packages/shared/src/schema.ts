@@ -442,3 +442,56 @@ export type SseEventName =
   | 'tool_use:start'
   | 'tool_use:end'
   | 'assistant:delta';
+
+// ---------------------------------------------------------------------------
+// Heartbeat tick events — wire shape of `GET /api/heartbeats/:tokenAddr/events`.
+// Each `tick` SSE frame payload deserialises to `heartbeatTickEventSchema`;
+// the `initial` frame sends `{ tokenAddr, snapshot: HeartbeatSessionState | null }`
+// and the terminal `session-ended` frame sends `{ tokenAddr, snapshot: HeartbeatSessionState }`.
+// Both schemas live here so the web client can share a single source of truth
+// with the server instead of duplicating the shape in a client-only module.
+// ---------------------------------------------------------------------------
+
+export const heartbeatSessionActionSchema = z.enum(['post', 'extend_lore', 'idle']);
+export type HeartbeatSessionAction = z.infer<typeof heartbeatSessionActionSchema>;
+
+export const heartbeatSessionStateSchema = z.object({
+  tokenAddr: z.string(),
+  intervalMs: z.number().int().positive(),
+  startedAt: z.string().datetime(),
+  running: z.boolean(),
+  maxTicks: z.number().int().positive(),
+  tickCount: z.number().int().nonnegative(),
+  successCount: z.number().int().nonnegative(),
+  errorCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  lastTickAt: z.string().datetime().nullable(),
+  lastTickId: z.string().nullable(),
+  lastAction: heartbeatSessionActionSchema.nullable(),
+  lastError: z.string().nullable(),
+});
+export type HeartbeatSessionState = z.infer<typeof heartbeatSessionStateSchema>;
+
+export const heartbeatTickDeltaSchema = z.object({
+  tickId: z.string().min(1),
+  tickAt: z.string().datetime(),
+  success: z.boolean(),
+  action: heartbeatSessionActionSchema.optional(),
+  error: z.string().optional(),
+  /**
+   * Optional tick-scoped artifacts the persona emitted during this tick
+   * (filtered to `tweet-url` + `lore-cid` by the invoke layer so the web
+   * client only receives the kinds it renders in the BrainChat surface).
+   */
+  artifacts: z.array(artifactSchema).optional(),
+});
+export type HeartbeatTickDelta = z.infer<typeof heartbeatTickDeltaSchema>;
+
+export const heartbeatTickEventSchema = z.object({
+  tokenAddr: z.string(),
+  snapshot: heartbeatSessionStateSchema,
+  delta: heartbeatTickDeltaSchema,
+  artifacts: z.array(artifactSchema).optional(),
+  emittedAt: z.string().datetime(),
+});
+export type HeartbeatTickEvent = z.infer<typeof heartbeatTickEventSchema>;

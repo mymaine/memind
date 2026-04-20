@@ -286,6 +286,98 @@ describe('<BrainChatMessage /> — UAT 2026-04-20 fixes', () => {
   });
 });
 
+describe('<BrainChatMessage /> — heartbeat bubble', () => {
+  it('renders data-role="heartbeat", the status chip, and the shortened tokenAddr', () => {
+    const turn: BrainChatTurn = {
+      id: 'hb-1',
+      role: 'heartbeat',
+      content: 'Heartbeat tick 3/5: idle',
+      heartbeat: {
+        tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+        tickId: 'tick-3',
+        tickNumber: 3,
+        maxTicks: 5,
+        success: true,
+        action: 'idle',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        running: true,
+      },
+    };
+    const out = renderToStaticMarkup(<BrainChatMessage turn={turn} />);
+    expect(out).toContain('data-role="heartbeat"');
+    expect(out).toMatch(/heartbeat\s*·\s*tick 3\/5/);
+    // Shortened tokenAddr chip (0xabcd…4444).
+    expect(out).toContain('0xabcd');
+    expect(out).toContain('4444');
+    // Left-aligned (mr-auto) matches the assistant bubble layout.
+    expect(out).toMatch(/mr-auto|self-start/);
+    // Markdown content rendered.
+    expect(out).toContain('Heartbeat tick 3/5: idle');
+  });
+
+  it('surfaces an auto-stopped marker when snapshot.running=false', () => {
+    const turn: BrainChatTurn = {
+      id: 'hb-2',
+      role: 'heartbeat',
+      content: 'Heartbeat tick 5/5: idle — loop auto-stopped at cap',
+      heartbeat: {
+        tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+        tickId: 'tick-5',
+        tickNumber: 5,
+        maxTicks: 5,
+        success: true,
+        action: 'idle',
+        tickAt: '2026-04-20T00:02:30.000Z',
+        running: false,
+      },
+    };
+    const out = renderToStaticMarkup(<BrainChatMessage turn={turn} />);
+    expect(out).toMatch(/auto-stopped/i);
+  });
+
+  it('renders markdown links inside the heartbeat content (tweet / IPFS)', () => {
+    const turn: BrainChatTurn = {
+      id: 'hb-3',
+      role: 'heartbeat',
+      content: 'Heartbeat tick 3/5: posted tweet [link](https://x.com/memind/status/123)',
+      heartbeat: {
+        tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+        tickId: 'tick-3',
+        tickNumber: 3,
+        maxTicks: 5,
+        success: true,
+        action: 'post',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        running: true,
+      },
+    };
+    const out = renderToStaticMarkup(<BrainChatMessage turn={turn} />);
+    expect(out).toMatch(/<a[^>]*href="https:\/\/x\.com\/memind\/status\/123"[^>]*target="_blank"/);
+  });
+
+  it('renders an error-tone chip for failed ticks', () => {
+    const turn: BrainChatTurn = {
+      id: 'hb-4',
+      role: 'heartbeat',
+      content: 'Heartbeat tick 3/5 failed: rate limited',
+      heartbeat: {
+        tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+        tickId: 'tick-3',
+        tickNumber: 3,
+        maxTicks: 5,
+        success: false,
+        action: null,
+        error: 'rate limited',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        running: true,
+      },
+    };
+    const out = renderToStaticMarkup(<BrainChatMessage turn={turn} />);
+    // We use the danger colour var for error ticks.
+    expect(out).toContain('var(--color-danger)');
+  });
+});
+
 describe('<BrainChatMessage /> — ordering', () => {
   it('renders multiple brainEvents in the order they arrived', () => {
     // Not one of the five AC cases but a critical invariant: the UI must

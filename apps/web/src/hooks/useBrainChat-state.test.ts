@@ -27,6 +27,8 @@ import { describe, it, expect } from 'vitest';
 import type {
   Artifact,
   AssistantDeltaEventPayload,
+  HeartbeatSessionState,
+  HeartbeatTickEvent,
   LogEvent,
   ToolUseEndEventPayload,
   ToolUseStartEventPayload,
@@ -38,6 +40,7 @@ import {
   applyToolUseEnd,
   applyToolUseStart,
   buildAssistantTurn,
+  buildHeartbeatTurn,
   buildUserTurn,
   EMPTY_BRAIN_CHAT_STATE,
   turnToApiMessage,
@@ -246,6 +249,153 @@ describe('reset contract (scenario 4)', () => {
       turns: [],
       status: 'idle',
       errorMessage: null,
+    });
+  });
+});
+
+// ─── Heartbeat turn builder ─────────────────────────────────────────────────
+//
+// `buildHeartbeatTurn` collapses one SSE tick event into a BrainChatTurn of
+// role='heartbeat'. These tests pin the four content variants + the
+// auto-stop append rule called out in the spec so a future copy tweak has
+// to be a conscious choice.
+
+function makeSnapshot(overrides: Partial<HeartbeatSessionState> = {}): HeartbeatSessionState {
+  return {
+    tokenAddr: '0x0000000000000000000000000000000000000001',
+    intervalMs: 30_000,
+    startedAt: '2026-04-20T00:00:00.000Z',
+    running: true,
+    maxTicks: 5,
+    tickCount: 3,
+    successCount: 2,
+    errorCount: 0,
+    skippedCount: 0,
+    lastTickAt: '2026-04-20T00:01:30.000Z',
+    lastTickId: 'tick-3',
+    lastAction: 'post',
+    lastError: null,
+    ...overrides,
+  };
+}
+
+function makeTickEvent(
+  overrides: Partial<HeartbeatTickEvent> & {
+    snapshotOverrides?: Partial<HeartbeatSessionState>;
+  } = {},
+): HeartbeatTickEvent {
+  const { snapshotOverrides, ...rest } = overrides;
+  return {
+    tokenAddr: '0x0000000000000000000000000000000000000001',
+    snapshot: makeSnapshot(snapshotOverrides),
+    delta: {
+      tickId: 'tick-3',
+      tickAt: '2026-04-20T00:01:30.000Z',
+      success: true,
+      action: 'idle',
+    },
+    emittedAt: '2026-04-20T00:01:30.100Z',
+    ...rest,
+  };
+}
+
+describe('buildHeartbeatTurn — four action variants + auto-stop (scenario 5)', () => {
+  it('success + action=post + tweet-url artifact → tweet link markdown', () => {
+    const tweet: Artifact = {
+      kind: 'tweet-url',
+      url: 'https://x.com/memind/status/123',
+      tweetId: '123',
+    };
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'tick-3',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        success: true,
+        action: 'post',
+      },
+      artifacts: [tweet],
+    });
+    const turn = buildHeartbeatTurn('hb-1', event);
+    expect(turn.role).toBe('heartbeat');
+    expect(turn.content).toBe(
+      'Heartbeat tick 3/5: posted tweet [link](https://x.com/memind/status/123)',
+    );
+    expect(turn.heartbeat?.action).toBe('post');
+    expect(turn.heartbeat?.success).toBe(true);
+  });
+
+  it('success + action=extend_lore + lore-cid artifact → chapter markdown link', () => {
+    const lore: Artifact = {
+      kind: 'lore-cid',
+      cid: 'bafylorechapter4',
+      gatewayUrl: 'https://gateway.pinata.cloud/ipfs/bafylorechapter4',
+      author: 'narrator',
+      chapterNumber: 4,
+    };
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'tick-3',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        success: true,
+        action: 'extend_lore',
+      },
+      artifacts: [lore],
+    });
+    const turn = buildHeartbeatTurn('hb-2', event);
+    expect(turn.content).toBe(
+      'Heartbeat tick 3/5: wrote Chapter 4 ([ipfs://bafylorechapter4](https://gateway.pinata.cloud/ipfs/bafylorechapter4))',
+    );
+  });
+
+  it('success + action=idle → idle summary', () => {
+    const event = makeTickEvent();
+    const turn = buildHeartbeatTurn('hb-3', event);
+    expect(turn.content).toBe('Heartbeat tick 3/5: idle');
+    expect(turn.heartbeat?.action).toBe('idle');
+  });
+
+  it('error tick → failed summary with server error text', () => {
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'tick-3',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        success: false,
+        error: 'rate limited by X API',
+      },
+      snapshotOverrides: {
+        lastError: 'rate limited by X API',
+      },
+    });
+    const turn = buildHeartbeatTurn('hb-4', event);
+    expect(turn.content).toBe('Heartbeat tick 3/5 failed: rate limited by X API');
+    expect(turn.heartbeat?.success).toBe(false);
+    expect(turn.heartbeat?.error).toBe('rate limited by X API');
+  });
+
+  it('auto-stop (snapshot.running=false) appends the cap suffix', () => {
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'tick-5',
+        tickAt: '2026-04-20T00:02:30.000Z',
+        success: true,
+        action: 'idle',
+      },
+      snapshotOverrides: { tickCount: 5, running: false },
+    });
+    const turn = buildHeartbeatTurn('hb-5', event);
+    expect(turn.content).toBe('Heartbeat tick 5/5: idle — loop auto-stopped at cap');
+    expect(turn.heartbeat?.running).toBe(false);
+  });
+});
+
+describe('turnToApiMessage — heartbeat turns map to assistant with prefix', () => {
+  it('wraps content with "[heartbeat] " so the LLM sees it as prior context', () => {
+    const event = makeTickEvent();
+    const turn = buildHeartbeatTurn('hb-6', event);
+    const msg = turnToApiMessage(turn);
+    expect(msg).toEqual({
+      role: 'assistant',
+      content: '[heartbeat] Heartbeat tick 3/5: idle',
     });
   });
 });

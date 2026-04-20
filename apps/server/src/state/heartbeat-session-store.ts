@@ -19,6 +19,7 @@
  * same session.
  */
 import type { Pool } from 'pg';
+import type { Artifact } from '@hack-fourmeme/shared';
 
 /**
  * Rough cost per heartbeat tick in USD. Used by callers to warn the user
@@ -64,6 +65,14 @@ export interface HeartbeatTickDelta {
   readonly success: boolean;
   readonly action?: HeartbeatSessionAction;
   readonly error?: string;
+  /**
+   * Optional tick-scoped artifacts captured by the caller (e.g. the
+   * `invoke_heartbeat_tick` tool records `tweet-url` and `lore-cid`
+   * artifacts the persona emits during one tick). The session store does
+   * not aggregate these into any counter; they ride along on the delta so
+   * downstream subscribers (SSE bus) can surface them live.
+   */
+  readonly artifacts?: ReadonlyArray<Artifact>;
 }
 
 export interface HeartbeatSessionStartParams {
@@ -82,6 +91,16 @@ export interface HeartbeatSessionStoreOptions {
   pool?: Pool | undefined;
   setIntervalImpl?: typeof setInterval;
   clearIntervalImpl?: typeof clearInterval;
+  /**
+   * Fired AFTER each tick attempt is applied to the session (including the
+   * overlap-skipped branch, the error branch, and the post-`maybeAutoStop`
+   * state transition). The hook receives a fresh snapshot so listeners see
+   * `running: false` when the cap was just reached by this tick. Errors
+   * thrown by the hook are swallowed with a warn log so a broken listener
+   * cannot poison the store's persist pipeline — the bus layer performs its
+   * own fan-out isolation on top of this.
+   */
+  onAfterTick?: (snapshot: HeartbeatSessionState, delta: HeartbeatTickDelta) => void;
 }
 
 interface MutableSession {
@@ -108,11 +127,15 @@ export class HeartbeatSessionStore {
   private readonly pool: Pool | undefined;
   private readonly setIntervalOverride: typeof setInterval | undefined;
   private readonly clearIntervalOverride: typeof clearInterval | undefined;
+  private readonly onAfterTick:
+    | ((snapshot: HeartbeatSessionState, delta: HeartbeatTickDelta) => void)
+    | undefined;
 
   constructor(options: HeartbeatSessionStoreOptions = {}) {
     this.pool = options.pool;
     this.setIntervalOverride = options.setIntervalImpl;
     this.clearIntervalOverride = options.clearIntervalImpl;
+    this.onAfterTick = options.onAfterTick;
   }
 
   private get setIntervalImpl(): typeof setInterval {
@@ -255,7 +278,9 @@ export class HeartbeatSessionStore {
     if (session === undefined) return undefined;
     this.applyDelta(session, delta);
     await this.persist(session);
-    return snapshotOf(session);
+    const snap = snapshotOf(session);
+    this.fireAfterTick(snap, delta);
+    return snap;
   }
 
   /** Read a single session's snapshot, or undefined if the token is unknown. */
@@ -342,32 +367,67 @@ export class HeartbeatSessionStore {
       session.skippedCount += 1;
       this.maybeAutoStop(session);
       await this.persist(session);
+      // Synthesise a delta so subscribers can tell the overlap-skip path
+      // apart from a real tick. `success=false` with a distinct sentinel
+      // `error='overlap-skipped'` mirrors how the rest of the pipeline
+      // classifies unrealised work.
+      const skipDelta: HeartbeatTickDelta = {
+        tickId: `overlap_${Date.now().toString(36)}`,
+        tickAt: new Date().toISOString(),
+        success: false,
+        error: 'overlap-skipped',
+      };
+      this.fireAfterTick(snapshotOf(session), skipDelta);
       return;
     }
     session.tickInFlight = true;
+    // Track the delta that landed in this branch so the `finally` can hand
+    // it to subscribers once persist + auto-stop have settled.
+    let appliedDelta: HeartbeatTickDelta | undefined;
     try {
       const snap = snapshotOf(session);
       const delta = await session.runTick(snap);
       const current = this.sessions.get(key);
       if (current === undefined) return;
       this.applyDeltaSkipTickCount(current, delta);
+      appliedDelta = delta;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const current = this.sessions.get(key);
       if (current === undefined) return;
-      this.applyDeltaSkipTickCount(current, {
+      const errorDelta: HeartbeatTickDelta = {
         tickId: current.lastTickId ?? `tick_err_${Date.now().toString(36)}`,
         tickAt: new Date().toISOString(),
         success: false,
         error: message,
-      });
+      };
+      this.applyDeltaSkipTickCount(current, errorDelta);
+      appliedDelta = errorDelta;
     } finally {
       const current = this.sessions.get(key);
       if (current !== undefined) {
         current.tickInFlight = false;
         this.maybeAutoStop(current);
         await this.persist(current);
+        if (appliedDelta !== undefined) {
+          this.fireAfterTick(snapshotOf(current), appliedDelta);
+        }
       }
+    }
+  }
+
+  /**
+   * Invoke the optional `onAfterTick` hook. Listener errors are caught so a
+   * broken downstream subscriber (e.g. the SSE event bus) cannot disrupt the
+   * scheduler or the persistence pipeline.
+   */
+  private fireAfterTick(snapshot: HeartbeatSessionState, delta: HeartbeatTickDelta): void {
+    if (this.onAfterTick === undefined) return;
+    try {
+      this.onAfterTick(snapshot, delta);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[heartbeat] onAfterTick threw (non-fatal): ${message}`);
     }
   }
 

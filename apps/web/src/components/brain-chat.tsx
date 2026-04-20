@@ -28,6 +28,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -35,11 +36,14 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from 'react';
+import type { HeartbeatTickEvent } from '@hack-fourmeme/shared';
 import { BrainChatMessage } from './brain-chat-message';
 import { BrainChatSuggestions } from './brain-chat-suggestions';
 import { BrainChatSlashPalette } from './brain-chat-slash-palette';
 import { dispatchSlashSubmission } from './brain-chat-slash-dispatch';
 import { useBrainChat, type BrainChatScope, type UseBrainChatResult } from '@/hooks/useBrainChat';
+import { buildHeartbeatTurn, type BrainChatTurn } from '@/hooks/useBrainChat-state';
+import { useHeartbeatStream } from '@/hooks/useHeartbeatStream';
 import { useSlashPalette } from '@/hooks/useSlashPalette';
 
 export interface BrainChatProps {
@@ -67,6 +71,63 @@ export interface BrainChatProps {
 // inside the flex column without blowing past the panel height.
 const SECTION_CLASS =
   'flex h-full min-h-0 flex-col gap-3 rounded-[var(--radius-card)] border border-border-default bg-bg-primary p-4';
+
+/**
+ * Scan a transcript and return the tokenAddr for the most-recent successful
+ * `invoke_heartbeat_tick` tool_use:end whose output mode started a
+ * background session. Returns `null` when no background heartbeat run is
+ * visible in the transcript, including when the latest run was a one-shot
+ * tick (mode='one-shot' — the SSE subscription is irrelevant since the
+ * server-side loop does not continue).
+ */
+function extractActiveHeartbeatToken(turns: readonly BrainChatTurn[]): string | null {
+  const BACKGROUND_MODES = new Set([
+    'background-started',
+    'background-restarted',
+    'background-already-running',
+  ]);
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const turn = turns[i];
+    if (!turn || turn.role !== 'assistant') continue;
+    const events = turn.brainEvents ?? [];
+    // Build a lookup from toolUseId → input so we can grab the tokenAddr
+    // paired with the matching end event.
+    const startById = new Map<string, Record<string, unknown>>();
+    for (const ev of events) {
+      if (ev.kind === 'tool-use-start' && ev.toolName === 'invoke_heartbeat_tick') {
+        startById.set(ev.toolUseId, ev.input);
+      }
+    }
+    // Walk ends in reverse so the most recent background-mode tick wins.
+    for (let j = events.length - 1; j >= 0; j -= 1) {
+      const ev = events[j];
+      if (!ev || ev.kind !== 'tool-use-end') continue;
+      if (ev.toolName !== 'invoke_heartbeat_tick') continue;
+      if (ev.isError) continue;
+      const mode = ev.output['mode'];
+      if (typeof mode !== 'string' || !BACKGROUND_MODES.has(mode)) continue;
+      const input = startById.get(ev.toolUseId);
+      const tokenAddr = input?.['tokenAddr'];
+      if (typeof tokenAddr === 'string' && tokenAddr !== '') {
+        return tokenAddr;
+      }
+    }
+  }
+  return null;
+}
+
+let heartbeatTurnCounter = 0;
+function makeHeartbeatTurnId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // Fall through — some environments expose crypto but not randomUUID.
+  }
+  heartbeatTurnCounter += 1;
+  return `hb-${Date.now().toString()}-${heartbeatTurnCounter.toString()}`;
+}
 
 const PRIMARY_BUTTON_CLASS =
   'inline-flex shrink-0 items-center justify-center rounded-[var(--radius-default)] border border-accent bg-accent px-4 py-2 font-[family-name:var(--font-sans-body)] text-[13px] font-medium text-bg-primary transition-opacity disabled:cursor-not-allowed disabled:opacity-60';
@@ -220,6 +281,47 @@ export function BrainChat({
 
   const isStreaming = active.status === 'sending' || active.status === 'streaming';
   const isEmpty = active.turns.length === 0;
+
+  // Heartbeat SSE wiring: inspect the transcript for the newest successful
+  // `invoke_heartbeat_tick` tool_use:end that reported a background mode
+  // (`background-started` / `-restarted` / `-already-running`). Its paired
+  // tool_use:start input carries the tokenAddr — that becomes the active
+  // subscription target. When the user runs a second heartbeat against a
+  // different token, this recomputes and the hook swaps the EventSource.
+  const activeHeartbeatToken = useMemo(
+    () => extractActiveHeartbeatToken(active.turns),
+    [active.turns],
+  );
+  // Guard against re-subscribing to the same token after the stream has
+  // cleanly ended: once the server emits `session-ended` the effect below
+  // clears this ref, which we compare against the transcript-derived token
+  // to decide whether to open a new EventSource.
+  const endedHeartbeatTokenRef = useRef<string | null>(null);
+  const activeStreamToken =
+    activeHeartbeatToken !== null && activeHeartbeatToken === endedHeartbeatTokenRef.current
+      ? null
+      : activeHeartbeatToken;
+
+  const handleTick = useCallback(
+    (event: HeartbeatTickEvent): void => {
+      const turn: BrainChatTurn = buildHeartbeatTurn(makeHeartbeatTurnId(), event);
+      active.appendTurn(turn);
+    },
+    [active],
+  );
+  const handleEnded = useCallback((): void => {
+    // Remember the token whose stream just terminated so the derivation
+    // above doesn't immediately reopen the same connection. Keeping it in a
+    // ref (not state) avoids a redundant re-render — the only consumer is
+    // the memo above, which reads the ref synchronously.
+    endedHeartbeatTokenRef.current = activeHeartbeatToken;
+  }, [activeHeartbeatToken]);
+
+  useHeartbeatStream({
+    tokenAddr: activeStreamToken,
+    onTick: handleTick,
+    onEnded: handleEnded,
+  });
 
   const onPickFromPalette = useCallback(
     (picked: { name: string }) => {

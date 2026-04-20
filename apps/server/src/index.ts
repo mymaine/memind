@@ -22,6 +22,7 @@ import { ArtifactLogStore } from './state/artifact-log-store.js';
 import { RunStore } from './runs/store.js';
 import { registerRunRoutes } from './runs/routes.js';
 import { createRealCreatorPaymentPhase } from './runs/shill-market.js';
+import { HeartbeatEventBus } from './runs/heartbeat-events.js';
 import { getPool, logPoolSummary } from './db/pool.js';
 import { ensureSchema } from './db/schema.js';
 
@@ -61,10 +62,29 @@ async function main(): Promise<void> {
   // runs must see the same instance so POST /api/runs { kind: 'shill-market' }
   // does not 500 out at the routes guard.
   const shillOrderStore = new ShillOrderStore({ pool });
+  // Live tick event bus — fan-out surface for the SSE endpoint at
+  // `/api/heartbeats/:tokenAddr/events`. Constructed before the session
+  // store so the store's `onAfterTick` hook can reference it in a closure.
+  const heartbeatEventBus = new HeartbeatEventBus();
   // Long-lived heartbeat session registry — one instance for the process so
   // `/heartbeat <addr> <intervalMs>` on one brain-chat run and
-  // `/heartbeat-stop <addr>` on a later run hit the same map of timers.
-  const heartbeatSessionStore = new HeartbeatSessionStore({ pool });
+  // `/heartbeat-stop <addr>` on a later run hit the same map of timers. The
+  // `onAfterTick` hook fans every tick (scheduled, immediate, overlap-skip,
+  // error) into the shared event bus so web clients see live updates.
+  const heartbeatSessionStore = new HeartbeatSessionStore({
+    pool,
+    onAfterTick: (snapshot, delta) => {
+      heartbeatEventBus.emit(snapshot.tokenAddr, {
+        tokenAddr: snapshot.tokenAddr,
+        snapshot,
+        delta,
+        ...(delta.artifacts !== undefined && delta.artifacts.length > 0
+          ? { artifacts: delta.artifacts }
+          : {}),
+        emittedAt: new Date().toISOString(),
+      });
+    },
+  });
   // Artifacts log — Ch12 evidence hydration backend.
   const artifactLogStore = new ArtifactLogStore({ pool });
   // Thread the artifacts writer into the RunStore so `pushArtifact` performs
@@ -101,6 +121,7 @@ async function main(): Promise<void> {
     anchorLedger,
     shillOrderStore,
     heartbeatSessionStore,
+    heartbeatEventBus,
     artifactLogStore,
     ...(shillCreatorPaymentImpl !== undefined ? { shillCreatorPaymentImpl } : {}),
   });

@@ -627,15 +627,29 @@ export interface CreateInvokeHeartbeatTickToolDeps extends PersonaInvokeEventCal
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 
 /**
- * Execute one heartbeat persona tick and return the parsed snapshot. Exported
- * so the background scheduler can call the same code path as the foreground
+ * Kinds of artifacts that belong on a heartbeat tick event. We deliberately
+ * keep the list narrow — the UI's BrainChat tick cards only surface tweet
+ * links and lore CIDs. Broadening the filter later is a pure addition; the
+ * bus wire shape stays stable.
+ */
+const HEARTBEAT_TICK_ARTIFACT_KINDS: ReadonlySet<Artifact['kind']> = new Set([
+  'tweet-url',
+  'lore-cid',
+]);
+
+/**
+ * Execute one heartbeat persona tick and return the parsed snapshot plus
+ * any tick-scoped artifacts captured during the run. Exported-shape so the
+ * background scheduler can call the same code path as the foreground
  * invocation — keeps the behaviour identical regardless of who triggered the
- * tick.
+ * tick. `capture` wraps the outer `deps.onArtifact` so the orchestrator (if
+ * any) still sees every artifact while the local collector only retains the
+ * ones BrainChat cares about.
  */
 async function executeHeartbeatPersonaRun(
   deps: CreateInvokeHeartbeatTickToolDeps,
   intervalMs: number,
-): Promise<HeartbeatPersonaOutput> {
+): Promise<{ result: HeartbeatPersonaOutput; capturedArtifacts: Artifact[] }> {
   const {
     persona,
     client,
@@ -650,6 +664,16 @@ async function executeHeartbeatPersonaRun(
     onAssistantDelta,
     runAgentLoopImpl,
   } = deps;
+  const capturedArtifacts: Artifact[] = [];
+  const wrappedOnArtifact = (artifact: Artifact): void => {
+    // Always forward to the outer listener first so Brain SSE still gets
+    // every artifact exactly once. Local capture is for the heartbeat bus
+    // event and is filtered to the BrainChat-relevant kinds.
+    if (onArtifact !== undefined) onArtifact(artifact);
+    if (HEARTBEAT_TICK_ARTIFACT_KINDS.has(artifact.kind)) {
+      capturedArtifacts.push(artifact);
+    }
+  };
   const personaInput: HeartbeatPersonaInput = {
     model,
     systemPrompt,
@@ -662,12 +686,13 @@ async function executeHeartbeatPersonaRun(
     client,
     registry,
     ...(onLog !== undefined ? { onLog } : {}),
-    ...(onArtifact !== undefined ? { onArtifact } : {}),
+    onArtifact: wrappedOnArtifact,
     ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
     ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
     ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
   };
-  return persona.run(personaInput, ctx);
+  const result = await persona.run(personaInput, ctx);
+  return { result, capturedArtifacts };
 }
 
 /**
@@ -781,7 +806,7 @@ export function createInvokeHeartbeatTickTool(
           message: `heartbeat tick starting (token: ${tokenAddr}, one-shot)`,
         });
         try {
-          const result = await executeHeartbeatPersonaRun(deps, defaultIntervalMs);
+          const { result } = await executeHeartbeatPersonaRun(deps, defaultIntervalMs);
           const durationMs = Date.now() - startedAt;
           onLog?.({
             ts: new Date().toISOString(),
@@ -815,7 +840,7 @@ export function createInvokeHeartbeatTickTool(
         void prior;
         const tickAt = new Date().toISOString();
         try {
-          const result = await executeHeartbeatPersonaRun(deps, intervalMs);
+          const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(deps, intervalMs);
           const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
           return {
             tickId,
@@ -825,6 +850,7 @@ export function createInvokeHeartbeatTickTool(
             ...(inferActionFromSnapshotDelta(null, result) !== null
               ? { action: inferActionFromSnapshotDelta(null, result) as HeartbeatSessionAction }
               : {}),
+            ...(capturedArtifacts.length > 0 ? { artifacts: capturedArtifacts } : {}),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -860,7 +886,7 @@ export function createInvokeHeartbeatTickTool(
             : `heartbeat background loop started (token: ${tokenAddr}, intervalMs=${intervalMs.toString()})`,
       });
       try {
-        const result = await executeHeartbeatPersonaRun(deps, intervalMs);
+        const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(deps, intervalMs);
         const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
         const tickAt = result.lastTickAt ?? new Date().toISOString();
         const action = inferActionFromSnapshotDelta(null, result);
@@ -870,6 +896,7 @@ export function createInvokeHeartbeatTickTool(
           success: result.lastError === null,
           ...(result.lastError !== null ? { error: result.lastError } : {}),
           ...(action !== null ? { action } : {}),
+          ...(capturedArtifacts.length > 0 ? { artifacts: capturedArtifacts } : {}),
         });
         const durationMs = Date.now() - startedAt;
         onLog?.({

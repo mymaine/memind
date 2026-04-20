@@ -1,6 +1,3 @@
 packages:
   - 'apps/*'
   - 'packages/*'
-  # Demo-video workspace is standalone (React 18 + Remotion v4) — keep it
-  # outside the root pnpm workspace to avoid React 19 peer-dep conflicts.
-  - '!apps/video'

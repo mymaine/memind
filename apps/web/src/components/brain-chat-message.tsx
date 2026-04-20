@@ -349,9 +349,77 @@ function AssistantBubble({ turn }: { turn: BrainChatTurn }): ReactElement {
   );
 }
 
+/**
+ * Short-form tokenAddr chip: `0xabcd…4444`. Keeps the bubble header legible
+ * when multiple background heartbeat sessions are streaming in parallel.
+ */
+function shortenTokenAddr(addr: string): string {
+  if (addr.length <= 11) return addr;
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+/**
+ * HeartbeatBubble — distinct bubble for background Heartbeat tick events.
+ *
+ * Visual contract (per spec):
+ *   - Left-aligned like the AssistantBubble (not right like user).
+ *   - Accent-toned left border (matches `heartbeat` agent-tone).
+ *   - Markdown-rendered `content` so tweet / IPFS links stay clickable.
+ *   - Status chip reads `heartbeat · tick N/M` in mono font; the leading
+ *     glyph encodes outcome (✓ success, ✗ error, ● idle, ⏹ auto-stop).
+ *   - Short tokenAddr chip so users running multiple heartbeats can tell
+ *     sessions apart at a glance.
+ */
+function HeartbeatBubble({ turn }: { turn: BrainChatTurn }): ReactElement {
+  const heartbeat = turn.heartbeat;
+  if (!heartbeat) {
+    // Shouldn't happen — the dispatcher only routes turns of role='heartbeat'
+    // here after buildHeartbeatTurn populated the payload. Render a minimal
+    // placeholder so a malformed turn never crashes the transcript.
+    return (
+      <div data-role="heartbeat" className="mr-auto self-start">
+        {turn.content}
+      </div>
+    );
+  }
+  const autoStopped = heartbeat.running === false;
+  const icon = autoStopped
+    ? '⏹'
+    : !heartbeat.success
+      ? '✗'
+      : heartbeat.action === 'idle'
+        ? '●'
+        : '✓';
+  const tone = !heartbeat.success ? 'text-[color:var(--color-danger)]' : 'text-accent-text';
+  return (
+    <div
+      data-role="heartbeat"
+      data-token-addr={heartbeat.tokenAddr}
+      className={`mr-auto flex max-w-[90%] flex-col gap-2 self-start rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 ${AGENT_TONE.heartbeat}`}
+    >
+      <div className="flex flex-wrap items-center gap-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px]">
+        <span className={`inline-flex items-center gap-1 ${tone}`}>
+          <span aria-hidden>{icon}</span>
+          <span>
+            heartbeat · tick {heartbeat.tickNumber.toString()}/{heartbeat.maxTicks.toString()}
+          </span>
+        </span>
+        <span className="rounded-[var(--radius-default)] border border-border-default px-1.5 py-0.5 text-fg-tertiary">
+          {shortenTokenAddr(heartbeat.tokenAddr)}
+        </span>
+        {autoStopped ? <span className="text-fg-tertiary">auto-stopped</span> : null}
+      </div>
+      <AssistantMarkdown content={turn.content} />
+    </div>
+  );
+}
+
 export function BrainChatMessage({ turn }: BrainChatMessageProps): ReactElement {
   if (turn.role === 'user') {
     return <UserBubble turn={turn} />;
+  }
+  if (turn.role === 'heartbeat') {
+    return <HeartbeatBubble turn={turn} />;
   }
   return <AssistantBubble turn={turn} />;
 }

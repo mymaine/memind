@@ -29,6 +29,8 @@ import type {
   Artifact,
   AssistantDeltaEventPayload,
   ChatMessage,
+  HeartbeatSessionAction,
+  HeartbeatTickEvent,
   LogEvent,
   ToolUseEndEventPayload,
   ToolUseStartEventPayload,
@@ -73,19 +75,46 @@ export type BrainChatEvent =
       readonly artifact: Artifact;
     };
 
+/**
+ * Heartbeat turn payload — a self-contained snapshot of one tick event as
+ * received over SSE. Rendered as a distinct bubble kind so the user can
+ * distinguish background-scheduled Heartbeat output from Brain replies.
+ */
+export interface BrainChatHeartbeatPayload {
+  readonly tokenAddr: string;
+  readonly tickId: string;
+  /** 1-indexed tick number (mirrors snapshot.tickCount after this tick). */
+  readonly tickNumber: number;
+  readonly maxTicks: number;
+  readonly success: boolean;
+  readonly action: HeartbeatSessionAction | null;
+  readonly error?: string | null;
+  readonly artifacts?: ReadonlyArray<Artifact>;
+  readonly tickAt: string;
+  /** Mirrors `snapshot.running`; `false` on the terminal tick (auto-stop). */
+  readonly running: boolean;
+}
+
 export interface BrainChatTurn {
   readonly id: string;
-  readonly role: 'user' | 'assistant';
+  readonly role: 'user' | 'assistant' | 'heartbeat';
   /**
    * For user turns: the literal typed text.
    * For assistant turns: accumulated Brain-authored `assistant:delta` text.
+   * For heartbeat turns: a short human-readable summary of the tick result.
    */
   readonly content: string;
   /**
-   * Present on assistant turns; `undefined` on user turns. An empty array is
-   * a legal assistant turn state (no persona events yet).
+   * Present on assistant turns; `undefined` on user + heartbeat turns. An
+   * empty array is a legal assistant turn state (no persona events yet).
    */
   readonly brainEvents?: readonly BrainChatEvent[];
+  /**
+   * Present on heartbeat turns only. Carries the structured tick payload so
+   * the bubble can render a status chip + tokenAddr chip without re-parsing
+   * the Markdown summary in `content`.
+   */
+  readonly heartbeat?: BrainChatHeartbeatPayload;
 }
 
 export type BrainChatStatus = 'idle' | 'sending' | 'streaming' | 'error';
@@ -208,11 +237,90 @@ export function applyPersonaArtifact(
 }
 
 /**
+ * Build a heartbeat turn from one live SSE tick event. The `content` string
+ * is a short, Markdown-friendly summary so the bubble reads naturally (tweet
+ * URLs + IPFS gateway links become clickable) while the structured payload
+ * on `heartbeat` drives the status chip / tokenAddr chip UI.
+ *
+ * Summary format by outcome:
+ *   - success + action=post       + tweet-url artifact → `"Heartbeat tick N/M: posted tweet [link](<url>)"`
+ *   - success + action=extend_lore + lore-cid artifact → `"Heartbeat tick N/M: wrote Chapter <n> ([ipfs://<cid>](<gateway>))"` (falls back to `ipfs://<cid>` if the gateway link is missing)
+ *   - success + action=idle                              → `"Heartbeat tick N/M: idle"`
+ *   - error                                              → `"Heartbeat tick N/M failed: <error>"`
+ *   - running=false on this event                        → appends ` — loop auto-stopped at cap`
+ */
+export function buildHeartbeatTurn(id: string, payload: HeartbeatTickEvent): BrainChatTurn {
+  const { snapshot, delta, artifacts } = payload;
+  const combinedArtifacts: readonly Artifact[] = artifacts ?? delta.artifacts ?? [];
+  const tickNumber = snapshot.tickCount;
+  const maxTicks = snapshot.maxTicks;
+  const action = delta.action ?? null;
+
+  let body: string;
+  if (!delta.success) {
+    const reason = delta.error ?? snapshot.lastError ?? 'unknown error';
+    body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()} failed: ${reason}`;
+  } else if (action === 'post') {
+    const tweet = combinedArtifacts.find((a) => a.kind === 'tweet-url');
+    if (tweet && tweet.kind === 'tweet-url') {
+      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: posted tweet [link](${tweet.url})`;
+    } else {
+      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: posted tweet`;
+    }
+  } else if (action === 'extend_lore') {
+    const lore = combinedArtifacts.find((a) => a.kind === 'lore-cid');
+    if (lore && lore.kind === 'lore-cid') {
+      const chapter = lore.chapterNumber ?? null;
+      const label = chapter !== null ? `Chapter ${chapter.toString()}` : 'new chapter';
+      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: wrote ${label} ([ipfs://${lore.cid}](${lore.gatewayUrl}))`;
+    } else {
+      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: wrote new lore chapter`;
+    }
+  } else if (action === 'idle') {
+    body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: idle`;
+  } else {
+    // Defensive fallback: the server contract says action is one of the three
+    // above, but `action` is optional on `heartbeatTickDeltaSchema` so a
+    // success without an action tag is technically legal.
+    body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: ok`;
+  }
+
+  if (snapshot.running === false) {
+    body = `${body} — loop auto-stopped at cap`;
+  }
+
+  return {
+    id,
+    role: 'heartbeat',
+    content: body,
+    heartbeat: {
+      tokenAddr: payload.tokenAddr,
+      tickId: delta.tickId,
+      tickNumber,
+      maxTicks,
+      success: delta.success,
+      action,
+      error: delta.error ?? null,
+      ...(combinedArtifacts.length > 0 ? { artifacts: combinedArtifacts } : {}),
+      tickAt: delta.tickAt,
+      running: snapshot.running,
+    },
+  };
+}
+
+/**
  * Normalise a BrainChatTurn into the OpenAI-shaped ChatMessage payload the
  * server expects in POST /api/runs `{kind:'brain-chat', params:{messages}}`.
  * Drops UI-only fields (id, brainEvents) so the wire format matches the
  * Brain runtime's `chatMessageSchema`.
+ *
+ * Heartbeat turns are folded back into `assistant` messages with a
+ * `[heartbeat] ` prefix so the Brain LLM sees them as prior context on a
+ * follow-up user turn, without confusing them with real user input.
  */
 export function turnToApiMessage(turn: BrainChatTurn): ChatMessage {
+  if (turn.role === 'heartbeat') {
+    return { role: 'assistant', content: `[heartbeat] ${turn.content}` };
+  }
   return { role: turn.role, content: turn.content };
 }
