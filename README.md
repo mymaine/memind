@@ -4,23 +4,23 @@
 >
 > _Memind = meme + mind. On Four.meme._
 
-> **Every memecoin gets its own Memind: a runtime with persistent memory, pluggable personas, and on-chain-paid autonomy.** One Memind (each Memind is internally a **Brain runtime**), five personas plus a Brain meta-agent, paid over [x402](https://github.com/coinbase/x402). The **Creator persona** deploys a real BSC mainnet token and writes chapter 1 of its **lore** (the token's AI-generated origin codex). The **Narrator persona** reads chapter 1 and continues to chapter 2. Every chapter is served from an x402-paid endpoint so other personas (and other Meminds) pay 0.01 USDC to read it as alpha. The **Market-maker persona** pays for lore to drive its decisions; the **Shiller persona** uses the same lore to draft on-voice tweets creators commission at 0.01 USDC each, posted from a real aged X account. The **Heartbeat persona** ticks every 60s, deciding on its own when to extend lore, post, or idle. The **Brain meta-agent** sits on top and dispatches to any of the above when a human talks to the Memind through the BrainPanel. **Paid shilling is the first shipped SKU; Launch Boost, Community Ops, Alpha Feed (all sell-side) plug into the same Memind next. No new runtime, just new personas.**
+> **Every memecoin gets its own Memind: a runtime with persistent memory, pluggable personas, and on-chain-paid autonomy.** One Memind (each Memind is internally a **Brain runtime**), four personas plus a Brain meta-agent, paid over [x402](https://github.com/coinbase/x402). The **Creator persona** deploys a real BSC mainnet token and writes chapter 1 of its **lore** (the token's AI-generated origin codex). The **Narrator persona** reads chapter 1 and continues to chapter 2. Every chapter is served from an x402-paid endpoint so other personas (and other Meminds) pay 0.01 USDC to read it as alpha. The **Market-maker persona** runs in two modes: as Market-maker it pays Narrator for lore to drive its decisions; as **Shiller** it uses the same lore to draft on-voice tweets creators commission at 0.01 USDC each, posted from a real aged X account. The **Heartbeat persona** ticks every 60s, deciding on its own when to extend lore, post, or idle. The **Brain meta-agent** sits on top and dispatches to any of the above when a human talks to the Memind through the BrainPanel. **Paid shilling is the first shipped SKU; Launch Boost, Community Ops, Alpha Feed (all sell-side) plug into the same Memind next. No new runtime, just new personas.**
 
-[![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1010%20green-emerald)](#evidence-on-chain--in-repo)
+[![Hackathon](https://img.shields.io/badge/Four.Meme-AI%20Sprint-f0b000)](https://dorahacks.io/hackathon/fourmemeaisprint) [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1084%20green-emerald)](#evidence-on-chain--in-repo)
 
 ## TL;DR
 
 - **The thesis**: memecoins have a discovery problem, not a minting problem. Launchers abandon their tokens at hour 0 because post-launch ops is more work than the mint. We give every token its own **Memind** that takes over: writes the lore, posts the tweets, reads the chain, decides what to do next. The creator only mints.
-- **The loop**: the Memind's Creator persona deploys a real BSC mainnet token in **67s** and writes lore chapter 1 → Narrator persona continues chapter 2 → Market-maker persona pays 0.01 USDC on Base Sepolia via x402 to read lore as alpha → Shiller persona reads the same lore to post an on-voice tweet from a real aged X account when the creator commissions one → Heartbeat persona ticks on its own and decides what the Memind does next.
+- **The loop**: the Memind's Creator persona deploys a real BSC mainnet token in **67s** and writes lore chapter 1 → Narrator persona continues chapter 2 → Market-maker persona pays 0.01 USDC on Base Sepolia via x402 to read lore as alpha → the same Market-maker persona switches to Shiller mode to post an on-voice tweet from a real aged X account when the creator commissions one → Heartbeat persona ticks on its own and decides what the Memind does next.
 - **Why this is a primitive, not a feature**: paid shilling is SKU 1, shipped. Every future SKU (Launch Boost, Community Ops, Alpha Feed, all sell-side) is a **new persona plugged into the same Memind**, not a new product. `Persona<TInput, TOutput>` is an explicit interface; new SKUs ship as ~50 lines of systemPrompt + tool subset.
-- **1 Memind (Brain runtime), 5 personas + Brain meta-agent, 15 typed tools, 1010 green tests.** x402 integration settles real USDC every `pnpm test`. LoreStore is a per-token chapter chain (history, not just latest) — the token's memory persists across runs. Heartbeat tick bubbles surface the LLM's chosen action + reason, so autonomous decisions are visible, not silent. Shiller tweets support a toggleable four.meme click-through URL (default off during X's 7-day post-OAuth cooldown; toggle on post-cooldown for attribution).
+- **1 Memind (Brain runtime), 4 personas + Brain meta-agent, 15 typed tools, 1084 green tests.** x402 integration settles real USDC every `pnpm test`. LoreStore is a per-token chapter chain (history, not just latest) — the token's memory persists across runs. Heartbeat tick bubbles surface the LLM's chosen action + reason, so autonomous decisions are visible, not silent. Shiller tweets support a toggleable four.meme click-through URL (default off during X's 7-day post-OAuth cooldown; toggle on post-cooldown for attribution).
 - **Product-grade surface**: 12-chapter sticky-stage scrollytelling (Hero → Problem → Solution → Brain Architecture → Launch Demo → Shill Demo → Saga → Heartbeat → Take Rate → SKU Matrix → Phase Map → Evidence). TopBar `BrainIndicator` streams the live run state; a right-side `<BrainPanel>` slides in a conversational surface with ten slash commands (`/launch /order /lore /heartbeat /heartbeat-stop /heartbeat-list /status /help /reset /clear`). Background heartbeat ticks push live into the chat as dedicated bubbles via a dedicated SSE stream (`/api/heartbeats/:addr/events`). The Evidence chapter hydrates from Postgres on page refresh, so on-chain pills survive reloads. Engineering detail (logs / artifacts / console) lives in a `D`-to-open `<LogsDrawer>`. Product-first up-front, engineer-deep on demand.
 - Hackathon: [Four.Meme AI Sprint](https://dorahacks.io/hackathon/fourmemeaisprint)
 - Architecture: [`docs/architecture.md`](./docs/architecture.md)
 
 ## Problem
 
-Four.meme saw [32k spam tokens land in a single day in October 2025](https://coinspot.io/en/cryptocurrencies/four-meme-increased-the-token-launch-fee-to-fight-spam-and-toxic-memes/), and across memecoins [97% eventually die](https://chainplay.gg/blog/state-of-memecoin-2024/) because launchers abandon them after the mint. Minting is cheap; **discovery is not**. Four.meme's [March 2026 AI Agent roadmap](https://phemex.com/news/article/fourmeme-reveals-ai-agent-roadmap-for-bnb-chain-integration-63946) answers with three phases: **Phase 1 — Agent Skill Framework** (live); **Phase 2 — Executable AI Agents with LLM Chat**; **Phase 3 — Agentic Mode** (on-chain AI identities). Phases 2 and 3 have no public reference implementation. This repo is one.
+Four.meme saw [32k spam tokens land in a single day in October 2025](https://coinspot.io/en/cryptocurrencies/four-meme-increased-the-token-launch-fee-to-fight-spam-and-toxic-memes/), and across memecoins [97% eventually die](https://chainplay.gg/blog/state-of-memecoin-2024/) because launchers abandon them after the mint. Minting is cheap; **discovery is not**. Four.meme's [March 2026 AI Agent roadmap](https://phemex.com/news/article/fourmeme-reveals-ai-agent-roadmap-for-bnb-chain-integration-63946) answers with three phases: **Phase 1 — Agent Skill Framework** (live); **Phase 2 — Executable AI Agents with LLM Chat**; **Phase 3 — Agentic Mode** (on-chain AI identities). **Phase 2 has no public reference implementation. This repo is one.** Phase 3 — our planned implementation path of BAP-578 NFA + TEE wallet + ERC-8004 reputation — is roadmapped, not shipped; see the [wallet custody FAQ entry](#faq) below.
 
 ## How it works: the agent commerce loop
 
@@ -56,9 +56,9 @@ Three observations that make this a **primitive** rather than a one-off app:
 
 ## What we built
 
-- **Agent commerce primitive**: the four-persona loop above, fully wired inside one Memind. `Creator` + `Narrator` sit on the supply side (write + extend lore); `Market-maker` + `Shiller` sit on the demand side (pay to consume lore, each for their own downstream purpose). A **Brain meta-agent** dispatches to any of the four via `invoke_*` tool factories when the user talks to the Memind through the BrainPanel.
+- **Agent commerce primitive**: the four-persona loop above, fully wired inside one Memind. `Creator` + `Narrator` sit on the supply side (write + extend lore); `Market-maker` sits on the demand side in two modes — reads lore as alpha (a2a), or turns the same lore into creator-commissioned tweets as Shiller; `Heartbeat` ticks autonomously once the commerce loop is live. A **Brain meta-agent** dispatches to any of the four via `invoke_*` tool factories when the user talks to the Memind through the BrainPanel.
 - **Paid shilling (SKU 1, shipped).** Creator UI takes tokenAddr + optional brief, pays 0.01 USDC via x402, and the Shiller persona posts a real tweet from an aged X account within ~6 seconds. Click-through back to `four.meme/token/<addr>`.
-- **5 personas + Brain meta-agent on one tool-use runtime (one Memind = one Brain runtime per memecoin)**: Creator / Narrator / Market-maker (dual-mode: a2a lore buyer or creator-paid Shiller) / Heartbeat (`setInterval` autonomous tick) / Brain (meta-agent that dispatches to the others).
+- **4 personas + Brain meta-agent on one tool-use runtime (one Memind = one Brain runtime per memecoin)**: Creator / Narrator / Market-maker (dual-mode: a2a lore buyer or creator-paid Shiller) / Heartbeat (`setInterval` autonomous tick) / Brain (meta-agent that dispatches to the others).
 - **Typed tool registry** (`AgentTool<TIn, TOut>`): `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for`, `x402_fetch_lore`, plus six Brain meta-agent factories (`invoke_creator`, `invoke_narrator`, `invoke_shiller`, `invoke_heartbeat_tick`, `stop_heartbeat`, `list_heartbeats`).
 - **x402 server on `@x402/express` v2**, four paid endpoints (paths + prices in `apps/server/src/x402/config.ts`): `GET /lore/:addr` ($0.01, `LoreStore`-backed), `GET /alpha/:addr` ($0.01, mock payload), `GET /metadata/:addr` ($0.005, mock payload), `POST /shill/:tokenAddr` ($0.01, creator-paid; enqueues a Shiller order).
 - **Postgres-backed state**: `LoreStore` (per-token chapter chain, not just latest), `AnchorLedger`, `ShillOrderStore`, `HeartbeatSessionStore`, and `ArtifactLogStore` all persist through a shared pg pool. Counters survive process restarts; `ensureSchema` resets any ghost `running=true` heartbeat rows at boot so the UI never shows phantom loops.
@@ -129,11 +129,11 @@ flowchart TB
   X402Server -- 402 / settle --> BaseSep
 ```
 
-Per-flow detail (Creator mint / Narrator publish / a2a settle / Heartbeat tick / Dashboard a2a) lives in [`docs/architecture.md`](./docs/architecture.md).
+Per-flow detail (Creator mint / Narrator publish / a2a settle / Heartbeat tick / Shill-market orchestrator / Brain dispatch) lives in [`docs/architecture.md`](./docs/architecture.md).
 
 ## Evidence (on-chain + in-repo)
 
-Every row links to a real explorer page. Run #3 hash reproduces a Base Sepolia settlement from the dashboard; the Phase 1 probe is the independent hello-world settlement.
+Every row links to a real explorer page. Run #3 hash is a Base Sepolia settlement produced by the `pnpm demo:a2a` CLI flow (Market-maker paying for lore via x402 `/lore/:addr`); the Phase 1 probe is the independent hello-world settlement that `pnpm test` re-runs against the real facilitator on every test run.
 
 | Artifact                                   | Network      | Hash / CID                                                                                                          |
 | ------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------- |
@@ -145,7 +145,7 @@ Every row links to a real explorer page. Run #3 hash reproduces a Base Sepolia s
 
 **Run #3 note**: `from` and `to` both resolve to `0xaE2E51D0…D6d78` because a single agent EOA carries both x402 roles in the demo: Market-maker as payer, Narrator's `/lore/:addr` as `payTo`. EIP-3009 `transferWithAuthorization`, facilitator relay, and 0.01 USDC movement are all real on-chain; wallet multiplexing is demo-only and would split into `AGENT_WALLET_*` and a future `NARRATOR_WALLET_*` in production.
 
-In-repo evidence: **1010 green tests** (`packages/shared` 84 / `apps/server` 487 / `apps/web` 439) including real Base Sepolia x402 settle integration on every `pnpm test`; `tsc --noEmit` clean across the workspace.
+In-repo evidence: **1084 green tests** (`packages/shared` 88 / `apps/server` 521 / `apps/web` 475) including real Base Sepolia x402 settle integration on every `pnpm test`; `tsc --noEmit` clean across the workspace.
 
 ## Tech stack
 
@@ -174,7 +174,7 @@ pnpm --filter @hack-fourmeme/server dev      # http://localhost:4000
 pnpm --filter @hack-fourmeme/web dev         # http://localhost:3000
 ```
 
-Open `http://localhost:3000`, scroll through the 12 chapters, and either (a) trigger a run from the inline Launch / Shill chapters, or (b) click the TopBar `<BrainIndicator>` to slide out the BrainPanel and type `/launch <theme>` or `/order <tokenAddr>`. The server POSTs `/api/runs`, the browser subscribes to SSE, and Ch12 Evidence lights its on-chain pills (plus a real Base Sepolia settlement). Evidence is Postgres-backed, so page refresh keeps every pill.
+Open `http://localhost:3000`, scroll through the 12 chapters (Ch5 Launch + Ch6 Shill are scripted narrative playbacks, not interactive panels), and click the TopBar `<BrainIndicator>` — or the Ch12 Evidence CTA — to slide out the BrainPanel. Type `/launch <theme>` or `/order <tokenAddr>` (the Hero / Ch12 CTAs pre-fill the composer). The server POSTs `/api/runs`, the browser subscribes to SSE, and Ch12 Evidence lights its on-chain pills (including a real Base Sepolia x402 settlement from `/order`). Evidence is Postgres-backed, so page refresh keeps every pill.
 
 ### Full Creator flow (optional, ~$0.05 BNB gas for the BSC deploy)
 
@@ -196,7 +196,7 @@ pnpm --filter @hack-fourmeme/server demo:shill        # shill market fulfilment
 pnpm typecheck         # tsc --noEmit across the workspace
 pnpm lint              # eslint
 pnpm format:check      # prettier --check
-pnpm test              # vitest; 1010 tests; x402 settles real USDC once
+pnpm test              # vitest; 1084 tests; x402 settles real USDC once
 pnpm --filter @hack-fourmeme/web build   # Next.js production build sanity
 ```
 
@@ -214,6 +214,9 @@ A: Four.meme only runs on BSC mainnet. That's a sponsor constraint, not a choice
 
 **Q: Is the Memind an AGI or autonomous AI?**
 A: **No.** "Memind" names a runtime that (a) persists memory across ticks, (b) hosts multiple tool-use personas, (c) makes autonomous decisions on a heartbeat. All three are concrete, shipped, and bounded. We deliberately avoid AGI / sentient / self-improving language. The Memind is a product primitive, not a consciousness claim.
+
+**Q: Where does the agent's wallet actually live? Does the Memind own its own keys?**
+A: **Payments are on-chain; key custody is not — yet.** The agent wallet is a server-held `viem` EOA (private key in `.env.local`); LLM compute runs off-chain (Anthropic via OpenRouter or direct); x402 settlement on Base Sepolia is real on-chain USDC movement. The Memind behaves _as if_ it owns its keys: it signs EIP-3009 authorizations without a human in the loop, enforces a service-kind header on every payment, and makes heartbeat decisions autonomously. The keys themselves are still operator-custodied. The sovereign path is identified and scoped as post-submission milestones: BAP-578 Non-Fungible Agent on BSC mainnet (wallet binds to the NFT, not a human EOA), TEE wallet via Pieverse or Phala (agent signs inside an enclave the operator cannot read), and ERC-8004 reputation registry (service history on chain). Four.meme's own Phase 3 is the same target; we are not claiming to have shipped it, nor is anyone else publicly.
 
 **Q: Does a Memind trade memecoins on its own?**
 A: **No, by product design.** Memind personas trade **services** (lore authorship, promotional tweets, curation) paid in USDC, not the underlying token. The four persona tools (`invoke_creator` / `invoke_narrator` / `invoke_shiller` / `invoke_heartbeat_tick`) include no token-swap capability; no persona holds discretionary custody over user funds. Every inter-agent payment carries a service identifier on the x402 request, so service trades are distinguishable from self-dealing. This framing aligns with Four.meme's post-2025-10 creator-protection posture and sidesteps the wash-trading reclassification risk that haunts roughly half of x402 volume today (Artemis public data).

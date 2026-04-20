@@ -13,7 +13,7 @@ status: active
 
 ## Memind / Brain-Persona Model
 
-The product is framed as **one Memind per memecoin**. Each Memind is internally a **Brain runtime** hosting **pluggable personas** (Creator / Narrator / Market-maker / Shiller / Heartbeat). This is a naming layer over a real, already-shipped runtime — not a rename. Every claim below is anchored in code:
+The product is framed as **one Memind per memecoin**. Each Memind is internally a **Brain runtime** hosting **four pluggable personas** (Creator / Narrator / Market-maker (Shiller mode) / Heartbeat). The Market-maker persona is dual-mode: it reads lore as alpha in the agent-to-agent flow, and switches to Shiller mode when a creator commissions a paid tweet. This is a naming layer over a real, already-shipped runtime — not a rename. Every claim below is anchored in code:
 
 | Memind claim                  | Implementation fact                                                                                                                                                                            | File                                                                           |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -101,9 +101,10 @@ hack-bnb-fourmeme-agent-creator/
 │ BrainPanel chat   │            │ - BrainPanel: POST /api/runs            │
 │                   │            │     {kind:'brain-chat', messages:[…]}   │
 │                   │            │   + EventSource /api/runs/:id/events    │
-│                   │            │ - Ch5/Ch6: POST /api/runs {a2a|shill}   │
-│                   │            │   + SSE; Ch11 dispatches memind:        │
-│                   │            │     open-brain CustomEvent              │
+│                   │            │ - Ch5 / Ch6 are scripted-playback       │
+│                   │            │   narrative chapters (no POST).         │
+│                   │            │   Ch12 dispatches memind:open-brain     │
+│                   │            │   CustomEvent to open BrainPanel.       │
 │                   │            │ - LogsDrawer mirrors SSE via            │
 │                   │            │   useRunStateContext                    │
 │                   │            │ - same-origin rewrites → :4000          │
@@ -183,7 +184,8 @@ hack-bnb-fourmeme-agent-creator/
 ### Flow 1 — Creator Agent autonomous token launch
 
 ```
-User input (one-line theme, typed into BrainPanel or Ch5 LaunchPanel)
+User input (one-line theme, typed into BrainPanel as `/launch <theme>`;
+            CLI alternative: pnpm demo:creator)
   → Creator.plan()                               [LLM]
   → Creator.tool[narrative_generator]            [LLM]
   → Creator.tool[meme_image_creator]             [image model]
@@ -219,7 +221,10 @@ Narrator Agent triggered by demo / heartbeat / a2a / brain-chat
 ### Flow 3 — Agent-to-agent x402 payment
 
 ```
-Market-maker Agent (triggered by pnpm demo:a2a, Ch5→Ch6 run, or brain-chat /order)
+Market-maker Agent (triggered by pnpm demo:a2a CLI only — Ch5 / Ch6 are
+                     scripted-playback narrative chapters, not interactive
+                     panels; brain-chat /order exercises a different flow,
+                     see Flow 5)
   → check_token_status reads BSC state (bonding curve / holder / marketcap)
   → soft policy decides buy-lore or skip (threshold violation still emits warn LogEvent)
   → x402_fetch_lore GET http://localhost:4000/lore/<tokenAddr>
@@ -242,31 +247,48 @@ Narrator emits lore-cid
       markOnChain() + emit second lore-anchor artifact with BscScan url
 ```
 
-### Flow 5 — Dashboard-driven A2A / Shill-market run
+### Flow 5 — Server-side A2A / Shill-market run (CLI + Brain /order)
+
+There is no interactive web panel for these run kinds. Three entry
+points drive the orchestrators; all three land on the same runStore
+and emit an identical artifact set:
 
 ```
-Browser (Ch5 LaunchPanel or Ch6 OrderPanel) — direct kind dispatch
-  → POST /api/runs { kind: 'a2a' | 'shill-market', ... }
-BrainPanel slash /order reaches the same runShillMarketDemo orchestrator
-indirectly: it POSTs kind='brain-chat', the Brain invokes its
-invoke_shiller tool, and the tool delegates to runShillMarketDemo (see
-Flow 7). Artifact set is identical.
-  → server.RunStore.create(kind) → runId
-  → 201 { runId }
-Browser
-  → new EventSource(/api/runs/:runId/events)
-  → subscribe 'log' / 'artifact' / 'status' / 'tool_use:start' /
-              'tool_use:end' / 'assistant:delta'
-Server (fire-and-forget)
-  → runA2ADemo | runShillMarketDemo ({ runStore, runId, loreStore, ... })
-     → emit pre-seed artifacts (optional) + per-persona LogEvents
-     → run Narrator → emit lore-cid artifact (author:narrator)
-     → run Market-maker → emit x402-tx artifact if settlement landed
-  → runStore.setStatus(runId, 'done') | 'error'
-Server SSE handler
-  → on terminal status: write `event: status` + res.end()
-  → browser receives terminal status, EventSource.close()
-  → dashboard renders evidence pills (BSC token / deploy tx / lore CIDs / x402 tx / tweet url)
+Entry A — CLI demo
+  developer terminal
+    → pnpm demo:a2a     → runA2ADemo({...})
+    → pnpm demo:shill   → runShillMarketDemo({...})
+
+Entry B — x402 integration test (every `pnpm test`)
+  vitest
+    → apps/server/src/x402/index.test.ts hits the real Base Sepolia
+      facilitator, settling 0.01 USDC per run — emits one real x402
+      settlement tx that keeps the README probe row alive.
+
+Entry C — BrainPanel /order (web)
+  Browser (BrainPanel)
+    → POST /api/runs { kind: 'brain-chat', messages:[{role:'user',
+                       content:'/order <tokenAddr>'}, …] }
+    → Brain system prompt forces tool_choice=invoke_shiller
+    → invoke_shiller tool delegates to runShillMarketDemo (see Flow 7
+      for the full Brain dispatch pipeline)
+
+Server (fire-and-forget in every entry)
+  → orchestrator drives phases with the shared RunStore:
+      runA2ADemo         → Market-maker pays /lore/:addr via x402
+      runShillMarketDemo → creator pays /shill/:addr via x402, then
+                           Shiller persona posts the tweet
+  → per phase: emit LogEvent + Artifact onto runStore (fan-out to
+    ArtifactLogStore → Postgres)
+  → runStore.setStatus(runId, 'done' | 'error')
+
+SSE consumers (Entry C only)
+  → Browser opens EventSource /api/runs/:runId/events
+  → receives log / artifact / status / tool_use:* / assistant:delta
+  → terminal status → res.end() → client closes
+  → Ch12 Evidence hydrates /api/artifacts?limit=20 on next render,
+    lighting BSC token / deploy tx / lore CIDs / x402 tx / tweet url
+    pills with real data
 ```
 
 ### Flow 6 — Heartbeat autonomous tick
@@ -333,8 +355,9 @@ slash commands drive a long-lived `HeartbeatSessionStore` session.
 ### Flow 7 — Brain conversational chat (BrainPanel → persona dispatch)
 
 ```
-Browser (BrainPanel open via TopBar click, memind:open-brain CustomEvent,
-         or Ch5/Ch6 inline chat entry)
+Browser (BrainPanel open via TopBar click or memind:open-brain
+         CustomEvent dispatched by Hero / Ch12 Evidence CTAs;
+         Ch5 / Ch6 are scripted playbacks, no inline chat entry)
   → slash command resolved client-side via useSlashPalette:
        /launch <theme>                         → routes to creator persona
        /order <tokenAddr> [brief]              → routes to market-maker persona
@@ -418,8 +441,8 @@ Canonical contract — both client and server import from `@hack-fourmeme/shared
 | 2   | `problem`            | Graveyard ticker + grid + IntersectionObserver play/pause                      | None                          |
 | 3   | `solution`           | Three-card fix with x402 micro-animation pill                                  | None                          |
 | 4   | `brain-architecture` | Brain-runtime / persona pluggability diagram                                   | None                          |
-| 5   | `launch-demo`        | Inline Creator demo — LaunchPanel typing + run trigger                         | `useRun` + `useBrainChat`     |
-| 6   | `order-shill`        | Inline Shiller demo — OrderPanel + shill tweet feed                            | `useRun` + `useBrainChat`     |
+| 5   | `launch-demo`        | Scripted playback of a `/launch` conversation (6 pre-authored lines, no input) | None                          |
+| 6   | `order-shill`        | Scripted playback of a `/order` conversation (lines + tweet feed, no input)    | None                          |
 | 7   | `heartbeat-demo`     | Heartbeat pulse animation + tick feed                                          | Reads shared RunState context |
 | 8   | `take-rate`          | Revenue-mix bar chart: 1 live SKU (shill at $0.01) + 3 planned                 | None                          |
 | 9   | `sku-matrix`         | SKU grid: SHILL.ORDER (live) vs three planned SKUs                             | None                          |
@@ -434,7 +457,8 @@ Canonical contract — both client and server import from `@hack-fourmeme/shared
 
 - TopBar `<BrainIndicator>` click (always available)
 - `Ch12Evidence` CTA dispatches `memind:open-brain` CustomEvent with optional draft
-- Hero / Ch5 / Ch6 inline CTAs pre-fill the composer via `openBrain(draft?)`
+- Hero CTA pre-fills the composer via `openBrain(draft?)` (Ch5 / Ch6 have
+  no interactive CTA — they are scripted narrative chapters)
 
 Slash commands (`lib/slash-commands.ts`) are resolved client-side; server-kind ones (`/launch /order /lore /heartbeat`) are sent as `messages[0].content` to `POST /api/runs {kind:'brain-chat'}`. Client-only (`/help /reset /status`) never hit the server. `useSlashPalette` filters the registry by scope + prefix; `useBrainChat-state` reduces `assistant:delta` + `tool_use:*` + status SSE events into grouped chat bubbles; `useRunStateContext` mirrors the same events into `<LogsDrawer>` so Logs / Artifacts / Console tabs show the live run regardless of which surface triggered it.
 
