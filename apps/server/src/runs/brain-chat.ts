@@ -54,6 +54,7 @@ import { chatMessageSchema } from '@hack-fourmeme/shared';
 import { z } from 'zod';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
+import type { AnchorLedger } from '../state/anchor-ledger.js';
 import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -310,6 +311,16 @@ export interface RunBrainChatDeps {
    */
   heartbeatSessionStore: HeartbeatSessionStore;
   /**
+   * Optional shared AnchorLedger (AC3). When wired, `/launch` fires
+   * chapter 1 anchors through `invoke_creator` and `/lore` fires chapter N
+   * anchors through `invoke_narrator`. Layer 2 (BSC mainnet memo) is
+   * gated inside the factories by `ANCHOR_ON_CHAIN` and by the presence of
+   * `config.wallets.bscDeployer.privateKey`. Omitted in unit tests and
+   * legacy CLI boot paths — the invoke_* tools silently skip anchor work
+   * when the ledger is absent.
+   */
+  anchorLedger?: AnchorLedger;
+  /**
    * Test seam — defaults to the real `runBrainAgent`. Tests supply a stub
    * that short-circuits the LLM call and optionally invokes the forwarded
    * event callbacks so AC-BRAIN-2 bubbling is verifiable without Anthropic.
@@ -422,11 +433,22 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // LoreStore is threaded in so the creator persona can upsert Chapter 1
   // after `lore_writer` completes — that is what makes a later `/lore` call
   // produce a real Chapter 2 continuation instead of rewriting Chapter 1.
+  //
+  // AC3 — thread the optional anchor ledger + deployer key so `/launch`
+  // anchors chapter 1 symmetrically with `/lore`. `maybeAnchorContent`
+  // inside the tool factory consults `ANCHOR_ON_CHAIN` at run time; we
+  // forward the config's bscDeployer key so the gate can actually fire
+  // when enabled. Layer 1 still runs without the key (just ledger + initial
+  // artifact), and the factory silently skips everything when no ledger
+  // is wired.
+  const bscDeployerPk = config.wallets.bscDeployer.privateKey as `0x${string}` | undefined;
   const invokeCreatorTool = createInvokeCreatorTool({
     persona: creatorPersona,
     client: anthropic,
     registry: creatorSubRegistry,
     store: loreStore,
+    ...(deps.anchorLedger !== undefined ? { anchorLedger: deps.anchorLedger } : {}),
+    ...(bscDeployerPk !== undefined ? { bscDeployerPrivateKey: bscDeployerPk } : {}),
     ...eventForwarders,
   });
 
@@ -460,6 +482,11 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     registry: narratorSubRegistry,
     store: loreStore,
     resolveTokenMeta,
+    // AC3 — `/lore` joins `/launch` on the anchor surface. The factory
+    // handles the ANCHOR_ON_CHAIN gate internally so we only need to
+    // forward the ledger + deployer key.
+    ...(deps.anchorLedger !== undefined ? { anchorLedger: deps.anchorLedger } : {}),
+    ...(bscDeployerPk !== undefined ? { bscDeployerPrivateKey: bscDeployerPk } : {}),
     ...eventForwarders,
   });
 

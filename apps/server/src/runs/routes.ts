@@ -394,6 +394,11 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
         ...(deps.shillCreatorPaymentImpl !== undefined
           ? { creatorPaymentImpl: deps.shillCreatorPaymentImpl }
           : {}),
+        // AC3 — forward the shared AnchorLedger so the invoke_creator /
+        // invoke_narrator tools inside the Brain loop can anchor chapters.
+        // When omitted (CLI / test boot paths) the factories silently skip
+        // anchor work.
+        ...(deps.anchorLedger !== undefined ? { anchorLedger: deps.anchorLedger } : {}),
       })
         .then(() => {
           runStore.setStatus(created.runId, 'done');
