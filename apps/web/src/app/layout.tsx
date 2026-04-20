@@ -25,8 +25,18 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }): ReactElement {
+  // `suppressHydrationWarning` only on the <html> tag itself so React tolerates
+  // attribute mutations browser extensions commonly inject before hydration
+  // (Immersive Translate adds `data-immersive-translate-page-theme`,
+  // dark-mode managers add `data-theme`, password managers add `data-lastpass`,
+  // etc.). The suppression is scoped to this element's own attrs and does NOT
+  // mask real hydration mismatches inside descendants.
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
       <body>
         {/*
          * <RunStateProvider /> hoists the run-state context above the routed
