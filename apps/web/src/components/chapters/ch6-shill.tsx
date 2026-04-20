@@ -38,19 +38,19 @@ type ScriptedTweet = {
 const TWEETS: readonly ScriptedTweet[] = [
   {
     t: 0.15,
-    text: 'gm degens. $PEPESUPREME is the only truth in a world of lies. glitchy and unemployed, just like you \u{1fae1}',
+    text: 'gm degens. $COFFEE is the only truth in a world of lies. glitchy and unemployed, just like you \u{1fae1}',
     likes: 142,
     rt: 38,
   },
   {
     t: 0.4,
-    text: 'i dont shill. i AM shilled. $PEPESUPREME ticker /// error 404 sanity not found ///',
+    text: 'i dont shill. i AM shilled. $COFFEE ticker /// error 404 sanity not found ///',
     likes: 890,
     rt: 201,
   },
   {
     t: 0.68,
-    text: 'they said AI would replace artists. it replaced shillers instead. $PEPESUPREME to the moon, autonomously.',
+    text: 'they said AI would replace artists. it replaced shillers instead. $COFFEE to the moon, autonomously.',
     likes: 2104,
     rt: 612,
   },
@@ -97,7 +97,7 @@ export function Ch6Shill({ p }: Ch6ShillProps): ReactElement {
                   </span>
                   <div className="tweet-head">
                     <span className="mono" style={{ color: 'var(--accent)' }}>
-                      @pepesupreme_ai
+                      @memind_ai
                     </span>
                     <span className="mono" style={{ color: 'var(--fg-tertiary)' }}>
                       {`\u00b7 ${i * 4 + 2}h`}

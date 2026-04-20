@@ -29,7 +29,7 @@ describe('<Ch5Launch>', () => {
     // Only one demo-line element should be rendered. Count occurrences.
     const matches = html.match(/class="demo-line demo-line-/g) ?? [];
     expect(matches).toHaveLength(1);
-    expect(html).toContain('/launch PEPESUPREME');
+    expect(html).toContain('/launch COFFEE');
     // Second line (t=0.20) needs p > 0.20 strictly — not shown at p=0.2.
     expect(html).not.toContain('drafting metadata');
   });
@@ -38,7 +38,7 @@ describe('<Ch5Launch>', () => {
     const html = renderToStaticMarkup(<Ch5Launch p={0.5} />);
     const matches = html.match(/class="demo-line demo-line-/g) ?? [];
     expect(matches).toHaveLength(4);
-    expect(html).toContain('/launch PEPESUPREME');
+    expect(html).toContain('/launch COFFEE');
     expect(html).toContain('drafting metadata');
     // 2026-04-20: the scripted IPFS line now references the real Run #3
     // CID (QmWoMk..TVX7) and the factory line is scoped to BSC.
@@ -57,7 +57,7 @@ describe('<Ch5Launch>', () => {
     expect(matches).toHaveLength(6);
     // Final brain confirmation: honest copy, no fictional "wallet funded
     // w/ 0.05 BNB" — that transfer never existed in deployer.ts.
-    expect(html).toContain('$PEPESUPREME is live on BSC mainnet');
+    expect(html).toContain('$COFFEE is live on BSC mainnet');
     expect(html).toContain('brain online');
     expect(html).not.toContain('wallet funded');
     // The chain row surfaces the real 2026-04-18 deploy tx.
@@ -65,9 +65,9 @@ describe('<Ch5Launch>', () => {
     expect(html).toContain('gas \u2248 0.05 BNB');
   });
 
-  it('renders the side-panel spec rows with PEPESUPREME and 1,000,000,000 supply', () => {
+  it('renders the side-panel spec rows with COFFEE and 1,000,000,000 supply', () => {
     const html = renderToStaticMarkup(<Ch5Launch p={0.5} />);
-    expect(html).toContain('PEPESUPREME');
+    expect(html).toContain('COFFEE');
     expect(html).toContain('1,000,000,000');
     expect(html).toContain('glitchy');
     expect(html).toContain('BNB');

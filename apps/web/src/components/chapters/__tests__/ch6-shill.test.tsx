@@ -48,9 +48,9 @@ describe('<Ch6Shill>', () => {
     expect(html).toContain('they said AI would replace');
   });
 
-  it('renders the @pepesupreme_ai handle on every tweet-head', () => {
+  it('renders the @memind_ai handle on every tweet-head', () => {
     const html = renderToStaticMarkup(<Ch6Shill p={1} />);
-    const matches = html.match(/@pepesupreme_ai/g) ?? [];
+    const matches = html.match(/@memind_ai/g) ?? [];
     expect(matches).toHaveLength(3);
   });
 

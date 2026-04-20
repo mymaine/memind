@@ -39,7 +39,7 @@ type ScriptedLine = {
 //   - "wallet funded w/ 0.05 BNB" was fictional; replaced with the
 //     honest gas settlement line (deployer pays ~$0.05 BNB gas).
 const LINES: readonly ScriptedLine[] = [
-  { t: 0.0, who: 'user', text: '/launch PEPESUPREME \u2014 1B supply, glitchy persona' },
+  { t: 0.0, who: 'user', text: '/launch COFFEE \u2014 1B supply, glitchy persona' },
   { t: 0.2, who: 'brain', text: 'drafting metadata...' },
   {
     t: 0.33,
@@ -54,7 +54,7 @@ const LINES: readonly ScriptedLine[] = [
     text: '0x760f..760c9b \u00b7 gas \u2248 0.05 BNB',
     color: 'var(--chain-bnb)',
   },
-  { t: 0.78, who: 'brain', text: '\u2713 $PEPESUPREME is live on BSC mainnet. brain online.' },
+  { t: 0.78, who: 'brain', text: '\u2713 $COFFEE is live on BSC mainnet. brain online.' },
 ];
 
 function whoLabel(who: ScriptedLine['who']): string {
@@ -114,7 +114,7 @@ export function Ch5Launch({ p }: Ch5LaunchProps): ReactElement {
           <div className="demo-side-spec">
             <div className="spec-row">
               <Mono dim>symbol</Mono>
-              <Mono>PEPESUPREME</Mono>
+              <Mono>COFFEE</Mono>
             </div>
             <div className="spec-row">
               <Mono dim>supply</Mono>

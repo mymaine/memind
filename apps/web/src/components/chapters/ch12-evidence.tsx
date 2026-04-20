@@ -468,7 +468,7 @@ function pickTokenSymbol(artifacts: readonly Artifact[]): string | null {
     const a = artifacts[i];
     if (!a) continue;
     if (a.kind === 'bsc-token' && a.label) {
-      // Label shape in practice: `four.meme $PEPESU` or `$PEPESUPREME` —
+      // Label shape in practice: `four.meme $COFFE` or `$COFFEE` —
       // pick the first $-prefixed token if one exists, else fall back to
       // the raw label.
       const match = a.label.match(/\$[A-Za-z0-9_]+/);
