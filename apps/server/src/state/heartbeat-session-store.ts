@@ -34,12 +34,28 @@ export const HEARTBEAT_EST_COST_USD_PER_TICK = 0.01;
  * Default upper bound on tick attempts per session. Caps demo / production
  * exposure so an idle user cannot accidentally burn an unbounded LLM budget
  * (or a malicious visitor cannot farm our API keys). The store auto-stops
- * the session once `tickCount >= maxTicks`, whether those ticks succeeded,
- * errored, or were skipped by the overlap guard — every fire attempt
- * counts because every one reserves scheduler capacity. Callers may
- * override per-session via `HeartbeatSessionStartParams.maxTicks`.
+ * the session once `tickCount >= maxTicks`. `tickCount` counts ONLY ticks
+ * that actually executed (success + error); overlap-skipped fires land on
+ * `skippedCount` and do NOT advance the cap. This mirrors the K8s CronJob
+ * `concurrencyPolicy: Forbid` and Sidekiq unique-job conventions — the user
+ * asked for "N ticks", so "N ticks" must mean N real executions, not N
+ * scheduler fire attempts. Callers may override per-session via
+ * `HeartbeatSessionStartParams.maxTicks`.
  */
 export const DEFAULT_HEARTBEAT_MAX_TICKS = 5;
+
+/**
+ * Absolute safety rail on scheduler fire attempts. If the persona's per-tick
+ * work consistently exceeds the interval (e.g. a 30s LLM call on a 10s
+ * cadence), every interval fire that lands mid-tick records as an overlap
+ * skip. Without an upper bound on total attempts the loop could fire forever
+ * while only producing a handful of real ticks. Once
+ * `tickCount + skippedCount >= maxTicks * MAX_FIRE_ATTEMPTS_MULTIPLIER` we
+ * force-stop the session and log a warning so operators know the cadence is
+ * mismatched to the workload. The multiplier is deliberately generous (5x)
+ * so normal "slightly slow LLM" sessions are unaffected.
+ */
+export const MAX_FIRE_ATTEMPTS_MULTIPLIER = 5;
 
 export interface HeartbeatSessionState {
   readonly tokenAddr: string;
@@ -288,6 +304,7 @@ export class HeartbeatSessionStore {
     const session = this.sessions.get(key);
     if (session === undefined) return undefined;
     this.applyDelta(session, delta);
+    this.maybeAutoStop(session);
     await this.persist(session);
     const snap = snapshotOf(session);
     this.fireAfterTick(snap, delta);
@@ -397,10 +414,15 @@ export class HeartbeatSessionStore {
     const key = normaliseAddr(tokenAddr);
     const session = this.sessions.get(key);
     if (session === undefined || !session.running) return undefined;
-    session.tickCount += 1;
     if (session.tickInFlight) {
+      // Overlap branch: a prior tick is still executing. Record the miss on
+      // `skippedCount` only — it MUST NOT advance `tickCount` because the
+      // user asked for "N ticks" in the CronJob sense (N real executions),
+      // not "N scheduler fire attempts". If a slow persona meant every fire
+      // landed mid-tick, the old behaviour auto-stopped the loop after
+      // `maxTicks` ghost skips with only a single real tick completed.
       session.skippedCount += 1;
-      this.maybeAutoStop(session);
+      this.maybeAutoStopOnFireAttempts(session);
       await this.persist(session);
       const skipDelta: HeartbeatTickDelta = {
         tickId: `overlap_${Date.now().toString(36)}`,
@@ -418,7 +440,7 @@ export class HeartbeatSessionStore {
       const delta = await runTick(snap);
       const current = this.sessions.get(key);
       if (current === undefined) return undefined;
-      this.applyDeltaSkipTickCount(current, delta);
+      this.applyDelta(current, delta);
       appliedDelta = delta;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -430,7 +452,7 @@ export class HeartbeatSessionStore {
         success: false,
         error: message,
       };
-      this.applyDeltaSkipTickCount(current, errorDelta);
+      this.applyDelta(current, errorDelta);
       appliedDelta = errorDelta;
     } finally {
       const current = this.sessions.get(key);
@@ -473,23 +495,15 @@ export class HeartbeatSessionStore {
     }
   }
 
+  /**
+   * Fold a delta into the session. Advances `tickCount` by one — ONLY called
+   * for ticks that actually executed (success or error branches). Overlap
+   * skips do not go through here; they bump `skippedCount` directly. Callers
+   * are responsible for invoking `maybeAutoStop` afterwards (the scheduler
+   * does so in its `finally` block; `recordTick` does so inline).
+   */
   private applyDelta(session: MutableSession, delta: HeartbeatTickDelta): void {
     session.tickCount += 1;
-    this.applyDeltaSkipTickCount(session, delta);
-    this.maybeAutoStop(session);
-  }
-
-  private maybeAutoStop(session: MutableSession): void {
-    if (!session.running) return;
-    if (session.tickCount < session.maxTicks) return;
-    if (session.timer !== null) {
-      this.clearIntervalImpl(session.timer);
-      session.timer = null;
-    }
-    session.running = false;
-  }
-
-  private applyDeltaSkipTickCount(session: MutableSession, delta: HeartbeatTickDelta): void {
     session.lastTickAt = delta.tickAt;
     session.lastTickId = delta.tickId;
     if (delta.success) {
@@ -500,6 +514,47 @@ export class HeartbeatSessionStore {
       session.lastError = delta.error ?? 'unknown error';
     }
     session.lastAction = delta.action ?? null;
+  }
+
+  /**
+   * Stop the session once real executions hit the cap. Overlap skips do NOT
+   * trigger this path — see `maybeAutoStopOnFireAttempts` for the safety
+   * rail that guards against pathologically slow personas.
+   */
+  private maybeAutoStop(session: MutableSession): void {
+    if (!session.running) return;
+    if (session.tickCount < session.maxTicks) return;
+    if (session.timer !== null) {
+      this.clearIntervalImpl(session.timer);
+      session.timer = null;
+    }
+    session.running = false;
+  }
+
+  /**
+   * Safety rail invoked from the overlap branch. If scheduler fire attempts
+   * (`tickCount + skippedCount`) exceed `maxTicks * MAX_FIRE_ATTEMPTS_MULTIPLIER`
+   * the persona is consistently slower than the interval and would otherwise
+   * burn scheduler capacity indefinitely. Force-stop with a warn log so the
+   * operator sees the mismatch.
+   */
+  private maybeAutoStopOnFireAttempts(session: MutableSession): void {
+    if (!session.running) return;
+    const fireAttempts = session.tickCount + session.skippedCount;
+    const limit = session.maxTicks * MAX_FIRE_ATTEMPTS_MULTIPLIER;
+    if (fireAttempts < limit) return;
+    if (session.timer !== null) {
+      this.clearIntervalImpl(session.timer);
+      session.timer = null;
+    }
+    session.running = false;
+    console.warn(
+      `[heartbeat] safety rail tripped for ${session.tokenAddr}: ` +
+        `${fireAttempts.toString()} fire attempts (${session.tickCount.toString()} real + ` +
+        `${session.skippedCount.toString()} skipped) reached the ${limit.toString()}x cap of ` +
+        `maxTicks=${session.maxTicks.toString()}. The persona is consistently slower than ` +
+        `intervalMs=${session.intervalMs.toString()}ms; raise the interval or lower persona work.`,
+    );
   }
 
   private async persist(session: MutableSession): Promise<void> {

@@ -330,8 +330,14 @@ slash commands drive a long-lived `HeartbeatSessionStore` session.
            local onArtifact wrapper and folded into the session's
            HeartbeatTickDelta
          → auto-stops when tickCount >= maxTicks (default DEFAULT_HEARTBEAT_MAX_TICKS=5;
-           every fire counts — success + error + overlap-skip — so the cap is
-           absolute, not just "successful ticks")
+           `tickCount` counts ONLY real executions — success + error. Overlap
+           skips land on `skippedCount` and do not advance the cap. This
+           mirrors K8s CronJob `concurrencyPolicy: Forbid` / Sidekiq unique
+           jobs: the user asked for N ticks, so N ticks means N real runs.)
+         → safety rail: if a slow persona produces so many skips that
+           `tickCount + skippedCount >= maxTicks * MAX_FIRE_ATTEMPTS_MULTIPLIER`
+           (5x), force-stop with a warn log — defends against permanently
+           slower-than-interval personas burning scheduler capacity.
        → also runs ONE immediate tick synchronously so the user sees a result
          before the first interval elapses
        → session counters + running flag persist through a shared pg pool;

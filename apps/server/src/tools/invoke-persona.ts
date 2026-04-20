@@ -856,7 +856,7 @@ export function createInvokeHeartbeatTickTool(
       'Run ONE Heartbeat tick, OR start/restart a background loop when intervalMs is provided. ' +
       'With intervalMs: a real setInterval runs ticks until stop_heartbeat is called OR the tick cap is hit (one immediate tick also runs so the user sees a result instantly). ' +
       'Without intervalMs: if a session already exists, return its current snapshot without running an extra tick; otherwise run exactly ONE manual tick. ' +
-      `Background loops auto-stop at \`maxTicks\` (default ${DEFAULT_HEARTBEAT_MAX_TICKS.toString()}) — pass a higher maxTicks to extend; restarting a session with a new maxTicks lets a user resume after hitting the cap. ` +
+      `Background loops auto-stop at \`maxTicks\` (default ${DEFAULT_HEARTBEAT_MAX_TICKS.toString()}) — pass a higher maxTicks to extend; restarting a session with a new maxTicks lets a user resume after hitting the cap. \`maxTicks\` counts ONLY real executions (success + error); overlap-skipped fires accumulate on \`skippedCount\` and do not consume the cap, so N=3 means 3 real ticks regardless of persona latency. ` +
       'Input: { tokenAddr, intervalMs?, maxTicks? }. Returns a snapshot object with `mode` ∈ { one-shot | background-started | background-restarted | background-already-running } plus running/intervalMs/startedAt/maxTicks/tickCount/successCount/errorCount/skippedCount/lastTickAt/lastTickId/lastAction/lastError. When `running === false` AND `tickCount >= maxTicks`, the loop auto-stopped at the cap.',
     inputSchema: invokeHeartbeatTickInputSchema,
     outputSchema: z.any() as unknown as z.ZodType<InvokeHeartbeatTickOutput>,

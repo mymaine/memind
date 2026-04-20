@@ -6,6 +6,7 @@ import { resetDb } from '../db/reset.js';
 import {
   DEFAULT_HEARTBEAT_MAX_TICKS,
   HeartbeatSessionStore,
+  MAX_FIRE_ATTEMPTS_MULTIPLIER,
   type HeartbeatSessionState,
   type HeartbeatTickDelta,
 } from './heartbeat-session-store.js';
@@ -242,14 +243,22 @@ describe('HeartbeatSessionStore (memory backend)', () => {
 
       await vi.advanceTimersByTimeAsync(2_000);
       const mid = (await store.get(FAKE_ADDR))!;
+      // Overlap skips only bump `skippedCount` — `tickCount` stays at 0
+      // while the long-running tick is still in flight and has not yet
+      // returned a delta. This is the CronJob-style semantic: "N ticks"
+      // means N real executions, not N scheduler fire attempts.
       expect(mid.skippedCount).toBe(2);
-      expect(mid.tickCount).toBe(3);
+      expect(mid.tickCount).toBe(0);
       expect(mid.successCount).toBe(0);
 
       release?.();
       await vi.advanceTimersByTimeAsync(0);
       const final = (await store.get(FAKE_ADDR))!;
+      // The long tick finally resolved and advances `tickCount` by 1.
+      // `skippedCount` carries the 2 ghosts from the in-flight window.
+      expect(final.tickCount).toBe(1);
       expect(final.successCount).toBe(1);
+      expect(final.skippedCount).toBe(2);
       expect(final.lastTickId).toBe('tick_long');
     });
 
@@ -348,12 +357,13 @@ describe('HeartbeatSessionStore (memory backend)', () => {
     });
 
     it('fires onAfterTick for scheduled ticks, overlap skips, and recordTick calls with post-autoStop snapshots', async () => {
-      // Drive 3 scheduled fires + 1 overlap + 1 external recordTick and
+      // Drive 3 real scheduled fires + 1 overlap + 1 external recordTick and
       // assert the hook observes every event (5 total) with the correct
       // delta types and a snapshot reflecting any auto-stop that fired
-      // inside the same tick. maxTicks=4 forces the auto-stop to land on
-      // the last scheduled fire so we can prove `running=false` reaches
-      // the hook in one transaction with the delta.
+      // inside the same tick. Under the new semantics `tickCount` tracks
+      // only real executions, so `maxTicks=3` forces the auto-stop to land
+      // on the third real scheduled fire — proving `running=false` reaches
+      // the hook in the same transaction as the cap-tripping delta.
       const afterTickCalls: Array<{
         snapshot: HeartbeatSessionState;
         delta: HeartbeatTickDelta;
@@ -382,11 +392,11 @@ describe('HeartbeatSessionStore (memory backend)', () => {
         };
       });
 
-      await store2.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 4 });
+      await store2.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 3 });
 
       // Fire 1 starts and blocks; fire 2 is skipped (overlap); release
-      // fire 1; fire 3 + fire 4 complete in quick succession (4 == cap so
-      // the session auto-stops).
+      // fire 1; fires 3 + 4 complete in quick succession — real fire #3
+      // (the third successful execution) trips the maxTicks=3 cap.
       await vi.advanceTimersByTimeAsync(1_000);
       expect(afterTickCalls).toHaveLength(0); // fire 1 still in-flight
       await vi.advanceTimersByTimeAsync(1_000);
@@ -395,12 +405,12 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect(afterTickCalls[0]!.delta.error).toBe('overlap-skipped');
       expect(afterTickCalls[0]!.delta.success).toBe(false);
       expect(afterTickCalls[0]!.snapshot.skippedCount).toBe(1);
+      // Overlap must NOT advance `tickCount` under the new semantics.
+      expect(afterTickCalls[0]!.snapshot.tickCount).toBe(0);
 
       release?.();
       await vi.advanceTimersByTimeAsync(0);
-      // Fire 1 finished → tickCount now 3 (incremented per overlap + per
-      // real fires). advanceTimersByTimeAsync re-runs any pending timers
-      // synchronously.
+      // Fire 1 finished → tickCount now 1 (overlap did NOT increment it).
       await vi.advanceTimersByTimeAsync(2_000);
 
       // One external immediate tick.
@@ -740,11 +750,13 @@ describe('HeartbeatSessionStore (memory backend)', () => {
 
       expect(maxConcurrent).toBe(1);
       // Exactly one of the two calls ran the LLM body (success=1), the
-      // other was recorded as a skip.
+      // other was recorded as a skip. Under CronJob-style semantics only
+      // the real execution advances `tickCount`; the overlap skip bumps
+      // `skippedCount` alone.
       const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.successCount).toBe(1);
       expect(snap.skippedCount).toBe(1);
-      expect(snap.tickCount).toBe(2);
+      expect(snap.tickCount).toBe(1);
       // Both callers got a post-tick snapshot (neither returned undefined).
       expect(a).toBeDefined();
       expect(b).toBeDefined();
@@ -798,9 +810,196 @@ describe('HeartbeatSessionStore (memory backend)', () => {
         const snap = (await store.get(FAKE_ADDR))!;
         expect(snap.successCount).toBe(1);
         expect(snap.skippedCount).toBe(3);
-        expect(snap.tickCount).toBe(4);
+        // `tickCount` counts real executions only — the 3 ghosted fires
+        // are accounted for by `skippedCount`.
+        expect(snap.tickCount).toBe(1);
       } finally {
         vi.useRealTimers();
+      }
+    });
+
+    // ─── CronJob-style maxTicks semantics ────────────────────────────────
+    //
+    // Regression for the bug where `/heartbeat <addr> 10000 3` ran exactly
+    // ONE real tick and auto-stopped because two overlap-skips (from the
+    // scheduler firing during the immediate tick's ~22s LLM call) bumped
+    // `tickCount` to 3. New contract: `tickCount` counts only real
+    // executions (success + error); `skippedCount` carries overlaps.
+    it('overlap skips during a long immediate tick do not advance maxTicks', async () => {
+      // Case A: persona takes 30s, intervalMs=10s, maxTicks=3. While the
+      // immediate tick holds the lock, two scheduler fires collide and
+      // record as overlap skips. `tickCount` must remain 1 and the session
+      // must stay `running=true` — the user asked for 3 real ticks, not 3
+      // fire attempts.
+      vi.useFakeTimers();
+      try {
+        let release: (() => void) | undefined;
+        const runTick = vi.fn(async (): Promise<HeartbeatTickDelta> => {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return {
+            tickId: 'immediate_tick',
+            tickAt: '2026-04-20T00:00:30.000Z',
+            success: true,
+          };
+        });
+
+        await store.start({
+          tokenAddr: FAKE_ADDR,
+          intervalMs: 10_000,
+          runTick,
+          maxTicks: 3,
+        });
+
+        // Kick off the immediate tick (parks on the release Promise).
+        const immediatePromise = store.runExclusiveTick(FAKE_ADDR, runTick);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Simulate 25s of wall clock: two interval boundaries fire at
+        // t=10s and t=20s, both must record as overlap skips.
+        await vi.advanceTimersByTimeAsync(25_000);
+
+        const mid = (await store.get(FAKE_ADDR))!;
+        expect(mid.tickCount).toBe(0);
+        expect(mid.skippedCount).toBe(2);
+        expect(mid.successCount).toBe(0);
+        expect(mid.running).toBe(true);
+
+        // Release the immediate tick; the single real execution lands.
+        release?.();
+        await immediatePromise;
+        await vi.advanceTimersByTimeAsync(0);
+
+        const afterImmediate = (await store.get(FAKE_ADDR))!;
+        expect(afterImmediate.tickCount).toBe(1);
+        expect(afterImmediate.skippedCount).toBe(2);
+        expect(afterImmediate.successCount).toBe(1);
+        // maxTicks=3 and we have only 1 real tick — must still be running.
+        expect(afterImmediate.running).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reaches maxTicks by counting only real executions, preserving skippedCount', async () => {
+      // Case B: continuation of Case A — after the long immediate tick
+      // resolves, subsequent scheduler fires each complete well inside the
+      // interval. The session must auto-stop exactly when the third REAL
+      // tick lands (not on the second, which would be old-semantics bug),
+      // and the 2 carried-over skips must remain visible on the snapshot.
+      vi.useFakeTimers();
+      try {
+        let blockFirst = true;
+        let releaseFirst: (() => void) | undefined;
+        const runTick = vi.fn(async (): Promise<HeartbeatTickDelta> => {
+          if (blockFirst) {
+            blockFirst = false;
+            await new Promise<void>((resolve) => {
+              releaseFirst = resolve;
+            });
+            return {
+              tickId: 'immediate_tick',
+              tickAt: '2026-04-20T00:00:30.000Z',
+              success: true,
+            };
+          }
+          return {
+            tickId: `tick_${Date.now().toString(36)}`,
+            tickAt: new Date().toISOString(),
+            success: true,
+          };
+        });
+
+        await store.start({
+          tokenAddr: FAKE_ADDR,
+          intervalMs: 10_000,
+          runTick,
+          maxTicks: 3,
+        });
+
+        const immediatePromise = store.runExclusiveTick(FAKE_ADDR, runTick);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // 25s wall clock → 2 overlap skips, still blocked.
+        await vi.advanceTimersByTimeAsync(25_000);
+        releaseFirst?.();
+        await immediatePromise;
+        await vi.advanceTimersByTimeAsync(0);
+
+        // First real tick done → tickCount=1, skippedCount=2, running=true.
+        const afterFirstReal = (await store.get(FAKE_ADDR))!;
+        expect(afterFirstReal.tickCount).toBe(1);
+        expect(afterFirstReal.skippedCount).toBe(2);
+        expect(afterFirstReal.running).toBe(true);
+
+        // Advance past two more interval boundaries. Each runs the fast
+        // persona branch → two real ticks → tickCount reaches 3 → auto-stop.
+        await vi.advanceTimersByTimeAsync(20_000);
+
+        const final = (await store.get(FAKE_ADDR))!;
+        expect(final.tickCount).toBe(3);
+        expect(final.successCount).toBe(3);
+        expect(final.skippedCount).toBe(2);
+        expect(final.running).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('safety rail auto-stops when fire attempts exceed maxTicks * multiplier', async () => {
+      // Case C: the persona is permanently slower than the interval, so
+      // every scheduler fire lands mid-tick and records as a skip. Without
+      // a safety rail the loop would fire forever. With maxTicks=2 the
+      // absolute cap is 2 * MAX_FIRE_ATTEMPTS_MULTIPLIER = 10 fire
+      // attempts — force-stop at the 10th attempt with a warn log.
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]): void => {
+        warnings.push(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' '));
+      };
+      try {
+        // A persona that never resolves — every runExclusiveTick entry
+        // beyond the first sees `tickInFlight=true` and records as a skip.
+        const neverResolvingTick = (): Promise<HeartbeatTickDelta> =>
+          new Promise<HeartbeatTickDelta>(() => {
+            // intentionally never resolves
+          });
+
+        await store.start({
+          tokenAddr: FAKE_ADDR,
+          intervalMs: 60_000,
+          runTick: neverResolvingTick,
+          maxTicks: 2,
+        });
+
+        // First call takes the lock and parks forever; subsequent calls
+        // record as overlap skips.
+        void store.runExclusiveTick(FAKE_ADDR, neverResolvingTick);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const expectedLimit = 2 * MAX_FIRE_ATTEMPTS_MULTIPLIER; // 10
+        // Dispatch `expectedLimit` additional fire attempts. The parked
+        // first attempt (`tickCount=0`) plus `expectedLimit` overlap skips
+        // means `fireAttempts = 0 + 10 = 10`, which equals the rail and
+        // trips auto-stop. `skippedCount` lands at 10.
+        for (let i = 0; i < expectedLimit; i += 1) {
+          await store.runExclusiveTick(FAKE_ADDR, neverResolvingTick);
+        }
+
+        const snap = (await store.get(FAKE_ADDR))!;
+        expect(snap.running).toBe(false);
+        expect(snap.skippedCount).toBe(expectedLimit);
+        expect(snap.tickCount).toBe(0); // the parked tick never resolved
+        const matched = warnings.find(
+          (w) => w.includes('safety rail tripped') && w.includes(FAKE_ADDR),
+        );
+        expect(matched).toBeDefined();
+      } finally {
+        console.warn = originalWarn;
       }
     });
   });
