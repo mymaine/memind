@@ -1943,6 +1943,168 @@ body:has(.logs-drawer.open) .toc {
   border: 0;
 }
 
+/* ---------- CH 07 THE SAGA ---------- */
+/*
+ * Single central stage: cloud-above + glyph + parchment-below + chapter
+ * stack on the right. No two-column chat layout — Ch5/Ch6 already own
+ * that pattern, Ch7 deliberately sits on its own composition so the eye
+ * keeps a centred camera through the lore beat.
+ */
+.ch-saga {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-height: 100%;
+}
+.ch-saga .ch-headline {
+  letter-spacing: -1.5px;
+  margin-bottom: 12px;
+}
+.ch-saga-sub {
+  margin-bottom: 32px;
+  color: var(--fg-tertiary);
+}
+.saga-stage {
+  position: relative;
+  width: 100%;
+  max-width: 960px;
+  height: 360px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  align-items: center;
+}
+.saga-thought {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(calc(-50% - 160px));
+  padding: 10px 16px;
+  border: 1px dashed var(--border-default);
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  max-width: 320px;
+  font-family: var(--font-mono);
+  transition: opacity 200ms ease-out;
+  z-index: 2;
+}
+.saga-thought-token {
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--fg-secondary);
+}
+.saga-rings {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(calc(-50% - 160px), -50%);
+  width: 320px;
+  height: 320px;
+  pointer-events: none;
+  z-index: 0;
+}
+.saga-glyph-wrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(calc(-50% - 160px), -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.saga-scroll {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform-origin: center;
+  transform: translateX(calc(-50% - 160px));
+  width: 420px;
+  min-height: 76px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-default);
+  box-shadow: inset 0 0 0 1px rgba(0, 217, 146, 0.15);
+  background: var(--bg-surface);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+.saga-scroll-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+  border-bottom: 1px dashed var(--border-default);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+.saga-scroll-body {
+  color: var(--fg-emphasis);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.saga-stack {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-self: start;
+  margin-top: 8px;
+}
+.saga-card {
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+.saga-card-head {
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  color: var(--fg-emphasis);
+}
+.saga-card--new {
+  border-color: var(--accent);
+  background: rgba(0, 217, 146, 0.05);
+}
+.saga-status-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+.saga-summary {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 12px;
+  transition: opacity 200ms ease-out;
+}
+.saga-closing {
+  margin-top: 16px;
+  text-align: center;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 15px;
+  letter-spacing: 1px;
+  transition: opacity 200ms ease-out;
+}
+
 /* ---------- DRAWER SHARED BITS ---------- */
 /*
  * Tab-indicator dots reused across LogsDrawer and future drawer surfaces
