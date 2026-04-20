@@ -222,24 +222,36 @@ export interface MaybeAnchorContentArgs {
    * runs.
    */
   sendAnchorMemoTxImpl?: typeof sendAnchorMemoTx;
+  /**
+   * `LogEvent.tool` attribution for anchor info/warn lines. Defaults to
+   * `'anchor'` to match the modern tool-namespaced shape. The a2a narrator
+   * phase opts into `'orchestrator'` to preserve the log tool attribution the
+   * inline pre-refactor implementation used, keeping downstream log stream
+   * filters stable for that specific path.
+   */
+  logTool?: string;
 }
 
 /**
  * Emit a `LogEvent` attributed to the narrator phase. We hard-code the
- * attribution to `narrator` because every path that anchors chapters is
- * ultimately a narrator-side action (creator chapter 1 is emitted under the
- * narrator-shaped `lore-anchor` artifact, so the log story stays consistent).
+ * agent attribution to `narrator` because every path that anchors chapters
+ * is ultimately a narrator-side action (creator chapter 1 is emitted under
+ * the narrator-shaped `lore-anchor` artifact, so the log story stays
+ * consistent). The `tool` field defaults to `'anchor'` but callers can
+ * override — the a2a narrator path passes `'orchestrator'` to match the
+ * pre-refactor inline block's log tool attribution.
  */
 function narratorLog(
   onLog: ((event: LogEvent) => void) | undefined,
   level: LogEvent['level'],
   message: string,
+  tool: string = 'anchor',
 ): void {
   if (onLog === undefined) return;
   onLog({
     ts: new Date().toISOString(),
     agent: 'narrator',
-    tool: 'anchor',
+    tool,
     level,
     message,
   });
@@ -270,6 +282,7 @@ export async function maybeAnchorContent(
     onArtifact,
     onLog,
     sendAnchorMemoTxImpl,
+    logTool,
   } = args;
 
   // Gate 1: env flag must be literally `true`. We deliberately emit no log
@@ -288,6 +301,7 @@ export async function maybeAnchorContent(
       onLog,
       'warn',
       'ANCHOR_ON_CHAIN=true but BSC_DEPLOYER_PRIVATE_KEY missing — skipping layer-2 memo',
+      logTool,
     );
     return null;
   }
@@ -321,6 +335,7 @@ export async function maybeAnchorContent(
       onLog,
       'info',
       `lore-anchor layer-2 settled on BSC mainnet: ${settlement.onChainTxHash}`,
+      logTool,
     );
     return settlement;
   } catch (err) {
@@ -329,6 +344,7 @@ export async function maybeAnchorContent(
       onLog,
       'warn',
       `lore-anchor layer-2 send failed (layer-1 evidence still emitted): ${msg}`,
+      logTool,
     );
     return null;
   }
@@ -372,6 +388,7 @@ export async function anchorChapterOne(
     onArtifact,
     onLog,
     sendAnchorMemoTxImpl,
+    logTool,
   } = args;
 
   const chapterNumber = 1;
@@ -393,7 +410,19 @@ export async function anchorChapterOne(
   };
   try {
     await anchorLedger.append(layer1Input);
-    if (onArtifact !== undefined) {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    narratorLog(onLog, 'warn', `creator chapter 1 anchor append failed: ${msg}`, logTool);
+    return null;
+  }
+
+  // Artifact fan-out is a separate concern from the ledger write: if the SSE
+  // subscriber (or any other consumer wired through `onArtifact`) throws, the
+  // layer-1 row is already persisted and layer-2 should still try to settle.
+  // Previously both steps shared a catch block, so an `onArtifact` throw was
+  // mis-logged as `append failed: ...` and wrongly short-circuited layer-2.
+  if (onArtifact !== undefined) {
+    try {
       onArtifact({
         kind: 'lore-anchor',
         anchorId,
@@ -403,11 +432,11 @@ export async function anchorChapterOne(
         contentHash,
         ts,
       });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      narratorLog(onLog, 'warn', `creator chapter 1 layer-1 artifact emit failed: ${msg}`, logTool);
+      // Intentional fall-through: layer-2 still runs below.
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    narratorLog(onLog, 'warn', `creator chapter 1 anchor append failed: ${msg}`);
-    return null;
   }
 
   // Layer-2: optional, gated by `ANCHOR_ON_CHAIN` inside `maybeAnchorContent`.
@@ -421,5 +450,6 @@ export async function anchorChapterOne(
     ...(onArtifact !== undefined ? { onArtifact } : {}),
     ...(onLog !== undefined ? { onLog } : {}),
     ...(sendAnchorMemoTxImpl !== undefined ? { sendAnchorMemoTxImpl } : {}),
+    ...(logTool !== undefined ? { logTool } : {}),
   });
 }

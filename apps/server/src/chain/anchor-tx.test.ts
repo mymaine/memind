@@ -494,4 +494,54 @@ describe('anchorChapterOne', () => {
     const warnLog = onLog.mock.calls.find((c) => c[0].level === 'warn');
     expect(warnLog?.[0].message).toMatch(/append failed|pg connection refused/);
   });
+
+  it('still runs layer-2 when onArtifact throws (layer-1 ledger row already landed)', async () => {
+    // onArtifact throw must NOT be mistaken for an append failure: the ledger
+    // row is persisted and layer-2 (the on-chain memo tx) still fires. This
+    // pins down the split between ledger write and artifact fan-out that
+    // `anchorChapterOne` enforces via two separate try/catch blocks.
+    const ledger = new AnchorLedger();
+    const onArtifact = vi.fn<(a: Artifact) => void>(() => {
+      throw new Error('SSE subscriber blew up');
+    });
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => fakeSettlement());
+
+    const result = await anchorChapterOne({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    // Layer-1 ledger row landed despite the artifact-emit throw.
+    const anchorId = computeAnchorId(TOKEN_ADDR, 1);
+    const entry = await ledger.get(anchorId);
+    expect(entry).toBeDefined();
+    expect(entry?.chapterNumber).toBe(1);
+
+    // Layer-2 still fired — send impl was called exactly once. This is the
+    // load-bearing assertion: pre-fix, the layer-1 emit throw landed in a
+    // shared catch block that short-circuited layer-2 and misreported the
+    // failure as `append failed`.
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    // `result` may still be null because the same throwing onArtifact is
+    // invoked for the layer-2 upgrade artifact inside `maybeAnchorContent` —
+    // that downstream path is outside the scope of this fix. What matters is
+    // that layer-2 was reached at all.
+    void result;
+
+    // The layer-1 emit failure surfaces as a dedicated warn log (distinct
+    // from the `append failed` message the previous case exercised).
+    const emitWarn = onLog.mock.calls.find(
+      (c) => c[0].level === 'warn' && c[0].message.includes('artifact emit'),
+    );
+    expect(emitWarn).toBeDefined();
+    expect(emitWarn?.[0].message).toMatch(/SSE subscriber blew up/);
+  });
 });

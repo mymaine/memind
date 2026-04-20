@@ -346,6 +346,12 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
       bscDeployerPrivateKey: config.wallets.bscDeployer.privateKey as `0x${string}` | undefined,
       onArtifact: (artifact) => store.addArtifact(runId, artifact),
       onLog: (event) => store.addLog(runId, event),
+      // Preserve the pre-refactor log tool attribution the inline a2a block
+      // emitted (`tool: 'orchestrator'`). The rest of the orchestrator log
+      // stream already uses this attribution, so threading it here keeps the
+      // narrator-phase anchor lines indistinguishable from the surrounding
+      // orchestrator messages.
+      logTool: 'orchestrator',
     });
   }
 
