@@ -30,6 +30,8 @@ import {
 } from '../state/heartbeat-session-store.js';
 import { ShillOrderStore } from '../state/shill-order-store.js';
 import { LoreStore } from '../state/lore-store.js';
+import { AnchorLedger } from '../state/anchor-ledger.js';
+import type { AnchorTxSettlement, sendAnchorMemoTx } from '../chain/anchor-tx.js';
 import { RunStore } from '../runs/store.js';
 import type { AppConfig } from '../config.js';
 import type { CreatorPersonaInput } from '../agents/creator.js';
@@ -488,6 +490,153 @@ describe('createInvokeNarratorTool', () => {
     expect(ctx.onToolUseStart).toBe(onToolUseStart);
     expect(ctx.onToolUseEnd).toBe(onToolUseEnd);
     expect(ctx.onAssistantDelta).toBe(onAssistantDelta);
+  });
+
+  // ─── AC3 anchor wiring (cross-path) ────────────────────────────────────
+  //
+  // `/lore` is one of four code paths that must fire the anchor layer now.
+  // These tests pin down the behaviour in both flag states without touching
+  // Anthropic or bsc-dataseed: the narrator persona is stubbed (we already
+  // cover runNarratorAgent in narrator.test.ts) and `sendAnchorMemoTxImpl`
+  // is a vi.fn that returns a fake settlement.
+
+  it('appends an anchor ledger entry but skips layer-2 when ANCHOR_ON_CHAIN=false', async () => {
+    // Stub persona whose `run` simulates `runNarratorAgent`: appends a
+    // layer-1 ledger row using the anchorLedger on ctx, then returns the
+    // narrator output. The real narrator adapter does this via
+    // `runNarratorAgent`; the stub keeps it concise.
+    const ledger = new AnchorLedger();
+    const run = vi.fn(
+      async (
+        input: NarratorPersonaInput,
+        ctx: PersonaRunContext,
+      ): Promise<NarratorPersonaOutput> => {
+        const ledgerOnCtx = ctx.anchorLedger as AnchorLedger | undefined;
+        if (ledgerOnCtx !== undefined) {
+          await ledgerOnCtx.append({
+            anchorId: `${input.tokenAddr.toLowerCase()}-2`,
+            tokenAddr: input.tokenAddr,
+            chapterNumber: 2,
+            loreCid: 'bafkrei-ch2',
+            contentHash: `0x${'a'.repeat(64)}` as `0x${string}`,
+            ts: '2026-04-21T00:00:00.000Z',
+          });
+        }
+        return {
+          tokenAddr: input.tokenAddr,
+          chapterNumber: 2,
+          ipfsHash: 'bafkrei-ch2',
+          ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch2',
+          chapterText: 'ch2 body',
+        };
+      },
+    );
+    const persona = makeNarratorPersona(run);
+
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => {
+      throw new Error('sendAnchorMemoTx must not be called when ANCHOR_ON_CHAIN is false');
+    });
+
+    const tool = createInvokeNarratorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      store: { __brand: 'LoreStore' } as unknown as never,
+      resolveTokenMeta: () => ({ tokenName: 'HBNB2026-A', tokenSymbol: 'HBNB2026-A' }),
+      anchorLedger: ledger,
+      bscDeployerPrivateKey: `0x${'9'.repeat(64)}`,
+      env: { ANCHOR_ON_CHAIN: 'false' },
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    // Layer-1: narrator persona appended a ledger row via ctx.anchorLedger.
+    const entries = await ledger.list();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.chapterNumber).toBe(2);
+    expect(entries[0]?.onChainTxHash).toBeUndefined();
+
+    // Layer-2: send must NOT run when the env flag is off.
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('invokes sendAnchorMemoTxImpl + marks ledger on-chain when ANCHOR_ON_CHAIN=true', async () => {
+    const ledger = new AnchorLedger();
+    const run = vi.fn(
+      async (
+        input: NarratorPersonaInput,
+        ctx: PersonaRunContext,
+      ): Promise<NarratorPersonaOutput> => {
+        const ledgerOnCtx = ctx.anchorLedger as AnchorLedger | undefined;
+        if (ledgerOnCtx !== undefined) {
+          await ledgerOnCtx.append({
+            anchorId: `${input.tokenAddr.toLowerCase()}-3`,
+            tokenAddr: input.tokenAddr,
+            chapterNumber: 3,
+            loreCid: 'bafkrei-ch3',
+            contentHash: `0x${'b'.repeat(64)}` as `0x${string}`,
+            ts: '2026-04-21T00:00:00.000Z',
+          });
+        }
+        return {
+          tokenAddr: input.tokenAddr,
+          chapterNumber: 3,
+          ipfsHash: 'bafkrei-ch3',
+          ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch3',
+          chapterText: 'ch3 body',
+        };
+      },
+    );
+    const persona = makeNarratorPersona(run);
+
+    const settlement: AnchorTxSettlement = {
+      onChainTxHash: `0x${'e'.repeat(64)}`,
+      chain: 'bsc-mainnet',
+      explorerUrl: `https://bscscan.com/tx/0x${'e'.repeat(64)}`,
+    };
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => settlement);
+
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+
+    const tool = createInvokeNarratorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      store: { __brand: 'LoreStore' } as unknown as never,
+      resolveTokenMeta: () => ({ tokenName: 'HBNB2026-B', tokenSymbol: 'HBNB2026-B' }),
+      anchorLedger: ledger,
+      bscDeployerPrivateKey: `0x${'9'.repeat(64)}`,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      sendAnchorMemoTxImpl: sendSpy,
+      onArtifact,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    // Ledger row has been upgraded with the on-chain trio.
+    const entries = await ledger.list();
+    expect(entries).toHaveLength(1);
+    const latest = entries[0];
+    expect(latest?.onChainTxHash).toBe(settlement.onChainTxHash);
+    expect(latest?.chain).toBe('bsc-mainnet');
+    expect(latest?.explorerUrl).toBe(settlement.explorerUrl);
+
+    // Upgraded lore-anchor artifact emitted with the full on-chain trio.
+    const anchorArtifact = onArtifact.mock.calls
+      .map((c) => c[0])
+      .find(
+        (a) => a.kind === 'lore-anchor' && 'onChainTxHash' in a && a.onChainTxHash !== undefined,
+      );
+    expect(anchorArtifact).toBeDefined();
+    if (anchorArtifact?.kind === 'lore-anchor') {
+      expect(anchorArtifact.onChainTxHash).toBe(settlement.onChainTxHash);
+      expect(anchorArtifact.chain).toBe('bsc-mainnet');
+      expect(anchorArtifact.explorerUrl).toBe(settlement.explorerUrl);
+    }
   });
 });
 

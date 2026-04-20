@@ -18,6 +18,8 @@ import { runShillerAgent, type ShillerPersonaOutput } from '../agents/market-mak
 import type { HeartbeatPersonaInput, HeartbeatPersonaOutput } from '../agents/heartbeat.js';
 import type { PostShillForInput, PostShillForOutput } from './post-shill-for.js';
 import type { LoreStore } from '../state/lore-store.js';
+import type { AnchorLedger } from '../state/anchor-ledger.js';
+import { maybeAnchorContent, type sendAnchorMemoTx } from '../chain/anchor-tx.js';
 import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type {
   HeartbeatSessionAction,
@@ -377,6 +379,32 @@ export interface CreateInvokeNarratorToolDeps extends PersonaInvokeEventCallback
    * `await loreStore.getAllChapters(...)` on the pg backend.
    */
   resolveTokenMeta: (tokenAddr: string) => Promise<NarratorTokenMeta> | NarratorTokenMeta;
+  /**
+   * Optional AC3 anchor ledger. When wired, every `/lore` slash that lands
+   * here appends a keccak256 commitment row (layer 1) and — if
+   * `ANCHOR_ON_CHAIN=true` + `bscDeployerPrivateKey` is available — fires
+   * the zero-value memo tx on BSC mainnet (layer 2). Left undefined by
+   * legacy unit tests + any callers that do not want anchor evidence.
+   */
+  anchorLedger?: AnchorLedger;
+  /**
+   * BSC deployer private key for the layer-2 memo tx. Resolved from
+   * `config.wallets.bscDeployer.privateKey` in production; left undefined
+   * for tests that disable layer 2. `maybeAnchorContent` downgrades to a
+   * warn log when this is missing while `ANCHOR_ON_CHAIN=true`.
+   */
+  bscDeployerPrivateKey?: `0x${string}`;
+  /**
+   * Optional env bag for the `ANCHOR_ON_CHAIN` gate. Defaults to
+   * `process.env` inside `maybeAnchorContent`; hermetic tests pass an
+   * explicit bag to exercise both branches deterministically.
+   */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * Test seam — override the real `sendAnchorMemoTx` so unit tests can spy
+   * on the settlement without touching bsc-dataseed. Production omits it.
+   */
+  sendAnchorMemoTxImpl?: typeof sendAnchorMemoTx;
 }
 
 export function createInvokeNarratorTool(
@@ -388,6 +416,10 @@ export function createInvokeNarratorTool(
     registry,
     store,
     resolveTokenMeta,
+    anchorLedger,
+    bscDeployerPrivateKey,
+    env,
+    sendAnchorMemoTxImpl,
     onLog,
     onArtifact,
     onToolUseStart,
@@ -420,10 +452,15 @@ export function createInvokeNarratorTool(
         level: 'info',
         message: `narrator persona starting (token: ${parsed.tokenAddr})`,
       });
+      // Thread the anchor ledger onto ctx so the narrator adapter records
+      // the layer-1 commitment + emits the initial lore-anchor artifact.
+      // `PersonaRunContext` uses `[extra: string]: unknown`; narratorPersona
+      // narrows `ctx.anchorLedger` at the call site.
       const ctx: PersonaRunContext = {
         client,
         registry,
         store,
+        ...(anchorLedger !== undefined ? { anchorLedger } : {}),
         ...(onLog !== undefined ? { onLog } : {}),
         ...(onArtifact !== undefined ? { onArtifact } : {}),
         ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
@@ -444,6 +481,25 @@ export function createInvokeNarratorTool(
             gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.ipfsHash}`,
             author: 'narrator',
             chapterNumber: result.chapterNumber,
+          });
+        }
+        // AC3 layer 2 — optional. The narrator adapter already appended the
+        // layer-1 commitment inside `runNarratorAgent` (fed by ctx.anchorLedger
+        // above). Here we upgrade to the on-chain memo when the env flag is
+        // set and a deployer key is present. `maybeAnchorContent` is
+        // non-fatal on every failure branch so the narrator happy path and
+        // the lore-cid artifact both stay intact regardless of RPC health.
+        if (anchorLedger !== undefined) {
+          await maybeAnchorContent({
+            anchorLedger,
+            tokenAddr: result.tokenAddr as `0x${string}`,
+            chapterNumber: result.chapterNumber,
+            loreCid: result.ipfsHash,
+            ...(bscDeployerPrivateKey !== undefined ? { bscDeployerPrivateKey } : {}),
+            ...(env !== undefined ? { env } : {}),
+            ...(sendAnchorMemoTxImpl !== undefined ? { sendAnchorMemoTxImpl } : {}),
+            ...(onArtifact !== undefined ? { onArtifact } : {}),
+            ...(onLog !== undefined ? { onLog } : {}),
           });
         }
         const durationMs = Date.now() - startedAt;

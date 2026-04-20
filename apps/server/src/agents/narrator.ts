@@ -503,6 +503,11 @@ export const narratorPersona: Persona<NarratorPersonaInput, NarratorPersonaOutpu
     const onAssistantDelta = ctx.onAssistantDelta as
       | ((event: AssistantDeltaEventPayload) => void)
       | undefined;
+    // AC3 layer-1 anchor ledger — optional. When wired via ctx, every chapter
+    // upsert records a keccak256 commitment row and (when onArtifact is also
+    // wired) emits a lore-anchor artifact. This is the shared Brain-chat path
+    // that lets `/lore` slashes participate in AC3 alongside the a2a CLI.
+    const anchorLedger = ctx.anchorLedger as AnchorLedger | undefined;
     const out = await runNarratorAgent({
       client: ctx.client as Anthropic,
       registry: ctx.registry as ToolRegistry,
@@ -523,6 +528,7 @@ export const narratorPersona: Persona<NarratorPersonaInput, NarratorPersonaOutpu
       ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
       ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
       ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
+      ...(anchorLedger !== undefined ? { anchorLedger } : {}),
     });
     return {
       tokenAddr: out.tokenAddr,
