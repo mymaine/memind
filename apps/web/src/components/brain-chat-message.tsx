@@ -28,6 +28,16 @@ import type { BrainChatTurn } from '@/hooks/useBrainChat-state';
 import type { BrainChatGroup } from './brain-chat-message-group';
 import { groupBrainChatEvents } from './brain-chat-message-group';
 import { describeArtifact, isPillArtifact } from '@/lib/artifact-view';
+import { PixelHumanGlyph } from './pixel-human-glyph';
+
+/**
+ * Size (px) for the inline work-mood mascot drawn next to pending tool-use
+ * rows. Sized deliberately small (14px) so it reads as a loading affordance
+ * beside the 11px mono labels without blowing out the line height — matches
+ * the TopBar BrainIndicator size (16px) conceptually while nesting inside a
+ * denser chat surface.
+ */
+const TOOL_USE_GLYPH_SIZE = 14;
 
 export interface BrainChatMessageProps {
   readonly turn: BrainChatTurn;
@@ -85,18 +95,32 @@ function BrainToolUseGroup({
   // legacy regex `/\bok\b|\bdone\b|completed/` that component tests use to
   // assert a tool-use-end pill was drawn. Keep the word as a standalone
   // token so `\b` boundaries fire.
-  const statusLabel = running ? 'running…' : err ? 'error' : 'ok';
+  const statusLabel = running ? 'running' : err ? 'error' : 'ok';
   const statusColor = running
     ? 'text-accent-text'
     : err
       ? 'text-[color:var(--color-danger)]'
       : 'text-accent-text';
-  const icon = running ? '🔧' : err ? '⚠' : '✓';
+  const completedIcon = err ? '⚠' : '✓';
   return (
     <div className="flex flex-col gap-1.5 self-start rounded-[var(--radius-card)] border border-accent bg-[color-mix(in_oklab,var(--color-accent)_8%,transparent)] px-2 py-1.5">
       <div className="inline-flex items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11px] text-accent-text">
-        <span aria-hidden>🔧</span>
-        <span>invoking {persona} persona…</span>
+        {/* Inline work-mood mascot replaces the static wrench icon while the
+            tool-use is in flight so users get a visual heartbeat that the
+            Memind is actually computing. Collapses to a green check / red
+            warn once the matching tool-use-end arrives. */}
+        {running ? (
+          <PixelHumanGlyph
+            size={TOOL_USE_GLYPH_SIZE}
+            mood="work"
+            ariaLabel={`invoking ${persona} persona`}
+          />
+        ) : (
+          <span aria-hidden>🔧</span>
+        )}
+        <span>
+          invoking {persona} persona{running ? '…' : ''}
+        </span>
       </div>
       {group.children.length > 0 ? (
         <div className="ml-4 flex flex-col gap-1">
@@ -108,7 +132,15 @@ function BrainToolUseGroup({
       <div
         className={`inline-flex items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11px] ${statusColor}`}
       >
-        <span aria-hidden>{icon}</span>
+        {running ? (
+          <PixelHumanGlyph
+            size={TOOL_USE_GLYPH_SIZE}
+            mood="work"
+            ariaLabel={`${persona} persona running`}
+          />
+        ) : (
+          <span aria-hidden>{completedIcon}</span>
+        )}
         <span>
           {persona} · {statusLabel}
         </span>
@@ -124,14 +156,15 @@ function PersonaToolUseRow({
 }): ReactElement {
   // Compressed single-line view for persona sub-tools (narrative_generator,
   // meme_image_creator, onchain_deployer, lore_writer). Shows only name +
-  // final status so the bubble stays legible. While running we show a dim
-  // "…" marker instead of verbose progress logs (runtime logs are filtered
-  // upstream by `groupBrainChatEvents`).
+  // final status so the bubble stays legible. While running we swap the
+  // status slot for a work-mood pixel mascot so users get the same animated
+  // loading affordance the outer brain scope uses (runtime logs are still
+  // filtered upstream by `groupBrainChatEvents`).
   const label = group.toolName;
   const running = group.end === null;
   const ok = !running && !(group.end?.isError ?? false);
   const err = !running && (group.end?.isError ?? false);
-  const marker = running ? '…' : ok ? '✓' : '✗';
+  const completedMarker = ok ? '✓' : '✗';
   const tone = err
     ? 'text-[color:var(--color-danger)]'
     : running
@@ -144,7 +177,17 @@ function PersonaToolUseRow({
       <span className="text-fg-tertiary">{group.agent}</span>
       <span className="text-fg-secondary">·</span>
       <span className="text-fg-primary">{label}</span>
-      <span className={`ml-auto ${tone}`}>{marker}</span>
+      <span className={`ml-auto inline-flex items-center ${tone}`}>
+        {running ? (
+          <PixelHumanGlyph
+            size={TOOL_USE_GLYPH_SIZE}
+            mood="work"
+            ariaLabel={`${group.agent} ${label} running`}
+          />
+        ) : (
+          completedMarker
+        )}
+      </span>
     </div>
   );
 }

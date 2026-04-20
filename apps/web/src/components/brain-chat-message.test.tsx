@@ -378,6 +378,103 @@ describe('<BrainChatMessage /> — heartbeat bubble', () => {
   });
 });
 
+describe('<BrainChatMessage /> — tool-use work mood glyph (UX fix 2026-04-21)', () => {
+  it('renders a PixelHumanGlyph in work mood while a brain tool-use is in flight', () => {
+    // The brain-level tool-use group (invoke_creator pending) must show the
+    // pixel mascot in `work` mood instead of a plain "…" so users get a
+    // visual heartbeat that the Memind is actively computing.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('', [
+          {
+            kind: 'tool-use-start',
+            agent: 'brain',
+            toolName: 'invoke_creator',
+            toolUseId: 'tu-1',
+            input: {},
+          },
+        ])}
+      />,
+    );
+    // PixelHumanGlyph renders an <svg> with data-mood="work" while running.
+    expect(out).toMatch(/data-mood="work"/);
+  });
+
+  it('renders a work-mood glyph for persona sub-tool rows while they are pending', () => {
+    // A persona-level tool-use nested under an open brain scope (e.g. creator
+    // invoking narrative_generator) must also animate the work-mood glyph in
+    // its status slot while pending.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('', [
+          {
+            kind: 'tool-use-start',
+            agent: 'brain',
+            toolName: 'invoke_creator',
+            toolUseId: 'tu-1',
+            input: {},
+          },
+          {
+            kind: 'tool-use-start',
+            agent: 'creator',
+            toolName: 'narrative_generator',
+            toolUseId: 'tu-sub-1',
+            input: {},
+          },
+        ])}
+      />,
+    );
+    // Two pending glyphs: one for the outer brain scope + one for the nested
+    // persona sub-tool. The split check lets the test stay stable if the
+    // copy around the glyph changes.
+    const count = out.split('data-mood="work"').length - 1;
+    expect(count).toBeGreaterThanOrEqual(2);
+  });
+
+  it('drops the work-mood glyph once the tool-use group has ended', () => {
+    // After tool-use-end the brain scope flips to an `ok` / `error` pill; no
+    // work glyph should remain. The nested persona row finalised with a
+    // check / cross glyph and drops work mood too.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('done.', [
+          {
+            kind: 'tool-use-start',
+            agent: 'brain',
+            toolName: 'invoke_creator',
+            toolUseId: 'tu-1',
+            input: {},
+          },
+          {
+            kind: 'tool-use-start',
+            agent: 'creator',
+            toolName: 'narrative_generator',
+            toolUseId: 'tu-sub-1',
+            input: {},
+          },
+          {
+            kind: 'tool-use-end',
+            agent: 'creator',
+            toolName: 'narrative_generator',
+            toolUseId: 'tu-sub-1',
+            output: {},
+            isError: false,
+          },
+          {
+            kind: 'tool-use-end',
+            agent: 'brain',
+            toolName: 'invoke_creator',
+            toolUseId: 'tu-1',
+            output: {},
+            isError: false,
+          },
+        ])}
+      />,
+    );
+    expect(out).not.toMatch(/data-mood="work"/);
+  });
+});
+
 describe('<BrainChatMessage /> — ordering', () => {
   it('renders multiple brainEvents in the order they arrived', () => {
     // Not one of the five AC cases but a critical invariant: the UI must
