@@ -157,7 +157,7 @@ export function checkTweetGuard(tweet: string, options: CheckTweetGuardOptions):
  */
 export const BASE_RULES_NO_URL = `Rules (all MANDATORY):
 - Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
-- Length <= 250 characters (hard cap enforced at <= 280).
+- Length: roughly 60-70 tokens, <= 250 characters (hard cap at 280). Keep it one line.
 - Lead with the $SYMBOL, not a URL.
 - Do NOT include http:// or https:// or www. or any URL (URLs + crypto addresses are blocked by X for the first 7 days after authentication — safe mode skips them).
 - Do NOT mention bscscan, four.meme, base-sepolia, or any block explorer.
@@ -172,7 +172,7 @@ export const BASE_RULES_NO_URL = `Rules (all MANDATORY):
  */
 export const BASE_RULES_WITH_URL = `Rules (all MANDATORY):
 - Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
-- Length <= 280 characters including the URL (we enforce raw char count — URLs do NOT t.co-fold for our guard).
+- Length: roughly 70-90 tokens, <= 280 characters including the URL. Keep it tight (we enforce raw char count — URLs do NOT t.co-fold for our guard).
 - The four.meme URL alone is ~66 chars — budget at most ~200 chars for the body + emoji + hashtags.
 - Lead with the $SYMBOL.
 - INCLUDE the four.meme token URL at the end of the tweet so readers can click through to the token page. Format: https://four.meme/token/<TOKEN_ADDRESS> — use the exact address supplied in the user prompt (full 0x...40-hex, lowercase).

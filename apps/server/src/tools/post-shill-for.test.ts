@@ -22,21 +22,27 @@ import type { XPostInput, XPostOutput } from './x-post.js';
 /**
  * Build a fake Anthropic client whose `messages.create` resolves to a
  * sequence of responses (one per call). Also exposes `spy` so tests can
- * assert how many times it was called and with what arguments.
+ * assert how many times it was called and with what arguments. Each entry
+ * is either a plain string (treated as `end_turn`) or an object giving
+ * explicit text + stop_reason so tests can drive the truncation branch.
  */
-function mockAnthropicSequence(texts: string[]): {
+type MockResponse = string | { text: string; stopReason: Anthropic.Message['stop_reason'] };
+
+function mockAnthropicSequence(entries: MockResponse[]): {
   client: AnthropicMessagesClient;
   spy: ReturnType<typeof vi.fn>;
 } {
   const spy = vi.fn();
-  for (const text of texts) {
+  for (const entry of entries) {
+    const text = typeof entry === 'string' ? entry : entry.text;
+    const stopReason = typeof entry === 'string' ? 'end_turn' : entry.stopReason;
     const message: Anthropic.Message = {
       id: 'msg_test',
       type: 'message',
       role: 'assistant',
       model: 'anthropic/claude-sonnet-4-5',
       content: [{ type: 'text', text }],
-      stop_reason: 'end_turn',
+      stop_reason: stopReason,
       stop_sequence: null,
       usage: {
         input_tokens: 1,
@@ -211,9 +217,15 @@ describe('createPostShillForTool.execute', () => {
     });
 
     expect(spy).toHaveBeenCalledTimes(2);
-    // Second call must feed the LLM the violation hint so it can self-correct.
-    const secondCallArgs = spy.mock.calls[1]?.[0] as { system?: string } | undefined;
-    expect(secondCallArgs?.system).toMatch(/violated these rules/i);
+    // Second call must carry the previous draft as an assistant message and
+    // the trim/revise instruction as the new user message.
+    const secondCallArgs = spy.mock.calls[1]?.[0] as
+      | { system?: string; messages?: Array<{ role?: string; content?: string }> }
+      | undefined;
+    const secondMessages = secondCallArgs?.messages ?? [];
+    const lastUserMsg = secondMessages[secondMessages.length - 1];
+    expect(lastUserMsg?.role).toBe('user');
+    expect(lastUserMsg?.content ?? '').toMatch(/trim|revise/i);
     expect(executeSpy).toHaveBeenCalledTimes(1);
     expect(executeSpy).toHaveBeenCalledWith({ text: clean });
     expect(out.tweetText).toBe(clean);
@@ -238,13 +250,18 @@ describe('createPostShillForTool.execute', () => {
     expect(out.tweetText).toBe(clean);
   });
 
-  it('throws when both attempts violate the guard', async () => {
-    // Two distinct violation classes: bscscan domain + paid-intent word.
-    // Four.meme URLs are explicitly ALLOWED (see GUARD_PATTERNS) so they
-    // cannot be used as a "guaranteed guard miss" fixture anymore.
-    const dirty1 = '$BAT check bscscan.com 🦇';
-    const dirty2 = '$BAT I was paid to post this 🦇';
-    const { client, spy } = mockAnthropicSequence([dirty1, dirty2]);
+  it('throws when all five attempts violate the guard', async () => {
+    // Five consecutive violating drafts exhaust MAX_ATTEMPTS. Mix violation
+    // classes so we also exercise the non-length branch of the correction
+    // helper (paid-intent + bscscan are guard-matched regardless of length).
+    const drafts = [
+      '$BAT check bscscan.com 🦇',
+      '$BAT I was paid to post this 🦇',
+      '$BAT bscscan.com has more 🦇',
+      '$BAT was paid again 🦇',
+      '$BAT bscscan once more 🦇',
+    ];
+    const { client, spy } = mockAnthropicSequence(drafts);
     const { tool: postToXTool, executeSpy } = stubPostToXTool();
 
     const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
@@ -256,9 +273,33 @@ describe('createPostShillForTool.execute', () => {
         tokenSymbol: 'HBNB2026-BAT',
         loreSnippet: 'lore',
       }),
-    ).rejects.toThrow(/violated content guard after 2 attempts/);
+    ).rejects.toThrow(/violated content guard after 5 attempts/);
 
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledTimes(5);
+    expect(executeSpy).not.toHaveBeenCalled();
+  });
+
+  it('throws with length-class violation in the last error when all attempts overshoot', async () => {
+    // Five consecutive over-length drafts exhaust MAX_ATTEMPTS on the
+    // length branch specifically — belt-and-suspenders for the
+    // correction helper's length-focused message.
+    const overLength = '$BAT ' + 'a'.repeat(300);
+    const drafts = Array.from({ length: 5 }, () => overLength);
+    const { client, spy } = mockAnthropicSequence(drafts);
+    const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+    const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+
+    await expect(
+      tool.execute({
+        orderId: 'order_overlen_exhausted',
+        tokenAddr: VALID_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        loreSnippet: 'lore',
+      }),
+    ).rejects.toThrow(/length>280/);
+
+    expect(spy).toHaveBeenCalledTimes(5);
     expect(executeSpy).not.toHaveBeenCalled();
   });
 
@@ -277,6 +318,15 @@ describe('createPostShillForTool.execute', () => {
     });
 
     expect(spy).toHaveBeenCalledTimes(2);
+    // The second call must thread the previous over-length draft as an
+    // assistant message — this is what lets the model "trim" instead of
+    // rewriting from scratch.
+    const secondCallArgs = spy.mock.calls[1]?.[0] as
+      | { messages?: Array<{ role?: string; content?: string }> }
+      | undefined;
+    const messages = secondCallArgs?.messages ?? [];
+    const assistantMsg = messages.find((m) => m.role === 'assistant');
+    expect(assistantMsg?.content).toBe(overLength);
     expect(executeSpy).toHaveBeenCalledTimes(1);
     expect(out.tweetText).toBe(clean);
   });
@@ -466,10 +516,14 @@ describe('createPostShillForTool.execute', () => {
       });
 
       expect(spy).toHaveBeenCalledTimes(2);
-      // Retry system prompt must surface URL-related violations so the LLM
-      // can self-correct on the second attempt.
-      const secondCallArgs = spy.mock.calls[1]?.[0] as { system?: string } | undefined;
-      expect(secondCallArgs?.system ?? '').toMatch(/violated these rules/i);
+      // Retry must reuse the multi-turn correction shape: previous draft as
+      // assistant message + trim/revise instruction as the new user message.
+      const secondCallArgs = spy.mock.calls[1]?.[0] as
+        | { messages?: Array<{ role?: string; content?: string }> }
+        | undefined;
+      const lastUserMsg = secondCallArgs?.messages?.[secondCallArgs.messages.length - 1];
+      expect(lastUserMsg?.role).toBe('user');
+      expect(lastUserMsg?.content ?? '').toMatch(/trim|revise/i);
       expect(executeSpy).toHaveBeenCalledWith({ text: clean });
       expect(out.tweetText).toBe(clean);
     });
@@ -512,5 +566,146 @@ describe('createPostShillForTool.execute', () => {
 
     expect(spy).not.toHaveBeenCalled();
     expect(executeSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Messages-API lever tests covering the 2026-04-21 convergence rewrite:
+   *   1. tight max_tokens (physical length cap)
+   *   2. stop_reason=max_tokens surfaced as a "truncated" violation
+   *   3. multi-turn correction (accumulate assistant + user pairs)
+   *   4. trim prompt carries actual overshoot numbers
+   */
+  it('max_tokens default is 90', async () => {
+    const clean = '$HBNB2026-BAT cavern at dusk, lore hits 👁';
+    const { client, spy } = mockAnthropicSequence([clean]);
+    const { tool: postToXTool } = stubPostToXTool();
+
+    const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+    await tool.execute({
+      orderId: 'order_max_tokens_default',
+      tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore',
+    });
+
+    const firstCallArgs = spy.mock.calls[0]?.[0] as { max_tokens?: number } | undefined;
+    expect(firstCallArgs?.max_tokens).toBe(90);
+  });
+
+  it('treats stop_reason=max_tokens as truncation violation and retries', async () => {
+    // Short text that clears every regex + length guard, but stop_reason
+    // signals the model ran out of token budget mid-sentence. The tool
+    // must still treat it as a violation ("truncated") and retry.
+    const truncated = '$BAT curious about the cavern tha';
+    const clean = '$HBNB2026-BAT cavern bats at dusk, lore hits 👁';
+    const { client, spy } = mockAnthropicSequence([
+      { text: truncated, stopReason: 'max_tokens' },
+      clean,
+    ]);
+    const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+    const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+    const out = await tool.execute({
+      orderId: 'order_truncated',
+      tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore',
+    });
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    const secondCallArgs = spy.mock.calls[1]?.[0] as
+      | { messages?: Array<{ role?: string; content?: string }> }
+      | undefined;
+    const lastUserMsg = secondCallArgs?.messages?.[secondCallArgs.messages.length - 1];
+    expect(lastUserMsg?.content ?? '').toMatch(/truncat/i);
+    expect(executeSpy).toHaveBeenCalledWith({ text: clean });
+    expect(out.tweetText).toBe(clean);
+  });
+
+  it('multi-turn correction: second call carries previous draft as assistant message', async () => {
+    const overLength = '$BAT ' + 'x'.repeat(300);
+    const clean = '$HBNB2026-BAT tight dispatch from the cavern 👁';
+    const { client, spy } = mockAnthropicSequence([overLength, clean]);
+    const { tool: postToXTool } = stubPostToXTool();
+
+    const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+    await tool.execute({
+      orderId: 'order_multi_turn',
+      tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore',
+    });
+
+    const secondCallArgs = spy.mock.calls[1]?.[0] as
+      | { messages?: Array<{ role?: string; content?: string }> }
+      | undefined;
+    const messages = secondCallArgs?.messages ?? [];
+    expect(messages).toHaveLength(3);
+    expect(messages[0]?.role).toBe('user');
+    expect(messages[1]?.role).toBe('assistant');
+    expect(messages[1]?.content).toBe(overLength);
+    expect(messages[2]?.role).toBe('user');
+  });
+
+  it('multi-turn correction: third call accumulates both prior drafts in history', async () => {
+    // Two consecutive violating drafts, then a clean one — the 3rd call's
+    // messages array must include BOTH prior assistant drafts to prove
+    // history accumulates across rounds instead of being replaced.
+    const bad1 = '$BAT ' + 'a'.repeat(300);
+    const bad2 = '$BAT ' + 'b'.repeat(300);
+    const clean = '$HBNB2026-BAT tight dispatch 👁';
+    const { client, spy } = mockAnthropicSequence([bad1, bad2, clean]);
+    const { tool: postToXTool, executeSpy } = stubPostToXTool();
+
+    const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+    await tool.execute({
+      orderId: 'order_accumulate',
+      tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore',
+    });
+
+    expect(spy).toHaveBeenCalledTimes(3);
+    const thirdCallArgs = spy.mock.calls[2]?.[0] as
+      | { messages?: Array<{ role?: string; content?: string }> }
+      | undefined;
+    const messages = thirdCallArgs?.messages ?? [];
+    // Round 3 structure: user(initial) + assistant(bad1) + user(correction1)
+    //                 + assistant(bad2) + user(correction2) = 5 messages
+    expect(messages).toHaveLength(5);
+    expect(messages[0]?.role).toBe('user');
+    expect(messages[1]?.role).toBe('assistant');
+    expect(messages[1]?.content).toBe(bad1);
+    expect(messages[2]?.role).toBe('user');
+    expect(messages[3]?.role).toBe('assistant');
+    expect(messages[3]?.content).toBe(bad2);
+    expect(messages[4]?.role).toBe('user');
+    expect(executeSpy).toHaveBeenCalledWith({ text: clean });
+  });
+
+  it('multi-turn correction: trim prompt mentions actual char count and overshoot', async () => {
+    // 312 chars total ⇒ 32 over the 280 hard cap. The trim instruction
+    // must surface both numbers so the model knows the exact delta.
+    const overshoot = '$BAT ' + 'y'.repeat(307); // 5 + 307 = 312 chars
+    expect(overshoot.length).toBe(312);
+    const clean = '$HBNB2026-BAT tight 312-char lesson learned 👁';
+    const { client, spy } = mockAnthropicSequence([overshoot, clean]);
+    const { tool: postToXTool } = stubPostToXTool();
+
+    const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+    await tool.execute({
+      orderId: 'order_overshoot_numbers',
+      tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore',
+    });
+
+    const secondCallArgs = spy.mock.calls[1]?.[0] as
+      | { messages?: Array<{ role?: string; content?: string }> }
+      | undefined;
+    const lastUserMsg = secondCallArgs?.messages?.[secondCallArgs.messages.length - 1];
+    const content = lastUserMsg?.content ?? '';
+    expect(content).toContain('312');
+    expect(content).toContain('32 over');
   });
 });
