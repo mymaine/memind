@@ -895,48 +895,59 @@ export function createInvokeHeartbeatTickTool(
             ? `heartbeat background loop restarted (token: ${tokenAddr}, intervalMs=${intervalMs.toString()})`
             : `heartbeat background loop started (token: ${tokenAddr}, intervalMs=${intervalMs.toString()})`,
       });
-      try {
-        const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(
-          deps,
-          intervalMs,
-          tokenAddr,
-        );
-        const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
-        const tickAt = result.lastTickAt ?? new Date().toISOString();
-        const decision = decisionFromPersonaResult(result);
-        await sessionStore.recordTick(tokenAddr, {
-          tickId,
-          tickAt,
-          success: result.lastError === null,
-          ...(result.lastError !== null ? { error: result.lastError } : {}),
-          ...(decision !== null ? { action: decision.action, reason: decision.reason } : {}),
-          ...(capturedArtifacts.length > 0 ? { artifacts: capturedArtifacts } : {}),
-        });
-        const durationMs = Date.now() - startedAt;
-        onLog?.({
-          ts: new Date().toISOString(),
-          agent: 'heartbeat',
-          tool: 'invoke_heartbeat_tick',
-          level: 'info',
-          message: `heartbeat immediate tick finished (${durationMs.toString()}ms)`,
-          meta: { durationMs },
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        onLog?.({
-          ts: new Date().toISOString(),
-          agent: 'heartbeat',
-          tool: 'invoke_heartbeat_tick',
-          level: 'error',
-          message: `heartbeat immediate tick failed: ${message}`,
-        });
-        await sessionStore.recordTick(tokenAddr, {
-          tickId: `tick_err_${Date.now().toString(36)}`,
-          tickAt: new Date().toISOString(),
-          success: false,
-          error: message,
-        });
-      }
+      // Drive the immediate tick through `runExclusiveTick` so it shares the
+      // same overlap guard as the scheduler's setInterval fires. Without
+      // this, the immediate tick's ~20-30s LLM loop runs with
+      // tickInFlight=false and any setInterval fire that lands during that
+      // window would spin up a PARALLEL LLM call, producing the "no 10s
+      // gap, continuous tool calls" behaviour users reported. With the
+      // exclusive lock the scheduled fires see the in-flight marker and
+      // record themselves as overlap-skips, which is the intended
+      // resource-guard behaviour.
+      await sessionStore.runExclusiveTick(tokenAddr, async () => {
+        try {
+          const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(
+            deps,
+            intervalMs,
+            tokenAddr,
+          );
+          const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
+          const tickAt = result.lastTickAt ?? new Date().toISOString();
+          const decision = decisionFromPersonaResult(result);
+          const durationMs = Date.now() - startedAt;
+          onLog?.({
+            ts: new Date().toISOString(),
+            agent: 'heartbeat',
+            tool: 'invoke_heartbeat_tick',
+            level: 'info',
+            message: `heartbeat immediate tick finished (${durationMs.toString()}ms)`,
+            meta: { durationMs },
+          });
+          return {
+            tickId,
+            tickAt,
+            success: result.lastError === null,
+            ...(result.lastError !== null ? { error: result.lastError } : {}),
+            ...(decision !== null ? { action: decision.action, reason: decision.reason } : {}),
+            ...(capturedArtifacts.length > 0 ? { artifacts: capturedArtifacts } : {}),
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          onLog?.({
+            ts: new Date().toISOString(),
+            agent: 'heartbeat',
+            tool: 'invoke_heartbeat_tick',
+            level: 'error',
+            message: `heartbeat immediate tick failed: ${message}`,
+          });
+          return {
+            tickId: `tick_err_${Date.now().toString(36)}`,
+            tickAt: new Date().toISOString(),
+            success: false,
+            error: message,
+          };
+        }
+      });
 
       const snap = await sessionStore.get(tokenAddr);
       if (snap === undefined) {

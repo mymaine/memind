@@ -370,18 +370,38 @@ export class HeartbeatSessionStore {
     return timer;
   }
 
-  private async fire(key: string): Promise<void> {
+  /**
+   * Atomically run ONE tick under the session's overlap guard + counter +
+   * auto-stop discipline. Unified path shared by:
+   *   - the private `fire()` scheduler callback (background interval fires)
+   *   - the public `/heartbeat <addr> <intervalMs>` "immediate tick" the
+   *     `invoke_heartbeat_tick` tool runs synchronously before returning
+   *
+   * Prior to this method the immediate tick lived in `invoke-persona.ts` and
+   * mutated the session only via `recordTick` AFTER the LLM loop resolved.
+   * That left `tickInFlight` stuck at false for the entire ~20-30 second
+   * LLM call, so every `setInterval` fire that landed during the immediate
+   * tick saw no in-flight marker and spun up a PARALLEL LLM loop. Users
+   * observed "continuous tool calls with no 10s spacing" because two ticks
+   * were racing on the same SSE stream. Routing both entry points through
+   * this method closes that race: whichever tick grabs the lock first wins,
+   * any concurrent tick gets recorded as a skip.
+   *
+   * Returns the post-tick snapshot (including skipped-by-overlap outcomes),
+   * or `undefined` when the session is unknown or already stopped.
+   */
+  async runExclusiveTick(
+    tokenAddr: string,
+    runTick: (snapshot: HeartbeatSessionState) => Promise<HeartbeatTickDelta>,
+  ): Promise<HeartbeatSessionState | undefined> {
+    const key = normaliseAddr(tokenAddr);
     const session = this.sessions.get(key);
-    if (session === undefined || !session.running) return;
+    if (session === undefined || !session.running) return undefined;
     session.tickCount += 1;
     if (session.tickInFlight) {
       session.skippedCount += 1;
       this.maybeAutoStop(session);
       await this.persist(session);
-      // Synthesise a delta so subscribers can tell the overlap-skip path
-      // apart from a real tick. `success=false` with a distinct sentinel
-      // `error='overlap-skipped'` mirrors how the rest of the pipeline
-      // classifies unrealised work.
       const skipDelta: HeartbeatTickDelta = {
         tickId: `overlap_${Date.now().toString(36)}`,
         tickAt: new Date().toISOString(),
@@ -389,23 +409,21 @@ export class HeartbeatSessionStore {
         error: 'overlap-skipped',
       };
       this.fireAfterTick(snapshotOf(session), skipDelta);
-      return;
+      return snapshotOf(session);
     }
     session.tickInFlight = true;
-    // Track the delta that landed in this branch so the `finally` can hand
-    // it to subscribers once persist + auto-stop have settled.
     let appliedDelta: HeartbeatTickDelta | undefined;
     try {
       const snap = snapshotOf(session);
-      const delta = await session.runTick(snap);
+      const delta = await runTick(snap);
       const current = this.sessions.get(key);
-      if (current === undefined) return;
+      if (current === undefined) return undefined;
       this.applyDeltaSkipTickCount(current, delta);
       appliedDelta = delta;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const current = this.sessions.get(key);
-      if (current === undefined) return;
+      if (current === undefined) return undefined;
       const errorDelta: HeartbeatTickDelta = {
         tickId: current.lastTickId ?? `tick_err_${Date.now().toString(36)}`,
         tickAt: new Date().toISOString(),
@@ -425,6 +443,19 @@ export class HeartbeatSessionStore {
         }
       }
     }
+    const after = this.sessions.get(key);
+    return after !== undefined ? snapshotOf(after) : undefined;
+  }
+
+  /**
+   * Scheduler callback body. Delegates to `runExclusiveTick` with the
+   * session's own `runTick` callback so the scheduler and the immediate-tick
+   * path share the same overlap guard + counter + auto-stop transitions.
+   */
+  private async fire(key: string): Promise<void> {
+    const session = this.sessions.get(key);
+    if (session === undefined || !session.running) return;
+    await this.runExclusiveTick(session.tokenAddr, session.runTick);
   }
 
   /**

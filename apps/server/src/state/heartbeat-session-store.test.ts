@@ -696,6 +696,114 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect(snapshot.maxTicks).toBe(10);
     });
   });
+
+  // ─── runExclusiveTick overlap discipline ────────────────────────────────
+  //
+  // Regression for the bug where `/heartbeat <addr> <intervalMs>` showed
+  // continuous tool calls with no spacing: the "immediate tick" ran its
+  // 20-30s LLM loop without setting `tickInFlight`, so every setInterval
+  // fire that landed during the immediate tick's run spun up a parallel
+  // LLM call instead of recording as an overlap-skip. Unifying both entry
+  // points under `runExclusiveTick` is the fix; this block pins that
+  // invariant so a future refactor cannot re-introduce the race.
+  describe('runExclusiveTick overlap discipline', () => {
+    it('serialises concurrent runExclusiveTick calls — second wins a skip, not a parallel run', async () => {
+      let concurrentEnters = 0;
+      let maxConcurrent = 0;
+      const slowRunTick = async (): Promise<HeartbeatTickDelta> => {
+        concurrentEnters += 1;
+        maxConcurrent = Math.max(maxConcurrent, concurrentEnters);
+        // Yield microtasks so a second runExclusiveTick can interleave and
+        // attempt to acquire the lock while the first is still in flight.
+        await new Promise<void>((r) => setTimeout(r, 0));
+        concurrentEnters -= 1;
+        return {
+          tickId: `ok_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+          tickAt: '2026-04-20T00:00:00.000Z',
+          success: true,
+        };
+      };
+
+      await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 60_000,
+        runTick: slowRunTick,
+        maxTicks: 10,
+      });
+
+      // Fire two runExclusiveTick calls back-to-back. Only one can hold
+      // the lock at a time; the other must record as an overlap-skip.
+      const [a, b] = await Promise.all([
+        store.runExclusiveTick(FAKE_ADDR, slowRunTick),
+        store.runExclusiveTick(FAKE_ADDR, slowRunTick),
+      ]);
+
+      expect(maxConcurrent).toBe(1);
+      // Exactly one of the two calls ran the LLM body (success=1), the
+      // other was recorded as a skip.
+      const snap = (await store.get(FAKE_ADDR))!;
+      expect(snap.successCount).toBe(1);
+      expect(snap.skippedCount).toBe(1);
+      expect(snap.tickCount).toBe(2);
+      // Both callers got a post-tick snapshot (neither returned undefined).
+      expect(a).toBeDefined();
+      expect(b).toBeDefined();
+    });
+
+    it('scheduled setInterval fires land as skips while an immediate runExclusiveTick holds the lock', async () => {
+      vi.useFakeTimers();
+      try {
+        let slowTickResolve: (() => void) | null = null;
+        const slowTickRunning = new Promise<void>((r) => {
+          slowTickResolve = r;
+        });
+        const runTick = vi.fn(async (): Promise<HeartbeatTickDelta> => {
+          await slowTickRunning;
+          return {
+            tickId: 'slow_ok',
+            tickAt: '2026-04-20T00:00:00.000Z',
+            success: true,
+          };
+        });
+
+        await store.start({
+          tokenAddr: FAKE_ADDR,
+          intervalMs: 1_000,
+          runTick,
+          maxTicks: 5,
+        });
+
+        // Kick off the immediate tick — it acquires the lock and then
+        // parks on `slowTickRunning` until we release it.
+        const immediatePromise = store.runExclusiveTick(FAKE_ADDR, runTick);
+
+        // Let the microtask queue drain so runExclusiveTick actually takes
+        // the lock before we advance timers.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Advance past 3 interval boundaries while the immediate tick is
+        // still in flight. Each scheduled fire should see tickInFlight=true
+        // and skip rather than launching a parallel LLM invocation.
+        await vi.advanceTimersByTimeAsync(3_500);
+
+        // Only one LLM invocation has run (the immediate one). Scheduled
+        // fires at t=1s / 2s / 3s all skipped.
+        expect(runTick).toHaveBeenCalledTimes(1);
+
+        // Now release the immediate tick and let everything settle.
+        slowTickResolve!();
+        await immediatePromise;
+
+        const snap = (await store.get(FAKE_ADDR))!;
+        expect(snap.successCount).toBe(1);
+        expect(snap.skippedCount).toBe(3);
+        expect(snap.tickCount).toBe(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });
 
 if (hasDatabaseUrl) {
