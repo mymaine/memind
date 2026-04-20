@@ -70,6 +70,9 @@ const loreArgsSchema = z.object({
 const heartbeatArgsSchema = z.object({
   tokenAddr: z.string().regex(EVM_ADDRESS_REGEX),
   intervalMs: z.coerce.number().int().positive().optional(),
+  // Optional hard cap on scheduled ticks per session. Server default is
+  // 5 (DEFAULT_HEARTBEAT_MAX_TICKS) as a safety rail against demo abuse.
+  maxTicks: z.coerce.number().int().positive().optional(),
 });
 
 const heartbeatStopArgsSchema = z.object({
@@ -105,8 +108,9 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: 'heartbeat',
-    description: 'Run one Heartbeat tick, or start a background loop if intervalMs is set',
-    usage: '/heartbeat <tokenAddr> [intervalMs]',
+    description:
+      'Run one Heartbeat tick, or start a background loop (auto-stops at maxTicks, default 5)',
+    usage: '/heartbeat <tokenAddr> [intervalMs] [maxTicks]',
     kind: 'server',
     scopes: ['heartbeat', 'global'],
     argsSchema: heartbeatArgsSchema,
@@ -243,12 +247,16 @@ function parseArgsForCommand(cmd: SlashCommand, rawArgs: string): ArgBag {
       return { tokenAddr: head };
     }
     case 'heartbeat': {
-      const { head, rest } = splitFirstToken(rawArgs);
-      const bag: ArgBag = { tokenAddr: head };
-      if (rest !== '') {
-        // intervalMs remains a string here; zod's `z.coerce.number()` does the
-        // actual conversion during `validateSlashArgs`.
-        bag.intervalMs = rest;
+      // Shape: `/heartbeat <tokenAddr> [intervalMs] [maxTicks]`. We split
+      // twice: tokenAddr, then intervalMs, then whatever is left becomes
+      // maxTicks. zod's `z.coerce.number()` converts each string below.
+      const first = splitFirstToken(rawArgs);
+      const bag: ArgBag = { tokenAddr: first.head };
+      if (first.rest === '') return bag;
+      const second = splitFirstToken(first.rest);
+      bag.intervalMs = second.head;
+      if (second.rest !== '') {
+        bag.maxTicks = second.rest;
       }
       return bag;
     }

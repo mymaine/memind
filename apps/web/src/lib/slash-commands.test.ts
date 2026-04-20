@@ -134,6 +134,20 @@ describe('validateSlashArgs', () => {
     }
   });
 
+  // Case 7b — /heartbeat accepts optional maxTicks as a third positional arg
+  it('parses /heartbeat <addr> <intervalMs> <maxTicks>', () => {
+    const cmd = findCommand('heartbeat');
+    const res = validateSlashArgs(cmd, '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444 5000 20');
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.args).toEqual({
+        tokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+        intervalMs: 5000,
+        maxTicks: 20,
+      });
+    }
+  });
+
   // Case 8 — /heartbeat-stop parses tokenAddr only
   it('parses /heartbeat-stop with a tokenAddr', () => {
     const cmd = findCommand('heartbeat-stop');

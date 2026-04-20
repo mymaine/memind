@@ -34,6 +34,17 @@
  */
 export const HEARTBEAT_EST_COST_USD_PER_TICK = 0.01;
 
+/**
+ * Default upper bound on tick attempts per session. Caps demo / production
+ * exposure so an idle user cannot accidentally burn an unbounded LLM budget
+ * (or a malicious visitor cannot farm our API keys). The store auto-stops
+ * the session once `tickCount >= maxTicks`, whether those ticks succeeded,
+ * errored, or were skipped by the overlap guard — every fire attempt counts
+ * because every one reserves scheduler capacity. Callers may override
+ * per-session via `HeartbeatSessionStartParams.maxTicks`.
+ */
+export const DEFAULT_HEARTBEAT_MAX_TICKS = 5;
+
 export interface HeartbeatSessionState {
   /** Lowercased 0x-prefixed tokenAddr. */
   readonly tokenAddr: string;
@@ -43,6 +54,13 @@ export interface HeartbeatSessionState {
   readonly startedAt: string;
   /** True while a `setInterval` handle is active for this session. */
   readonly running: boolean;
+  /**
+   * Hard cap on tick attempts before the session auto-stops. Defaults to
+   * `DEFAULT_HEARTBEAT_MAX_TICKS` when the caller does not pass one in. A
+   * snapshot where `running === false` AND `tickCount >= maxTicks` means the
+   * loop hit the cap (rather than an explicit `stop()` call).
+   */
+  readonly maxTicks: number;
   /** Total ticks attempted (successful + errored + skipped). */
   readonly tickCount: number;
   /** Ticks whose runTick resolved with `success: true`. */
@@ -81,6 +99,12 @@ export interface HeartbeatSessionStartParams {
   tokenAddr: string;
   intervalMs: number;
   /**
+   * Optional tick cap. Omit to use `DEFAULT_HEARTBEAT_MAX_TICKS`. Must be
+   * a positive integer; `Infinity` is deliberately NOT supported — the
+   * point of the cap is to avoid unbounded loops entirely.
+   */
+  maxTicks?: number;
+  /**
    * Called every time the scheduled `setInterval` fires (except when the
    * overlap guard skips). Receives the current snapshot for ergonomics —
    * the callback is expected to return its own delta synchronously so the
@@ -111,6 +135,7 @@ type MutableSession = {
   intervalMs: number;
   startedAt: string;
   running: boolean;
+  maxTicks: number;
   tickCount: number;
   successCount: number;
   errorCount: number;
@@ -172,16 +197,27 @@ export class HeartbeatSessionStore {
   start(params: HeartbeatSessionStartParams): HeartbeatSessionStartResult {
     const key = normaliseAddr(params.tokenAddr);
     const existing = this.sessions.get(key);
+    const resolvedMaxTicks = resolveMaxTicks(params.maxTicks);
 
     if (existing !== undefined) {
       if (existing.running && existing.intervalMs === params.intervalMs) {
         // Idempotent refresh — just update the callback closure so the
         // next fire uses the latest `runTick` (in practice identical).
         existing.runTick = params.runTick;
+        // A caller re-issuing the same intervalMs AND a new maxTicks is
+        // asking to extend the cap (e.g. they hit the limit and want more).
+        // Honour it; otherwise keep the prior cap.
+        if (params.maxTicks !== undefined) {
+          existing.maxTicks = resolvedMaxTicks;
+        }
         return { snapshot: snapshotOf(existing), restarted: false };
       }
       // Interval changed OR session was previously stopped. Tear down any
-      // live timer, reuse the counters, install a new interval.
+      // live timer, reuse the counters, install a new interval. If the
+      // previous run hit its cap, restarting resets the cap relative to the
+      // *current* tickCount (cap is absolute, not relative) so the caller
+      // should pass a higher maxTicks to actually unblock progress — we
+      // surface this by defaulting to prior+default if omitted.
       if (existing.timer !== null) {
         this.clearIntervalImpl(existing.timer);
         existing.timer = null;
@@ -189,6 +225,10 @@ export class HeartbeatSessionStore {
       existing.intervalMs = params.intervalMs;
       existing.running = true;
       existing.runTick = params.runTick;
+      existing.maxTicks =
+        params.maxTicks !== undefined
+          ? resolvedMaxTicks
+          : Math.max(existing.maxTicks, existing.tickCount + DEFAULT_HEARTBEAT_MAX_TICKS);
       existing.timer = this.installTimer(key);
       return { snapshot: snapshotOf(existing), restarted: true };
     }
@@ -199,6 +239,7 @@ export class HeartbeatSessionStore {
       intervalMs: params.intervalMs,
       startedAt: now,
       running: true,
+      maxTicks: resolvedMaxTicks,
       tickCount: 0,
       successCount: 0,
       errorCount: 0,
@@ -325,6 +366,7 @@ export class HeartbeatSessionStore {
     session.tickCount += 1;
     if (session.tickInFlight) {
       session.skippedCount += 1;
+      this.maybeAutoStop(session);
       return;
     }
     session.tickInFlight = true;
@@ -356,6 +398,7 @@ export class HeartbeatSessionStore {
       const current = this.sessions.get(key);
       if (current !== undefined) {
         current.tickInFlight = false;
+        this.maybeAutoStop(current);
       }
     }
   }
@@ -368,6 +411,24 @@ export class HeartbeatSessionStore {
   private applyDelta(session: MutableSession, delta: HeartbeatTickDelta): void {
     session.tickCount += 1;
     this.applyDeltaSkipTickCount(session, delta);
+    this.maybeAutoStop(session);
+  }
+
+  /**
+   * Auto-stop the session once `tickCount >= maxTicks`. Idempotent — safe to
+   * call after every counter mutation. The session record is preserved so a
+   * later `get()` / `list()` / `stop()` call still returns a frozen snapshot
+   * with `running: false` and the final counters; callers can tell the cap
+   * was hit via `tickCount >= maxTicks`.
+   */
+  private maybeAutoStop(session: MutableSession): void {
+    if (!session.running) return;
+    if (session.tickCount < session.maxTicks) return;
+    if (session.timer !== null) {
+      this.clearIntervalImpl(session.timer);
+      session.timer = null;
+    }
+    session.running = false;
   }
 
   /**
@@ -406,6 +467,7 @@ function snapshotOf(session: MutableSession): HeartbeatSessionState {
     intervalMs: session.intervalMs,
     startedAt: session.startedAt,
     running: session.running,
+    maxTicks: session.maxTicks,
     tickCount: session.tickCount,
     successCount: session.successCount,
     errorCount: session.errorCount,
@@ -415,4 +477,15 @@ function snapshotOf(session: MutableSession): HeartbeatSessionState {
     lastAction: session.lastAction,
     lastError: session.lastError,
   });
+}
+
+/**
+ * Validate and normalise an optional `maxTicks` input. Non-positive integers
+ * and non-integers fall back to the default rather than throwing — the cap is
+ * a safety rail, so silent correction is more useful here than a hard error.
+ */
+function resolveMaxTicks(max: number | undefined): number {
+  if (max === undefined) return DEFAULT_HEARTBEAT_MAX_TICKS;
+  if (!Number.isInteger(max) || max <= 0) return DEFAULT_HEARTBEAT_MAX_TICKS;
+  return max;
 }

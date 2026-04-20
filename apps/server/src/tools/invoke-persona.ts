@@ -24,6 +24,7 @@ import type {
   HeartbeatSessionStore,
   HeartbeatTickDelta,
 } from '../state/heartbeat-session-store.js';
+import { DEFAULT_HEARTBEAT_MAX_TICKS } from '../state/heartbeat-session-store.js';
 import type { runAgentLoop } from '../agents/runtime.js';
 
 /**
@@ -114,6 +115,13 @@ export type InvokeShillerInput = z.infer<typeof invokeShillerInputSchema>;
 export const invokeHeartbeatTickInputSchema = z.object({
   tokenAddr: z.string().regex(evmAddressRegex),
   intervalMs: z.number().int().positive().optional(),
+  /**
+   * Optional cap on scheduled tick attempts for this session. Defaults to
+   * `DEFAULT_HEARTBEAT_MAX_TICKS` (5) when omitted — a safety rail against
+   * runaway demos / resource abuse. The LLM should parse natural-language
+   * asks like "run 20 heartbeats" and pass the value through here.
+   */
+  maxTicks: z.number().int().positive().optional(),
 });
 export type InvokeHeartbeatTickInput = z.infer<typeof invokeHeartbeatTickInputSchema>;
 
@@ -148,6 +156,8 @@ export interface InvokeHeartbeatTickOutput {
   running: boolean;
   intervalMs: number;
   startedAt: string | null;
+  /** Hard cap on tick attempts; the loop auto-stops when tickCount reaches this. */
+  maxTicks: number;
   tickCount: number;
   successCount: number;
   errorCount: number;
@@ -163,6 +173,7 @@ export interface StopHeartbeatFinalSnapshot {
   intervalMs: number;
   startedAt: string;
   running: boolean;
+  maxTicks: number;
   tickCount: number;
   successCount: number;
   errorCount: number;
@@ -184,6 +195,7 @@ export interface ListHeartbeatsSessionSnapshot {
   intervalMs: number;
   startedAt: string;
   running: boolean;
+  maxTicks: number;
   tickCount: number;
   successCount: number;
   errorCount: number;
@@ -684,6 +696,7 @@ function snapshotToOutput(
     running: snap.running,
     intervalMs: snap.intervalMs,
     startedAt: snap.startedAt,
+    maxTicks: snap.maxTicks,
     tickCount: snap.tickCount,
     successCount: snap.successCount,
     errorCount: snap.errorCount,
@@ -706,6 +719,11 @@ function personaOutputToOneShotOutput(
     running: false,
     intervalMs,
     startedAt: null,
+    // One-shot ticks never register with the session store, so there is no
+    // per-session maxTicks to report. Surface the process-wide default as a
+    // hint to the LLM for phrasing ("each /heartbeat without an interval
+    // runs 1 tick; loops default to N") without pretending a cap is live.
+    maxTicks: DEFAULT_HEARTBEAT_MAX_TICKS,
     tickCount: result.successCount + result.errorCount + result.skippedCount,
     successCount: result.successCount,
     errorCount: result.errorCount,
@@ -725,9 +743,10 @@ export function createInvokeHeartbeatTickTool(
     name: INVOKE_HEARTBEAT_TICK_TOOL_NAME,
     description:
       'Run ONE Heartbeat tick, OR start/restart a background loop when intervalMs is provided. ' +
-      'With intervalMs: a real setInterval runs ticks until stop_heartbeat is called (one immediate tick also runs so the user sees a result instantly). ' +
+      'With intervalMs: a real setInterval runs ticks until stop_heartbeat is called OR the tick cap is hit (one immediate tick also runs so the user sees a result instantly). ' +
       'Without intervalMs: if a session already exists, return its current snapshot without running an extra tick; otherwise run exactly ONE manual tick. ' +
-      'Input: { tokenAddr, intervalMs? }. Returns a snapshot object with `mode` ∈ { one-shot | background-started | background-restarted | background-already-running } plus running/intervalMs/startedAt/tickCount/successCount/errorCount/skippedCount/lastTickAt/lastTickId/lastAction/lastError.',
+      `Background loops auto-stop at \`maxTicks\` (default ${DEFAULT_HEARTBEAT_MAX_TICKS.toString()}) — pass a higher maxTicks to extend; restarting a session with a new maxTicks lets a user resume after hitting the cap. ` +
+      'Input: { tokenAddr, intervalMs?, maxTicks? }. Returns a snapshot object with `mode` ∈ { one-shot | background-started | background-restarted | background-already-running } plus running/intervalMs/startedAt/maxTicks/tickCount/successCount/errorCount/skippedCount/lastTickAt/lastTickId/lastAction/lastError. When `running === false` AND `tickCount >= maxTicks`, the loop auto-stopped at the cap.',
     inputSchema: invokeHeartbeatTickInputSchema,
     outputSchema: z.any() as unknown as z.ZodType<InvokeHeartbeatTickOutput>,
     async execute(input): Promise<InvokeHeartbeatTickOutput> {
@@ -815,7 +834,12 @@ export function createInvokeHeartbeatTickTool(
       };
 
       const wasExisting = existing !== undefined;
-      const { restarted } = sessionStore.start({ tokenAddr, intervalMs, runTick });
+      const { restarted } = sessionStore.start({
+        tokenAddr,
+        intervalMs,
+        runTick,
+        ...(parsed.maxTicks !== undefined ? { maxTicks: parsed.maxTicks } : {}),
+      });
 
       // Run one immediate tick synchronously so the user does not wait a
       // full interval for the first result. We do it here (not via the
@@ -879,6 +903,7 @@ export function createInvokeHeartbeatTickTool(
           running: true,
           intervalMs,
           startedAt: new Date().toISOString(),
+          maxTicks: parsed.maxTicks ?? DEFAULT_HEARTBEAT_MAX_TICKS,
           tickCount: 0,
           successCount: 0,
           errorCount: 0,
@@ -955,6 +980,7 @@ export function createStopHeartbeatTool(
           intervalMs: final.intervalMs,
           startedAt: final.startedAt,
           running: final.running,
+          maxTicks: final.maxTicks,
           tickCount: final.tickCount,
           successCount: final.successCount,
           errorCount: final.errorCount,
@@ -1003,6 +1029,7 @@ export function createListHeartbeatsTool(
             intervalMs: s.intervalMs,
             startedAt: s.startedAt,
             running: s.running,
+            maxTicks: s.maxTicks,
             tickCount: s.tickCount,
             successCount: s.successCount,
             errorCount: s.errorCount,

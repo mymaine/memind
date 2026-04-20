@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_HEARTBEAT_MAX_TICKS,
   HeartbeatSessionStore,
   type HeartbeatSessionState,
   type HeartbeatTickDelta,
@@ -315,6 +316,80 @@ describe('HeartbeatSessionStore', () => {
       const snap = store.get(FAKE_ADDR)!;
       expect(snap.running).toBe(false);
       expect(snap.tickCount).toBe(1);
+    });
+  });
+
+  // ─── maxTicks cap ────────────────────────────────────────────────────────
+
+  describe('maxTicks auto-stop', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('defaults maxTicks to DEFAULT_HEARTBEAT_MAX_TICKS when the caller omits it', () => {
+      const { snapshot } = store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+      });
+      expect(snapshot.maxTicks).toBe(DEFAULT_HEARTBEAT_MAX_TICKS);
+    });
+
+    it('auto-stops the session once scheduled ticks reach maxTicks', async () => {
+      const runTick = vi.fn(async () => makeDelta());
+      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 3 });
+
+      // Fire enough intervals to blow through the cap, plus one extra to
+      // confirm no further invocation happens after auto-stop.
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(runTick).toHaveBeenCalledTimes(3);
+      const snap = store.get(FAKE_ADDR)!;
+      expect(snap.running).toBe(false);
+      expect(snap.tickCount).toBe(3);
+      expect(snap.tickCount).toBeGreaterThanOrEqual(snap.maxTicks);
+    });
+
+    it('auto-stop counts recordTick invocations alongside scheduled fires', async () => {
+      const runTick = vi.fn(async () => makeDelta());
+      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 3 });
+
+      // Simulate the "immediate tick" path: external recordTick calls.
+      store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'immediate_1' }));
+      store.recordTick(FAKE_ADDR, makeDelta({ tickId: 'immediate_2' }));
+
+      // Only one scheduled fire should land before the cap is hit.
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(runTick).toHaveBeenCalledTimes(1);
+      const snap = store.get(FAKE_ADDR)!;
+      expect(snap.running).toBe(false);
+      expect(snap.tickCount).toBe(3);
+    });
+
+    it('restarting with a higher maxTicks lets a stopped session resume', async () => {
+      const runTick = vi.fn(async () => makeDelta());
+      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 2 });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(store.get(FAKE_ADDR)!.running).toBe(false);
+      expect(runTick).toHaveBeenCalledTimes(2);
+
+      // Restart with a bigger cap — interval unchanged, but the prior cap (2)
+      // was reached so the session was stopped. Bumping to 5 should allow
+      // 3 more fires.
+      store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 5 });
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      const snap = store.get(FAKE_ADDR)!;
+      expect(snap.running).toBe(false);
+      expect(snap.tickCount).toBe(5);
+      expect(snap.maxTicks).toBe(5);
+      expect(runTick).toHaveBeenCalledTimes(5);
     });
   });
 });
