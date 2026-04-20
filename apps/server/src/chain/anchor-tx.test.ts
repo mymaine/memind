@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import {
+  anchorChapterOne,
   buildAnchorTxRequest,
   isAnchorOnChainEnabled,
   maybeAnchorContent,
@@ -337,5 +338,160 @@ describe('maybeAnchorContent', () => {
     expect(onArtifact).not.toHaveBeenCalled();
     const warnLog = onLog.mock.calls.find((c) => c[0].level === 'warn');
     expect(warnLog?.[0].message).toMatch(/pg pool exhausted/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// anchorChapterOne — Creator path wrapper for the first chapter.
+// ---------------------------------------------------------------------------
+// The helper owns the Chapter 1 layer-1 append + initial lore-anchor artifact
+// emission, then delegates layer-2 to `maybeAnchorContent`. The four cases
+// below pin down each arm of the branching: ANCHOR_ON_CHAIN off, on + valid
+// settlement, append throw, onArtifact throw (layer-1 already landed so
+// layer-2 must still run).
+// ---------------------------------------------------------------------------
+
+describe('anchorChapterOne', () => {
+  const TOKEN_ADDR = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' as const;
+  const LORE_CID = 'bafkrei-chapter-one';
+  const DEPLOYER_PK = `0x${'9'.repeat(64)}` as const;
+  const TX_HASH = `0x${'f'.repeat(64)}` as const;
+
+  function fakeSettlement(): AnchorTxSettlement {
+    return {
+      onChainTxHash: TX_HASH,
+      chain: 'bsc-mainnet',
+      explorerUrl: `https://bscscan.com/tx/${TX_HASH}`,
+    };
+  }
+
+  it('appends layer-1 row + emits initial artifact when ANCHOR_ON_CHAIN=false', async () => {
+    const ledger = new AnchorLedger();
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => {
+      throw new Error('layer-2 must not run when ANCHOR_ON_CHAIN=false');
+    });
+
+    const result = await anchorChapterOne({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'false' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    expect(result).toBeNull();
+
+    // Layer-1 ledger row was persisted but NOT marked on-chain.
+    const anchorId = computeAnchorId(TOKEN_ADDR, 1);
+    const entry = await ledger.get(anchorId);
+    expect(entry?.chapterNumber).toBe(1);
+    expect(entry?.loreCid).toBe(LORE_CID);
+    expect(entry?.onChainTxHash).toBeUndefined();
+
+    // Exactly one lore-anchor artifact emitted — the initial layer-1 shape
+    // without the on-chain trio.
+    expect(onArtifact).toHaveBeenCalledTimes(1);
+    const artifact = onArtifact.mock.calls[0]?.[0];
+    expect(artifact?.kind).toBe('lore-anchor');
+    if (artifact?.kind === 'lore-anchor') {
+      expect(artifact.anchorId).toBe(anchorId);
+      expect(artifact.chapterNumber).toBe(1);
+      expect(artifact.loreCid).toBe(LORE_CID);
+      expect(artifact.onChainTxHash).toBeUndefined();
+    }
+
+    // Send impl never touched — disabled flag short-circuits inside
+    // maybeAnchorContent before the factory runs.
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('appends layer-1 + fires layer-2 + emits upgraded artifact when ANCHOR_ON_CHAIN=true', async () => {
+    const ledger = new AnchorLedger();
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const settlement = fakeSettlement();
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => settlement);
+
+    const result = await anchorChapterOne({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    expect(result).toEqual(settlement);
+
+    // Ledger row has been upgraded with the on-chain trio via markOnChain.
+    const anchorId = computeAnchorId(TOKEN_ADDR, 1);
+    const entry = await ledger.get(anchorId);
+    expect(entry?.onChainTxHash).toBe(TX_HASH);
+    expect(entry?.chain).toBe('bsc-mainnet');
+
+    // Exactly two lore-anchor artifacts: layer-1 init + layer-2 upgrade.
+    const anchorArtifacts = onArtifact.mock.calls
+      .map((c) => c[0])
+      .filter((a) => a.kind === 'lore-anchor');
+    expect(anchorArtifacts).toHaveLength(2);
+    const upgraded = anchorArtifacts.find(
+      (a) => a.kind === 'lore-anchor' && 'onChainTxHash' in a && a.onChainTxHash !== undefined,
+    );
+    expect(upgraded).toBeDefined();
+    if (upgraded?.kind === 'lore-anchor') {
+      expect(upgraded.onChainTxHash).toBe(TX_HASH);
+      expect(upgraded.explorerUrl).toBe(settlement.explorerUrl);
+    }
+
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null + warn log when layer-1 append throws, never calls layer-2', async () => {
+    // Broken ledger where append blows up — layer-2 must not run because the
+    // commitment row never landed.
+    const brokenLedger = {
+      append: vi.fn(async () => {
+        throw new Error('pg connection refused');
+      }),
+      markOnChain: vi.fn(async () => undefined),
+      get: vi.fn(async () => undefined),
+      list: vi.fn(async () => []),
+      clear: vi.fn(async () => undefined),
+      size: vi.fn(async () => 0),
+    } as unknown as AnchorLedger;
+
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => fakeSettlement());
+
+    const result = await anchorChapterOne({
+      anchorLedger: brokenLedger,
+      tokenAddr: TOKEN_ADDR,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    expect(result).toBeNull();
+    // No layer-1 artifact emitted because append failed.
+    expect(onArtifact).not.toHaveBeenCalled();
+    // Layer-2 was skipped.
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).not.toHaveBeenCalled();
+    // A warn log explaining the append failure must be present.
+    const warnLog = onLog.mock.calls.find((c) => c[0].level === 'warn');
+    expect(warnLog?.[0].message).toMatch(/append failed|pg connection refused/);
   });
 });

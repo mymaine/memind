@@ -30,7 +30,7 @@ import {
 } from '../state/heartbeat-session-store.js';
 import { ShillOrderStore } from '../state/shill-order-store.js';
 import { LoreStore } from '../state/lore-store.js';
-import { AnchorLedger } from '../state/anchor-ledger.js';
+import { AnchorLedger, computeAnchorId } from '../state/anchor-ledger.js';
 import type { AnchorTxSettlement, sendAnchorMemoTx } from '../chain/anchor-tx.js';
 import { RunStore } from '../runs/store.js';
 import type { AppConfig } from '../config.js';
@@ -663,7 +663,7 @@ describe('createInvokeNarratorTool', () => {
         const ledgerOnCtx = ctx.anchorLedger as AnchorLedger | undefined;
         if (ledgerOnCtx !== undefined) {
           await ledgerOnCtx.append({
-            anchorId: `${input.tokenAddr.toLowerCase()}-2`,
+            anchorId: computeAnchorId(input.tokenAddr, 2),
             tokenAddr: input.tokenAddr,
             chapterNumber: 2,
             loreCid: 'bafkrei-ch2',
@@ -720,7 +720,7 @@ describe('createInvokeNarratorTool', () => {
         const ledgerOnCtx = ctx.anchorLedger as AnchorLedger | undefined;
         if (ledgerOnCtx !== undefined) {
           await ledgerOnCtx.append({
-            anchorId: `${input.tokenAddr.toLowerCase()}-3`,
+            anchorId: computeAnchorId(input.tokenAddr, 3),
             tokenAddr: input.tokenAddr,
             chapterNumber: 3,
             loreCid: 'bafkrei-ch3',
