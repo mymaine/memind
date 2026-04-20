@@ -571,7 +571,9 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect(snapshot.maxTicks).toBe(3);
     });
 
-    it('running + new intervalMs + maxTicks omitted → keep counters, default cap, restarted=true', async () => {
+    it('running + new intervalMs + maxTicks omitted → keep counters AND keep prior cap, restarted=true', async () => {
+      // Seed with a custom cap (7) so we can prove it survives a
+      // cadence-only restart when the caller omits maxTicks.
       await seedRunningWith(store, 5_000, 7, [TICK_A, TICK_B]);
 
       const { snapshot, restarted } = await store.start({
@@ -585,10 +587,10 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect(snapshot.intervalMs).toBe(10_000);
       expect(snapshot.tickCount).toBe(2);
       expect(snapshot.successCount).toBe(2);
-      // Restart path with no explicit maxTicks always resolves to the
-      // default cap. This is a subtle contract — omitting maxTicks on
-      // restart silently reverts a previously-customised cap back to 5.
-      expect(snapshot.maxTicks).toBe(DEFAULT_HEARTBEAT_MAX_TICKS);
+      // Preserve the previously-configured cap when the caller omits
+      // `maxTicks`. Tweaking the cadence mid-run must NOT silently reset a
+      // customised cap back to DEFAULT_HEARTBEAT_MAX_TICKS.
+      expect(snapshot.maxTicks).toBe(7);
     });
 
     it('running + new intervalMs + explicit maxTicks → keep counters, explicit cap, restarted=true', async () => {

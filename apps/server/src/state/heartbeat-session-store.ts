@@ -198,7 +198,12 @@ export class HeartbeatSessionStore {
       existing.intervalMs = params.intervalMs;
       existing.running = true;
       existing.runTick = params.runTick;
-      existing.maxTicks = resolvedMaxTicks;
+      // Preserve the existing cap when the caller omits `maxTicks`. Without
+      // this, a user tweaking the cadence mid-run (e.g. /heartbeat 0x... 5000
+      // on a session they originally started with `maxTicks=20`) would
+      // silently drop the cap back to DEFAULT_HEARTBEAT_MAX_TICKS. Explicit
+      // `params.maxTicks` still overrides.
+      existing.maxTicks = params.maxTicks !== undefined ? resolvedMaxTicks : existing.maxTicks;
       if (wasStopped) {
         existing.startedAt = new Date().toISOString();
         existing.tickCount = 0;
