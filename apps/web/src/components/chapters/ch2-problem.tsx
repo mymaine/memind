@@ -7,9 +7,9 @@
  * which conflated a one-time October 2025 spam spike with daily reality.
  * Real four.meme throughput today is ~351 launches/day (source: the
  * l0k1 Dune dashboard linked in the footer). Counting up to 351 misses
- * the real story — four.meme already filtered the spam, but 97% of the
- * survivors still die inside 48h because creators mint-and-walk. That
- * is the hook Ch3 resolves.
+ * the real story — four.meme already filtered the spam, but 97% of
+ * memecoins eventually die (Chainplay State of Memecoin 2024) because
+ * creators mint-and-walk. That is the hook Ch3 resolves.
  *
  * Interior progress `p ∈ [0, 1]` drives:
  *   - Count-up: `n = floor(lerp(0, 351, clamp(p/0.6)))`.
@@ -48,7 +48,7 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
       <Label n={2}>after the filter</Label>
       <BigHeadline size={104}>
         <span style={{ color: 'var(--fg-tertiary)' }}>{n.toLocaleString()}</span>
-        <span className="ch-sub-line"> four.meme launches / day — 97% die inside 48h.</span>
+        <span className="ch-sub-line"> four.meme launches / day — 97% of memecoins die.</span>
       </BigHeadline>
       <div className="ch-problem-source">
         <a
@@ -57,7 +57,18 @@ export function Ch2Problem({ p }: Ch2ProblemProps): ReactElement {
           target="_blank"
           rel="noopener noreferrer"
         >
-          {'source \u00b7 dune.com/l0k1/fourmeme-insights \u00b7 2026-04-20 \u2197'}
+          {'launches \u00b7 dune.com/l0k1/fourmeme-insights \u2197'}
+        </a>
+        <span className="mono" style={{ color: 'var(--fg-tertiary)', margin: '0 10px' }}>
+          ·
+        </span>
+        <a
+          className="mono"
+          href="https://chainplay.gg/blog/state-of-memecoin-2024/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {'97% \u00b7 chainplay state of memecoin 2024 \u2197'}
         </a>
       </div>
       <div className="ch-problem-body">

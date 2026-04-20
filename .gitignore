@@ -1,7 +1,8 @@
-# Documentation — only architecture.md ships with the repo; the rest of
-# docs/ stays local.
+# Documentation — only architecture.md + dev-commands.md ship with the
+# repo; the rest of docs/ stays local.
 docs/*
 !docs/architecture.md
+!docs/dev-commands.md
 
 # Node / TypeScript
 node_modules/
