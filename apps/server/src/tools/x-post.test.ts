@@ -376,6 +376,65 @@ describe('createPostToXTool.execute retry policy', () => {
   });
 });
 
+describe('createPostToXTool.execute content guard layer (2026-04-21)', () => {
+  const VALID_ADDR = '0x1234567890abcdef1234567890abcdef12345678';
+
+  it('sanitizes a raw 0x address in the tweet body BEFORE the network call', async () => {
+    // The Heartbeat runner and other LLM-driven callers occasionally slip a
+    // full 40-hex address through. X's 2026 post-OAuth cooldown bounces such
+    // posts with a 403. post_to_x is the last line of defence: rewrite the
+    // address into the short form (0xABCDEF…WXYZ) before signing the request
+    // so the body X sees is already anonymised.
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(201, {
+        data: { id: '101', text: 'sanitized', edit_history_tweet_ids: ['101'] },
+      }),
+    );
+    const tool = createPostToXTool(baseConfig({ fetchImpl: fetchImpl as unknown as typeof fetch }));
+
+    await tool.execute({ text: `$HBNB2026-BAT watch ${VALID_ADDR} cavern dispatch` });
+
+    const callArgs = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(callArgs[1].body)) as { text: string };
+    expect(body.text).not.toContain(VALID_ADDR);
+    expect(body.text).toContain('0x123456…5678');
+  });
+
+  it('rejects a draft containing "paid" via the guard (no network call)', async () => {
+    const fetchImpl = vi.fn();
+    const tool = createPostToXTool(baseConfig({ fetchImpl: fetchImpl as unknown as typeof fetch }));
+
+    await expect(tool.execute({ text: 'I was paid to post this — honest' })).rejects.toThrow(
+      /tweet content guard rejected/i,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects a draft containing a bscscan URL via the guard (no network call)', async () => {
+    const fetchImpl = vi.fn();
+    const tool = createPostToXTool(baseConfig({ fetchImpl: fetchImpl as unknown as typeof fetch }));
+
+    await expect(
+      tool.execute({ text: `check https://bscscan.com/token/${VALID_ADDR} for details` }),
+    ).rejects.toThrow(/tweet content guard rejected/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects a draft containing a bare URL via the safe-mode guard (no network call)', async () => {
+    // Even a four.meme click-through URL cannot ship during the 7-day cooldown
+    // — the gate is mode-less on this surface so downstream callers must rely
+    // on post_shill_for's URL-mode path (which never reaches here) or wait
+    // for the cooldown to expire before enabling URL bodies.
+    const fetchImpl = vi.fn();
+    const tool = createPostToXTool(baseConfig({ fetchImpl: fetchImpl as unknown as typeof fetch }));
+
+    await expect(
+      tool.execute({ text: 'visit https://four.meme/token/short for more' }),
+    ).rejects.toThrow(/tweet content guard rejected/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
 describe('createPostToXTool.execute v2 error parsing', () => {
   it('surfaces { detail } shape as clean Error message', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(

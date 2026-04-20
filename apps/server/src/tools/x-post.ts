@@ -2,6 +2,7 @@ import { createHmac, randomBytes as cryptoRandomBytes } from 'node:crypto';
 import type { Buffer } from 'node:buffer';
 import { z } from 'zod';
 import type { AgentTool } from '@hack-fourmeme/shared';
+import { checkTweetGuard, sanitizeTweetAddresses } from './tweet-guard.js';
 
 /**
  * post_to_x tool — publishes a single tweet to the X API v2 endpoint
@@ -238,8 +239,32 @@ export function createPostToXTool(cfg: PostToXToolConfig): AgentTool<XPostInput,
     async execute(input): Promise<XPostOutput> {
       const parsed = xPostInputSchema.parse(input);
 
+      // Belt-and-suspenders: anonymise any 40-hex `0x` address the caller
+      // (typically an LLM draft) slipped into `text`. X's 2026 post-OAuth
+      // cooldown bounces the request with a 403 when the tweet body carries
+      // a raw crypto address, so every tweet we send during the cooldown
+      // must land in the short `0xABCDEF…WXYZ` form. Sanitiser is a no-op
+      // for tweets that never embedded an address.
+      const sanitized = sanitizeTweetAddresses(parsed.text);
+
+      // Run the shared content guard in safe mode — raw URLs, explorer
+      // domains, and paid-intent leaks get rejected BEFORE we spend an
+      // OAuth signature + X API quota unit on them. URL-bearing paths
+      // (post-shill-for with `includeFourMemeUrl=true`) go through the
+      // post_shill_for tool which applies its own URL-mode guard first and
+      // ships the already-cleared body here — those tweets still trip the
+      // safe-mode gate and must be rewritten by the caller if they want to
+      // push URLs. This is intentional: the 7-day cooldown overrides any
+      // URL-mode preference.
+      const guard = checkTweetGuard(sanitized, { includeFourMemeUrl: false });
+      if (!guard.ok) {
+        throw new Error(
+          `post_to_x: tweet content guard rejected draft (violations: ${guard.violations.join(', ')})`,
+        );
+      }
+
       const body: { text: string; reply?: { in_reply_to_tweet_id: string } } = {
-        text: parsed.text,
+        text: sanitized,
       };
       if (parsed.replyToTweetId !== undefined) {
         body.reply = { in_reply_to_tweet_id: parsed.replyToTweetId };
@@ -288,7 +313,7 @@ export function createPostToXTool(cfg: PostToXToolConfig): AgentTool<XPostInput,
             data?: { id?: string; text?: string };
           };
           const id = payload.data?.id;
-          const tweetText = payload.data?.text ?? parsed.text;
+          const tweetText = payload.data?.text ?? sanitized;
           if (typeof id !== 'string' || id.length === 0) {
             throw new Error('post_to_x: success response missing data.id');
           }
