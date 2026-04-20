@@ -42,23 +42,30 @@ type Phase = {
   readonly status: PhaseStatus;
 };
 
+// Phase names realigned (2026-04-20) to Four.meme's March 2026 official
+// AI Agent roadmap (phemex.com/news 63946): Phase 1 Agent Skill Framework
+// (upstream on four.meme, live) / Phase 2 Executable AI Agents with LLM
+// Chat (memind ships the reference implementation here) / Phase 3
+// Agentic Mode, on-chain AI identities (next — the commerce loop). Using
+// the canonical Four.meme names avoids confusion with memind-internal
+// milestone naming, while the desc lines keep the ship-date facts.
 const PHASES: readonly Phase[] = [
   {
-    name: 'PHASE 1 \u00b7 LAUNCH',
-    when: 'NOW',
-    desc: 'chat-to-launch on BNB. 4 personas. manual shill orders.',
+    name: 'PHASE 1 \u00b7 Agent Skill Framework',
+    when: 'four.meme \u00b7 live',
+    desc: "four.meme's upstream agent skill layer — we build on top, not replace.",
     status: 'shipped',
   },
   {
-    name: 'PHASE 2 \u00b7 HEARTBEAT',
-    when: '2026-04',
-    desc: 'autonomous 60s tick. onchain-aware decisions. shipped 2026-04-20.',
+    name: 'PHASE 2 \u00b7 Executable AI Agents',
+    when: 'memind \u00b7 live',
+    desc: 'LLM-chat driven agents launch, shill, and settle on BNB. autonomous 60s heartbeat shipped 2026-04-20.',
     status: 'shipped',
   },
   {
-    name: 'PHASE 3 \u00b7 SWARM',
+    name: 'PHASE 3 \u00b7 Agentic Mode',
     when: 'next',
-    desc: 'brain-to-brain commerce. token brains hire each other to shill. x402 settles every handshake.',
+    desc: 'on-chain AI identities. brain-to-brain commerce. x402 settles every handshake.',
     status: 'future',
   },
 ];

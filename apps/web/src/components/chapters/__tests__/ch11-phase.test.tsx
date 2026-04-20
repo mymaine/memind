@@ -4,8 +4,9 @@
  *
  * Interior-progress contract:
  *
- *   - Three phase nodes: LAUNCH (shipped) / HEARTBEAT (shipped) /
- *     SWARM (future). Each node carries a status chip wired to the
+ *   - Three phase nodes: Agent Skill Framework (shipped by four.meme) /
+ *     Executable AI Agents (memind shipped) / Agentic Mode (future).
+ *     Each node carries a status chip wired to the
  *     `phase-status-shipped|building|future` classes.
  *   - Progress cursor line: `cursor = lerp(0, 2, clamp(p * 1.2))` drives
  *     `phase-line-fill` width `(cursor / 2) * 100%`. Active node is the
@@ -26,13 +27,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Ch11Phase } from '../ch11-phase.js';
 
 describe('<Ch11Phase>', () => {
-  it('renders exactly three phase nodes (LAUNCH / HEARTBEAT / SWARM)', () => {
+  it('renders exactly three phase nodes aligned to the Four.meme official roadmap', () => {
     const html = renderToStaticMarkup(<Ch11Phase p={1} />);
     const nodes = html.match(/class="phase-node[^"]*"/g) ?? [];
     expect(nodes.length).toBe(3);
-    expect(html).toContain('PHASE 1 \u00b7 LAUNCH');
-    expect(html).toContain('PHASE 2 \u00b7 HEARTBEAT');
-    expect(html).toContain('PHASE 3 \u00b7 SWARM');
+    expect(html).toContain('PHASE 1 \u00b7 Agent Skill Framework');
+    expect(html).toContain('PHASE 2 \u00b7 Executable AI Agents');
+    expect(html).toContain('PHASE 3 \u00b7 Agentic Mode');
   });
 
   it('applies the correct status class to each phase (2x shipped + 1x future)', () => {
