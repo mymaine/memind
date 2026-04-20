@@ -368,7 +368,11 @@ Browser (BrainPanel open via TopBar click or memind:open-brain
          Ch5 / Ch6 are scripted playbacks, no inline chat entry)
   → slash command resolved client-side via useSlashPalette:
        /launch <theme>                         → routes to creator persona
-       /order <tokenAddr> [brief]              → routes to market-maker persona
+       /order <tokenAddr> [brief]              → invoke_shiller tool, which
+                                                 drives the full shill-market
+                                                 orchestrator (x402 creator
+                                                 payment on Base Sepolia →
+                                                 Shiller persona tweet)
        /lore <tokenAddr>                       → routes to narrator persona
        /heartbeat <tokenAddr>                  → one-shot tick OR snapshot
                                                  read if a session exists
@@ -380,8 +384,9 @@ Browser (BrainPanel open via TopBar click or memind:open-brain
        /heartbeat-list                         → lists every currently running
                                                  background loop (survives
                                                  browser refresh / /clear)
-       /status                                 → queries current RunState
-       /help | /reset | /clear                 → client-only
+       /status | /help | /reset | /clear       → client-only (never hit the
+                                                 server; /reset and /clear are
+                                                 aliases that wipe chat scope)
   → POST /api/runs { kind:'brain-chat', messages:[{role, content}, …] }
   → EventSource /api/runs/:runId/events
 Server
@@ -414,7 +419,7 @@ Client
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | `apps/web`            | 12-chapter sticky-stage scrollytelling (`Ch1Hero` → `Ch12Evidence`, with `Ch7Saga` covering the Narrator persona's think→write→pin cycle) hosted by `<StickyStage>`; shared sticky `<Header>` with progress + BrainIndicator; `<SectionToc>` left nav; `<Watermark>` chapter stamp; `<LogsDrawer>` 3-tab dev drawer (logs / artifacts / console) bound to RunStateContext; `<BrainPanel>` right-side slide-in conversational surface; `/market` kept as 307 redirect to `#order-shill`                                                                                                                     | Agent logic, on-chain calls, server state |
 | `apps/server/agents/` | Creator / Narrator / Market-maker (dual persona: a2a lore buyer or Shiller persona) / Heartbeat / **Brain (meta-agent)** plan/execute logic; shared `_json.ts` fence-tolerant JSON parser; `_stream-map.ts` streaming-event mapper; `persona-adapters.ts` `Persona<T,T>` wrappers                                                                                                                                                                                                                                                                                                                          | HTTP routing, direct shell calls          |
-| `apps/server/tools/`  | Ten+ tools: narrative / image / deployer / lore / lore-extend / token-status / x-post / post-shill-for / x-fetch-lore + four `invoke_*` persona tool factories (Brain meta-agent); `registry.ts` collects them                                                                                                                                                                                                                                                                                                                                                                                             | Agent decision logic                      |
+| `apps/server/tools/`  | 15 tools total: 9 domain tools (narrative / image / deployer / lore / lore-extend / token-status / x-post / post-shill-for / x-fetch-lore) + 6 Brain meta-agent factories in `invoke-persona.ts` (`invoke_{creator,narrator,shiller,heartbeat_tick}` persona dispatchers + `stop_heartbeat` / `list_heartbeats` session managers); `registry.ts` collects them                                                                                                                                                                                                                                             | Agent decision logic                      |
 | `apps/server/state/`  | Postgres-backed LoreStore (chapter chain per token, upsert on `(token_addr, chapter_number)`) + AnchorLedger (keccak256 commitment log, upsert by anchorId, layer-2 stamp via `jsonb_set`) + ShillOrderStore (queued/processing/done/failed state machine with single-SQL atomic flip) + HeartbeatSessionStore (counters survive restart; `setInterval` timers stay process-local and never auto-resume — boot forces `running=false`) + ArtifactLogStore (append log backing Ch12 `/api/artifacts` hydration; partial unique index on `natural_key` dedupes status upgrades like shill-order queued→done) | None — pg is single source of truth       |
 | `apps/server/db/`     | `pool.ts` single-process `pg.Pool` (reads `DATABASE_URL` / `TEST_DATABASE_URL`, SSL auto-sensing for Railway) + `schema.ts` `ensureSchema(pool)` runs every `CREATE TABLE IF NOT EXISTS` + indexes at boot (idempotent) + `reset.ts` `resetDb(pool)` test-only `TRUNCATE ... RESTART IDENTITY CASCADE`                                                                                                                                                                                                                                                                                                     | Runtime — runs before `app.listen`        |
 | `apps/server/x402/`   | `paymentMiddleware` (Base Sepolia USDC) + four paid-endpoint handlers mounted at startup. `/lore/:addr` is store-backed (falls back to a mock payload when the store is empty). `/alpha/:addr` and `/metadata/:addr` return mock payloads today; paths + prices live in `x402/config.ts`. `/shill/:tokenAddr` is creator-paid and enqueues a ShillOrderStore entry for the Shiller persona to consume.                                                                                                                                                                                                     | Agent runtime, wallet signing             |
@@ -451,11 +456,12 @@ Canonical contract — both client and server import from `@hack-fourmeme/shared
 | 4   | `brain-architecture` | Brain-runtime / persona pluggability diagram                                   | None                          |
 | 5   | `launch-demo`        | Scripted playback of a `/launch` conversation (6 pre-authored lines, no input) | None                          |
 | 6   | `order-shill`        | Scripted playback of a `/order` conversation (lines + tweet feed, no input)    | None                          |
-| 7   | `heartbeat-demo`     | Heartbeat pulse animation + tick feed                                          | Reads shared RunState context |
-| 8   | `take-rate`          | Revenue-mix bar chart: 1 live SKU (shill at $0.01) + 3 planned                 | None                          |
-| 9   | `sku-matrix`         | SKU grid: SHILL.ORDER (live) vs three planned SKUs                             | None                          |
-| 10  | `phase-map`          | Phase 1 / Phase 2 / Phase 3 roadmap with shipped-vs-future chips               | None                          |
-| 11  | `evidence`           | Five on-chain evidence pills + CTA that fires `memind:open-brain` CustomEvent  | Dispatches BrainPanel open    |
+| 7   | `saga`               | Narrator persona's think → write → pin cycle as a standalone scene             | None                          |
+| 8   | `heartbeat-demo`     | Heartbeat pulse animation + tick feed                                          | Reads shared RunState context |
+| 9   | `take-rate`          | Revenue-mix bar chart: 1 live SKU (shill at $0.01) + 3 planned                 | None                          |
+| 10  | `sku-matrix`         | SKU grid: SHILL.ORDER (live) vs three planned SKUs                             | None                          |
+| 11  | `phase-map`          | Phase 1 / Phase 2 / Phase 3 roadmap with shipped-vs-future chips               | None                          |
+| 12  | `evidence`           | Five on-chain evidence pills + CTA that fires `memind:open-brain` CustomEvent  | Dispatches BrainPanel open    |
 
 **Why sticky-stage over per-section layout**: one viewport-sized sticky container cross-fades between 12 chapter components, so the active chapter is always vertically centred and the scroll feels deterministic. Chapter meta + scroll-target math (`CHAPTER_META`, `SLOT_VH`, `chapterScrollTarget`, `resolveChapterIndexFromHash`) live in `lib/chapters.ts`. Reduced motion is honoured through both the OS media query (`useReducedMotion`) and the in-page `<TweaksPanel>` — either source short-circuits the cross-fade to the final state.
 
@@ -468,7 +474,7 @@ Canonical contract — both client and server import from `@hack-fourmeme/shared
 - Hero CTA pre-fills the composer via `openBrain(draft?)` (Ch5 / Ch6 have
   no interactive CTA — they are scripted narrative chapters)
 
-Slash commands (`lib/slash-commands.ts`) are resolved client-side; server-kind ones (`/launch /order /lore /heartbeat`) are sent as `messages[0].content` to `POST /api/runs {kind:'brain-chat'}`. Client-only (`/help /reset /status`) never hit the server. `useSlashPalette` filters the registry by scope + prefix; `useBrainChat-state` reduces `assistant:delta` + `tool_use:*` + status SSE events into grouped chat bubbles; `useRunStateContext` mirrors the same events into `<LogsDrawer>` so Logs / Artifacts / Console tabs show the live run regardless of which surface triggered it.
+Slash commands (`lib/slash-commands.ts`) are resolved client-side: 10 commands total. Server-kind (6: `/launch /order /lore /heartbeat /heartbeat-stop /heartbeat-list`) are sent as `messages[0].content` to `POST /api/runs {kind:'brain-chat'}` and forced through `tool_choice` so the Brain can never silently skip the matching tool. Client-only (4: `/status /help /reset /clear` — the last two are aliases) never hit the server. `useSlashPalette` filters the registry by scope + prefix; `useBrainChat-state` reduces `assistant:delta` + `tool_use:*` + status SSE events into grouped chat bubbles; `useRunStateContext` mirrors the same events into `<LogsDrawer>` so Logs / Artifacts / Console tabs show the live run regardless of which surface triggered it.
 
 ## External Dependencies
 
