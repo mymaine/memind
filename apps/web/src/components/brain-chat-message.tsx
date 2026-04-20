@@ -451,26 +451,41 @@ function HeartbeatBubble({ turn }: { turn: BrainChatTurn }): ReactElement {
     );
   }
   const autoStopped = heartbeat.running === false;
+  // Overlap-skipped ticks arrive with `success=false` but are NOT failures —
+  // the server scheduler fired while a prior tick was still executing and
+  // the store bucketed it as `skippedCount` only. Surface them as neutral
+  // "skipped · overlap" chips so the transcript reads accurately; rendering
+  // them as red ✗ / "failed" (the old behaviour) misled users into thinking
+  // their loop was broken when it was actually making progress.
+  const skipped = heartbeat.skipped === true;
   const icon = autoStopped
     ? '⏹'
+    : skipped
+      ? '⊘'
+      : !heartbeat.success
+        ? '✗'
+        : heartbeat.action === 'idle'
+          ? '●'
+          : '✓';
+  const tone = skipped
+    ? 'text-fg-tertiary'
     : !heartbeat.success
-      ? '✗'
-      : heartbeat.action === 'idle'
-        ? '●'
-        : '✓';
-  const tone = !heartbeat.success ? 'text-[color:var(--color-danger)]' : 'text-accent-text';
+      ? 'text-[color:var(--color-danger)]'
+      : 'text-accent-text';
+  const label = skipped
+    ? `heartbeat · skipped · overlap`
+    : `heartbeat · tick ${heartbeat.tickNumber.toString()}/${heartbeat.maxTicks.toString()}`;
   return (
     <div
       data-role="heartbeat"
       data-token-addr={heartbeat.tokenAddr}
+      data-skipped={skipped ? 'true' : undefined}
       className={`mr-auto flex max-w-[90%] flex-col gap-2 self-start rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 ${AGENT_TONE.heartbeat}`}
     >
       <div className="flex flex-wrap items-center gap-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px]">
         <span className={`inline-flex items-center gap-1 ${tone}`}>
           <span aria-hidden>{icon}</span>
-          <span>
-            heartbeat · tick {heartbeat.tickNumber.toString()}/{heartbeat.maxTicks.toString()}
-          </span>
+          <span>{label}</span>
         </span>
         <span className="rounded-[var(--radius-default)] border border-border-default px-1.5 py-0.5 text-fg-tertiary">
           {shortenTokenAddr(heartbeat.tokenAddr)}

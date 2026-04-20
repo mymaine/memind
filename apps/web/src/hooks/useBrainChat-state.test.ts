@@ -373,6 +373,27 @@ describe('buildHeartbeatTurn — four action variants + auto-stop (scenario 5)',
     expect(turn.heartbeat?.error).toBe('rate limited by X API');
   });
 
+  it('overlap-skipped tick → neutral "skipped (overlap …)" summary, skipped flag set', () => {
+    // The server scheduler fires `error: 'overlap-skipped'` when the
+    // previous tick is still running. We must NOT render that as a red
+    // "failed" bubble — the prior tick is still making progress and the
+    // user has nothing to act on. The turn carries `skipped: true` so
+    // <HeartbeatBubble /> knows to switch the chip tone + icon.
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'overlap_abc',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        success: false,
+        error: 'overlap-skipped',
+      },
+    });
+    const turn = buildHeartbeatTurn('hb-skip', event);
+    expect(turn.content).toBe('Heartbeat tick 3/5: skipped (overlap — prior tick still running)');
+    expect(turn.heartbeat?.skipped).toBe(true);
+    expect(turn.heartbeat?.success).toBe(false);
+    expect(turn.heartbeat?.error).toBe('overlap-skipped');
+  });
+
   it('auto-stop (snapshot.running=false) appends the cap suffix', () => {
     const event = makeTickEvent({
       delta: {

@@ -90,6 +90,15 @@ export interface BrainChatHeartbeatPayload {
   readonly success: boolean;
   readonly action: HeartbeatSessionAction | null;
   readonly error?: string | null;
+  /**
+   * Set when the server's scheduler fired while a prior tick was still
+   * running (`delta.error === 'overlap-skipped'`). The UI renders these
+   * as a neutral "skipped · overlap" chip instead of a red failure chip
+   * because the prior tick is still making progress — there is no
+   * real error for the user to act on, and marking it as a failure
+   * misleads them into thinking the loop is broken.
+   */
+  readonly skipped?: boolean;
   readonly artifacts?: ReadonlyArray<Artifact>;
   readonly tickAt: string;
   /** Mirrors `snapshot.running`; `false` on the terminal tick (auto-stop). */
@@ -256,6 +265,14 @@ export function buildHeartbeatTurn(id: string, payload: HeartbeatTickEvent): Bra
   const tickNumber = snapshot.tickCount;
   const maxTicks = snapshot.maxTicks;
   const action = delta.action ?? null;
+  // Overlap-skipped frames come from the server's scheduler firing while a
+  // prior tick is still executing. They carry `success: false` +
+  // `error: 'overlap-skipped'` by contract (see
+  // HeartbeatSessionStore.runExclusiveTick). We bucket them separately from
+  // genuine errors so the UI can render a neutral chip rather than a red
+  // failure chip — the prior tick is still running and the user has
+  // nothing to act on.
+  const isSkipped = !delta.success && delta.error === 'overlap-skipped';
   // LLM-authored rationale for this tick's decision. Empty / missing on
   // unparseable final text; treat that as "no reason" and skip the
   // em-dash suffix so the bubble stays clean.
@@ -265,7 +282,12 @@ export function buildHeartbeatTurn(id: string, payload: HeartbeatTickEvent): Bra
   const header = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}`;
 
   let body: string;
-  if (!delta.success) {
+  if (isSkipped) {
+    // Scheduler overlap — no execution happened, tickCount did NOT advance.
+    // Keep the header for context but mark clearly that this was not a
+    // failure so the transcript reads naturally.
+    body = `${header}: skipped (overlap — prior tick still running)`;
+  } else if (!delta.success) {
     const message = delta.error ?? snapshot.lastError ?? 'unknown error';
     body = `${header} failed: ${message}`;
   } else if (action === 'post') {
@@ -310,6 +332,7 @@ export function buildHeartbeatTurn(id: string, payload: HeartbeatTickEvent): Bra
       success: delta.success,
       action,
       error: delta.error ?? null,
+      ...(isSkipped ? { skipped: true } : {}),
       ...(combinedArtifacts.length > 0 ? { artifacts: combinedArtifacts } : {}),
       tickAt: delta.tickAt,
       running: snapshot.running,

@@ -121,15 +121,17 @@ describe('validateSlashArgs', () => {
     expect(res.ok).toBe(false);
   });
 
-  // Case 7 — /heartbeat intervalMs coerces numeric string to number
+  // Case 7 — /heartbeat intervalMs coerces numeric string to number.
+  // Floor is 60_000ms (60s) since a single tick routinely runs 30-60s —
+  // anything faster was thrashing the overlap guard on every fire.
   it('coerces the heartbeat intervalMs from string to number', () => {
     const cmd = findCommand('heartbeat');
-    const res = validateSlashArgs(cmd, '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444 30000');
+    const res = validateSlashArgs(cmd, '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444 60000');
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.args).toEqual({
         tokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
-        intervalMs: 30000,
+        intervalMs: 60000,
       });
     }
   });
@@ -137,14 +139,27 @@ describe('validateSlashArgs', () => {
   // Case 7b — /heartbeat accepts optional maxTicks as a third positional arg
   it('parses /heartbeat <addr> <intervalMs> <maxTicks>', () => {
     const cmd = findCommand('heartbeat');
-    const res = validateSlashArgs(cmd, '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444 5000 20');
+    const res = validateSlashArgs(cmd, '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444 90000 20');
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.args).toEqual({
         tokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
-        intervalMs: 5000,
+        intervalMs: 90000,
         maxTicks: 20,
       });
+    }
+  });
+
+  // Case 7c — /heartbeat rejects intervalMs below the 60_000ms floor.
+  // Before this floor a user running `/heartbeat <addr> 10000 3` would
+  // trigger overlap-skipped on every tick because the scheduler fires
+  // faster than the LLM loop can complete.
+  it('rejects /heartbeat intervalMs below 60000ms', () => {
+    const cmd = findCommand('heartbeat');
+    const res = validateSlashArgs(cmd, '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444 10000 3');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatch(/60000/);
     }
   });
 

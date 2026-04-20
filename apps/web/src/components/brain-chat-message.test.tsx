@@ -386,6 +386,40 @@ describe('<BrainChatMessage /> — heartbeat bubble', () => {
     // We use the danger colour var for error ticks.
     expect(out).toContain('var(--color-danger)');
   });
+
+  it('renders a neutral chip for overlap-skipped ticks (not red failure)', () => {
+    // Overlap-skipped ticks are scheduler fire attempts that landed while a
+    // prior tick was still running — the loop is making progress and the
+    // user has nothing to act on. The bubble must NOT show the red danger
+    // tone; we label the chip "skipped · overlap" in the neutral tertiary
+    // tone so the transcript reads accurately.
+    const turn: BrainChatTurn = {
+      id: 'hb-skip',
+      role: 'heartbeat',
+      content: 'Heartbeat tick 3/5: skipped (overlap — prior tick still running)',
+      heartbeat: {
+        tokenAddr: '0xabcdef1234567890abcdef1234567890abcd4444',
+        tickId: 'overlap_abc',
+        tickNumber: 3,
+        maxTicks: 5,
+        success: false,
+        action: null,
+        error: 'overlap-skipped',
+        skipped: true,
+        tickAt: '2026-04-20T00:01:30.000Z',
+        running: true,
+      },
+    };
+    const out = renderToStaticMarkup(<BrainChatMessage turn={turn} />);
+    // No red danger tone on a skip.
+    expect(out).not.toContain('var(--color-danger)');
+    // Must NOT read as a failure.
+    expect(out).not.toMatch(/\bfailed\b/);
+    // Must surface the neutral "skipped · overlap" label.
+    expect(out.toLowerCase()).toContain('skipped');
+    expect(out.toLowerCase()).toContain('overlap');
+    expect(out).toContain('data-skipped="true"');
+  });
 });
 
 describe('<BrainChatMessage /> — tool-use work mood glyph (UX fix 2026-04-21)', () => {

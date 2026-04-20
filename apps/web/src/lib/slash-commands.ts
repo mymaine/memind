@@ -69,7 +69,17 @@ const loreArgsSchema = z.object({
 
 const heartbeatArgsSchema = z.object({
   tokenAddr: z.string().regex(EVM_ADDRESS_REGEX),
-  intervalMs: z.coerce.number().int().positive().optional(),
+  // intervalMs must be >= 60_000ms (60s). A single tick takes 30-60s
+  // (LLM loop + token-status read + optional post/lore). Anything
+  // below 60s almost guarantees the next scheduler fire lands
+  // mid-tick, which the server records as `overlap-skipped` and the
+  // user perceives as a failed tick. 60s is the hard floor that lets
+  // the loop actually advance instead of thrashing the overlap guard.
+  intervalMs: z.coerce
+    .number()
+    .int()
+    .min(60_000, 'heartbeat interval must be >= 60000ms (60s)')
+    .optional(),
   // Optional hard cap on scheduled ticks per session. Server default is
   // 5 (DEFAULT_HEARTBEAT_MAX_TICKS) as a safety rail against demo abuse.
   maxTicks: z.coerce.number().int().positive().optional(),
