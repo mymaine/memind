@@ -26,6 +26,8 @@ import {
 } from 'viem';
 import { bsc } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
+import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
+import { type AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
 
 const CONTENT_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
@@ -151,4 +153,178 @@ export async function sendAnchorMemoTx(args: SendAnchorMemoTxArgs): Promise<Anch
     chain: 'bsc-mainnet',
     explorerUrl: explorerUrl(txHash as `0x${string}`),
   };
+}
+
+// ---------------------------------------------------------------------------
+// maybeAnchorContent — cross-path layer-2 helper.
+// ---------------------------------------------------------------------------
+// The legacy a2a.ts inlined the ANCHOR_ON_CHAIN gate + send + markOnChain +
+// artifact-emit block directly inside the narrator phase, which meant the
+// other three code paths that produce lore chapters (brain-chat
+// `/lore` → invoke_narrator, brain-chat `/launch` → invoke_creator, and the
+// `demo:creator` CLI → runCreatorPhase) never got the on-chain upgrade. This
+// helper lifts that block into a pure function so every path shares the
+// same:
+//
+//   1. Env gate (`ANCHOR_ON_CHAIN === 'true'`)
+//   2. BSC deployer key presence check (warn-log + no-op when missing)
+//   3. `computeContentHash` → `sendAnchorMemoTx` → `markOnChain` pipeline
+//   4. Upgraded `lore-anchor` artifact with the on-chain trio + BscScan url
+//   5. Non-fatal error handling so layer-1 evidence is never blocked by a
+//      flaky BSC mainnet RPC or an unfunded deployer wallet.
+//
+// Layer-1 append (the keccak256 commitment row) is deliberately NOT done
+// here — callers own that step via `anchorLedger.append(...)` before calling
+// this helper, so the ledger row exists even when layer-2 is disabled. Same
+// ordering as the pre-refactor a2a.ts path.
+// ---------------------------------------------------------------------------
+
+/**
+ * Arguments passed to `maybeAnchorContent`. All fields except `anchorLedger`,
+ * `tokenAddr`, `chapterNumber`, and `loreCid` are optional so callers can
+ * wire only what they have.
+ */
+export interface MaybeAnchorContentArgs {
+  /** Ledger to stamp the on-chain trio onto once the memo tx settles. */
+  anchorLedger: AnchorLedger;
+  /** Lowercased/mixed-case EVM address — `computeAnchorId` normalises it. */
+  tokenAddr: `0x${string}`;
+  /** 1-based chapter index the anchor belongs to. */
+  chapterNumber: number;
+  /** Pinata CID of the chapter body. */
+  loreCid: string;
+  /**
+   * Env bag consulted for `ANCHOR_ON_CHAIN`. Defaults to `process.env` so
+   * production callers only need to opt into the layer-2 flag once, but
+   * tests can pass a hermetic bag to exercise both branches deterministically.
+   */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * BSC deployer private key used to sign the zero-value self-tx memo.
+   * Production callers resolve it off `config.wallets.bscDeployer.privateKey`;
+   * when undefined we log a warn and return null so the layer-1 evidence
+   * still ships.
+   */
+  bscDeployerPrivateKey?: `0x${string}` | undefined;
+  /** Artifact sink — receives the upgraded `lore-anchor` once the tx settles. */
+  onArtifact?: (artifact: Artifact) => void;
+  /** Log sink — receives info/warn lines from this helper. */
+  onLog?: (event: LogEvent) => void;
+  /**
+   * Test seam — override the real `sendAnchorMemoTx` so unit tests can spy
+   * on the send call and control its resolution without touching
+   * bsc-dataseed. Production callers omit this and the real implementation
+   * runs.
+   */
+  sendAnchorMemoTxImpl?: typeof sendAnchorMemoTx;
+}
+
+/**
+ * Emit a `LogEvent` attributed to the narrator phase. We hard-code the
+ * attribution to `narrator` because every path that anchors chapters is
+ * ultimately a narrator-side action (creator chapter 1 is emitted under the
+ * narrator-shaped `lore-anchor` artifact, so the log story stays consistent).
+ */
+function narratorLog(
+  onLog: ((event: LogEvent) => void) | undefined,
+  level: LogEvent['level'],
+  message: string,
+): void {
+  if (onLog === undefined) return;
+  onLog({
+    ts: new Date().toISOString(),
+    agent: 'narrator',
+    tool: 'anchor',
+    level,
+    message,
+  });
+}
+
+/**
+ * Pure helper: if `ANCHOR_ON_CHAIN=true` in the supplied env and a BSC
+ * deployer key is available, compute the keccak256 contentHash, fire the
+ * zero-value memo tx via `sendAnchorMemoTx`, mark the existing ledger row as
+ * on-chain, and emit an upgraded `lore-anchor` artifact carrying the
+ * BscScan explorer link. Returns the settlement trio on success; returns
+ * `null` whenever layer-2 is disabled, skipped, or the tx fails.
+ *
+ * The helper never throws. Any error (bad contentHash, RPC failure,
+ * markOnChain storage fault) is downgraded to a warn log so the layer-1
+ * anchor row + `lore-cid` artifact stay intact.
+ */
+export async function maybeAnchorContent(
+  args: MaybeAnchorContentArgs,
+): Promise<AnchorTxSettlement | null> {
+  const {
+    anchorLedger,
+    tokenAddr,
+    chapterNumber,
+    loreCid,
+    env,
+    bscDeployerPrivateKey,
+    onArtifact,
+    onLog,
+    sendAnchorMemoTxImpl,
+  } = args;
+
+  // Gate 1: env flag must be literally `true`. We deliberately emit no log
+  // when disabled — callers constantly skip this branch during tests and a
+  // noisy log would pollute every unit-test output.
+  const envBag = env ?? process.env;
+  if (!isAnchorOnChainEnabled(envBag)) {
+    return null;
+  }
+
+  // Gate 2: deployer key required. This is the single warn log documented
+  // in the pre-refactor a2a.ts block so operators see why the layer-2 upgrade
+  // did not fire.
+  if (bscDeployerPrivateKey === undefined) {
+    narratorLog(
+      onLog,
+      'warn',
+      'ANCHOR_ON_CHAIN=true but BSC_DEPLOYER_PRIVATE_KEY missing — skipping layer-2 memo',
+    );
+    return null;
+  }
+
+  const anchorId = computeAnchorId(tokenAddr, chapterNumber);
+  const contentHash = computeContentHash(tokenAddr, chapterNumber, loreCid);
+
+  try {
+    const send = sendAnchorMemoTxImpl ?? sendAnchorMemoTx;
+    const settlement = await send({
+      contentHash,
+      deps: { privateKey: bscDeployerPrivateKey },
+    });
+    await anchorLedger.markOnChain(anchorId, settlement);
+    if (onArtifact !== undefined) {
+      onArtifact({
+        kind: 'lore-anchor',
+        anchorId,
+        tokenAddr,
+        chapterNumber,
+        loreCid,
+        contentHash,
+        onChainTxHash: settlement.onChainTxHash,
+        chain: settlement.chain,
+        explorerUrl: settlement.explorerUrl,
+        ts: new Date().toISOString(),
+        label: 'lore anchor (on-chain)',
+      });
+    }
+    narratorLog(
+      onLog,
+      'info',
+      `lore-anchor layer-2 settled on BSC mainnet: ${settlement.onChainTxHash}`,
+    );
+    return settlement;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    narratorLog(
+      onLog,
+      'warn',
+      `lore-anchor layer-2 send failed (layer-1 evidence still emitted): ${msg}`,
+    );
+    return null;
+  }
 }

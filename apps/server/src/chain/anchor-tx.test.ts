@@ -1,10 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import {
   buildAnchorTxRequest,
   isAnchorOnChainEnabled,
+  maybeAnchorContent,
   sendAnchorMemoTx,
   type AnchorTxDeps,
+  type AnchorTxSettlement,
 } from './anchor-tx.js';
+import { AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
 
 /**
  * anchor-tx is the optional layer-2 hook for AC3: when
@@ -115,5 +119,223 @@ describe('sendAnchorMemoTx', () => {
     await expect(sendAnchorMemoTx({ contentHash: CONTENT_HASH, deps })).rejects.toThrow(
       /insufficient funds/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// maybeAnchorContent — cross-path layer-2 helper.
+// ---------------------------------------------------------------------------
+// The helper owns the ANCHOR_ON_CHAIN env gate + deployer-key presence check
+// + sendAnchorMemoTx + markOnChain + upgraded lore-anchor artifact emission.
+// Every lore-producing path (a2a narrator, brain-chat invoke_narrator,
+// brain-chat invoke_creator, demo:creator runCreatorPhase) funnels through
+// it, so these tests pin down the full behavioural surface.
+// ---------------------------------------------------------------------------
+
+describe('maybeAnchorContent', () => {
+  const TOKEN_ADDR = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' as const;
+  const CHAPTER = 1;
+  const LORE_CID = 'bafkrei-stub';
+  const DEPLOYER_PK = `0x${'9'.repeat(64)}` as const;
+  const TX_HASH = `0x${'f'.repeat(64)}` as const;
+
+  function fakeSettlement(): AnchorTxSettlement {
+    return {
+      onChainTxHash: TX_HASH,
+      chain: 'bsc-mainnet',
+      explorerUrl: `https://bscscan.com/tx/${TX_HASH}`,
+    };
+  }
+
+  it('returns null + no side effects when ANCHOR_ON_CHAIN is disabled', async () => {
+    const ledger = new AnchorLedger();
+    // Pre-seed a layer-1 row so we can verify markOnChain is NOT called by
+    // inspecting that the onChainTxHash stays undefined afterwards.
+    const anchorId = computeAnchorId(TOKEN_ADDR, CHAPTER);
+    await ledger.append({
+      anchorId,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      contentHash: computeContentHash(TOKEN_ADDR, CHAPTER, LORE_CID),
+      ts: '2026-04-21T00:00:00.000Z',
+    });
+
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const sendSpy = vi.fn();
+
+    const result = await maybeAnchorContent({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'false' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy as unknown as typeof sendAnchorMemoTx,
+    });
+
+    expect(result).toBeNull();
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(onArtifact).not.toHaveBeenCalled();
+    // Disabled path is silent — no logs.
+    expect(onLog).not.toHaveBeenCalled();
+    const entry = await ledger.get(anchorId);
+    expect(entry?.onChainTxHash).toBeUndefined();
+  });
+
+  it('returns null + warn log when enabled but BSC_DEPLOYER_PRIVATE_KEY missing', async () => {
+    const ledger = new AnchorLedger();
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const sendSpy = vi.fn();
+
+    const result = await maybeAnchorContent({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: undefined,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy as unknown as typeof sendAnchorMemoTx,
+    });
+
+    expect(result).toBeNull();
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(onArtifact).not.toHaveBeenCalled();
+    expect(onLog).toHaveBeenCalledTimes(1);
+    const logged = onLog.mock.calls[0]?.[0];
+    expect(logged?.level).toBe('warn');
+    expect(logged?.message).toMatch(/BSC_DEPLOYER_PRIVATE_KEY/);
+  });
+
+  it('sends tx + marks ledger + emits upgraded artifact when enabled with key', async () => {
+    const ledger = new AnchorLedger();
+    const anchorId = computeAnchorId(TOKEN_ADDR, CHAPTER);
+    await ledger.append({
+      anchorId,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      contentHash: computeContentHash(TOKEN_ADDR, CHAPTER, LORE_CID),
+      ts: '2026-04-21T00:00:00.000Z',
+    });
+
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const settlement = fakeSettlement();
+    const sendSpy: typeof sendAnchorMemoTx = vi.fn(async () => settlement);
+
+    const result = await maybeAnchorContent({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy,
+    });
+
+    expect(result).toEqual(settlement);
+    // sendAnchorMemoTx invoked with the expected contentHash + deployer key.
+    const sendMock = sendSpy as unknown as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const sendArgs = sendMock.mock.calls[0]?.[0] as {
+      contentHash: string;
+      deps: { privateKey: string };
+    };
+    expect(sendArgs.contentHash).toBe(computeContentHash(TOKEN_ADDR, CHAPTER, LORE_CID));
+    expect(sendArgs.deps.privateKey).toBe(DEPLOYER_PK);
+
+    // Ledger markOnChain has been applied to the existing row.
+    const entry = await ledger.get(anchorId);
+    expect(entry?.onChainTxHash).toBe(TX_HASH);
+    expect(entry?.chain).toBe('bsc-mainnet');
+    expect(entry?.explorerUrl).toBe(settlement.explorerUrl);
+
+    // Upgraded artifact carries the full on-chain trio.
+    expect(onArtifact).toHaveBeenCalledTimes(1);
+    const artifact = onArtifact.mock.calls[0]?.[0];
+    expect(artifact?.kind).toBe('lore-anchor');
+    if (artifact?.kind === 'lore-anchor') {
+      expect(artifact.onChainTxHash).toBe(TX_HASH);
+      expect(artifact.chain).toBe('bsc-mainnet');
+      expect(artifact.explorerUrl).toBe(settlement.explorerUrl);
+      expect(artifact.label).toBe('lore anchor (on-chain)');
+    }
+
+    // A settled info log lands on the narrator bucket.
+    const infoLog = onLog.mock.calls.find((c) => c[0].level === 'info');
+    expect(infoLog?.[0].message).toContain(TX_HASH);
+  });
+
+  it('returns null + warn log when sendAnchorMemoTxImpl throws (no rethrow)', async () => {
+    const ledger = new AnchorLedger();
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const sendSpy = vi.fn(async () => {
+      throw new Error('rpc 502 bad gateway');
+    });
+
+    const result = await maybeAnchorContent({
+      anchorLedger: ledger,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy as unknown as typeof sendAnchorMemoTx,
+    });
+
+    expect(result).toBeNull();
+    expect(onArtifact).not.toHaveBeenCalled();
+    const warnLog = onLog.mock.calls.find((c) => c[0].level === 'warn');
+    expect(warnLog?.[0].message).toMatch(/rpc 502 bad gateway/);
+  });
+
+  it('returns null + warn log when ledger.markOnChain throws (no rethrow)', async () => {
+    // Build a minimal AnchorLedger-shaped stub whose markOnChain blows up.
+    // TypeScript structural typing means the helper will treat this as an
+    // AnchorLedger — no need to subclass / construct a real one.
+    const brokenLedger = {
+      append: vi.fn(async () => undefined),
+      markOnChain: vi.fn(async () => {
+        throw new Error('pg pool exhausted');
+      }),
+      get: vi.fn(async () => undefined),
+      list: vi.fn(async () => []),
+      clear: vi.fn(async () => undefined),
+      size: vi.fn(async () => 0),
+    } as unknown as AnchorLedger;
+
+    const onArtifact = vi.fn<(a: Artifact) => void>();
+    const onLog = vi.fn<(e: LogEvent) => void>();
+    const sendSpy = vi.fn(async () => fakeSettlement());
+
+    const result = await maybeAnchorContent({
+      anchorLedger: brokenLedger,
+      tokenAddr: TOKEN_ADDR,
+      chapterNumber: CHAPTER,
+      loreCid: LORE_CID,
+      env: { ANCHOR_ON_CHAIN: 'true' },
+      bscDeployerPrivateKey: DEPLOYER_PK,
+      onArtifact,
+      onLog,
+      sendAnchorMemoTxImpl: sendSpy as unknown as typeof sendAnchorMemoTx,
+    });
+
+    expect(result).toBeNull();
+    // Artifact must not land — we only emit after markOnChain succeeds.
+    expect(onArtifact).not.toHaveBeenCalled();
+    const warnLog = onLog.mock.calls.find((c) => c[0].level === 'warn');
+    expect(warnLog?.[0].message).toMatch(/pg pool exhausted/);
   });
 });
