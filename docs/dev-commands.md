@@ -53,7 +53,11 @@ X_BEARER_TOKEN=...
 X402_FACILITATOR_URL=https://x402.org/facilitator
 X402_NETWORK=eip155:84532
 
-# Dashboard demo pre-seed (optional — fills AC4's 5 pills)
+# Postgres (server refuses to boot without it — no in-memory fallback)
+DATABASE_URL=postgres://memind:memind@localhost:5432/memind
+# TEST_DATABASE_URL=postgres://memind:memind@localhost:5432/memind
+
+# Dashboard demo pre-seed (optional — fills the Evidence chapter's 5 pills)
 DEMO_TOKEN_ADDR=0x4E39d254c716D88Ae52D9cA136F0a029c5F74444
 DEMO_TOKEN_DEPLOY_TX=0x<64 hex>
 DEMO_CREATOR_LORE_CID=bafkrei<rest>
@@ -74,13 +78,15 @@ The same export is required before `git commit` because the pre-commit hook walk
 docker compose up -d postgres
 # Sanity-check: `docker compose ps` should show `memind-postgres` healthy.
 
-# AC4 dashboard mode (two terminals, web + server running in parallel)
+# Dashboard mode (two terminals, web + server running in parallel)
 # Terminal 1:
 pnpm --filter @hack-fourmeme/server dev      # http://localhost:4000
 # Terminal 2:
 pnpm --filter @hack-fourmeme/web dev         # http://localhost:3000
-# open http://localhost:3000 and hit "Run swarm" — POSTs /api/runs and
-# streams SSE events from the server-side a2a orchestrator.
+# Open http://localhost:3000, click the TopBar <BrainIndicator> (or the
+# Ch12 Evidence CTA) to slide out the BrainPanel, then type a slash
+# command — e.g. `/launch <theme>`, `/order <tokenAddr>`, `/lore <addr>`,
+# `/heartbeat <addr> <ms>`. Each POSTs /api/runs and streams SSE back.
 ```
 
 ## Postgres (persistence layer)
@@ -144,9 +150,10 @@ pnpm --filter @hack-fourmeme/server demo:creator
 # default or --token flag). Cost: ~$0.02 OpenRouter + 0.01 USDC real settle.
 pnpm --filter @hack-fourmeme/server demo:a2a
 
-# Heartbeat — accelerated 15s tick loop; optional --dry-run skips real X posts.
-pnpm --filter @hack-fourmeme/server demo:heartbeat -- --dry-run
-pnpm --filter @hack-fourmeme/server demo:heartbeat           # real X posts; see docs/decisions/2026-04-19-x-posting-agent.md for current pricing (re-verify before demo; avoid URLs in post body)
+# Heartbeat — accelerated 15s tick loop. Default posts real X tweets;
+# see docs/decisions/2026-04-19-x-posting-agent.md for current pricing.
+pnpm --filter @hack-fourmeme/server demo:heartbeat                   # real X posts
+pnpm --filter @hack-fourmeme/server demo:heartbeat -- --dry-run      # skip live posts
 ```
 
 ## Quality
@@ -170,15 +177,13 @@ pnpm --filter server build
 ## Demo
 
 ```bash
-# Day 5 pre-recording reset: kill stale processes, clear caches, restart
+# Pre-recording reset: kill stale processes, clear caches, restart
 pnpm clean && pnpm install && pnpm dev
 
 # Recording: macOS built-in QuickTime / OBS
-# Recording runbook: docs/runbooks/demo-recording.md (to be written)
 ```
 
 ## Deploy
 
-- This hackathon submission does **not** ship a mainnet deployment or release token.
-- The deliverable is the GitHub repo plus a demo video (YouTube / Loom); no public URL is required.
+- No mainnet deployment or release token is shipped; the deliverable is the GitHub repo plus a demo video.
 - For an ad-hoc external demo: deploy `web` on Vercel, keep `server` local.
