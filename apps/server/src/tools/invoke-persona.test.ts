@@ -28,10 +28,19 @@ import {
   HeartbeatSessionStore,
   type HeartbeatTickDelta,
 } from '../state/heartbeat-session-store.js';
+import { ShillOrderStore } from '../state/shill-order-store.js';
+import { LoreStore } from '../state/lore-store.js';
+import { RunStore } from '../runs/store.js';
+import type { AppConfig } from '../config.js';
 import type { CreatorPersonaInput } from '../agents/creator.js';
 import type { NarratorPersonaInput, NarratorPersonaOutput } from '../agents/narrator.js';
-import type { ShillerPersonaInput, ShillerPersonaOutput } from '../agents/market-maker.js';
 import type { HeartbeatPersonaInput, HeartbeatPersonaOutput } from '../agents/heartbeat.js';
+import type {
+  runShillMarketDemo,
+  CreatorPaymentPhaseFn,
+  RunShillMarketDemoDeps,
+  RunShillerPhaseFn,
+} from '../runs/shill-market.js';
 import {
   postShillForInputSchema,
   postShillForOutputSchema,
@@ -485,35 +494,100 @@ describe('createInvokeNarratorTool', () => {
 // ─── invoke_shiller ─────────────────────────────────────────────────────────
 
 describe('createInvokeShillerTool', () => {
-  function makeShillerPersona(
-    run: (input: ShillerPersonaInput, ctx: PersonaRunContext) => Promise<ShillerPersonaOutput>,
-  ): Persona<ShillerPersonaInput, ShillerPersonaOutput> {
+  // The shiller factory now drives the full `runShillMarketDemo` orchestrator
+  // end to end, so the test surface shifts from "did it call
+  // shillerPersona.run?" to "did it call the orchestrator with the right
+  // deps?". We stub `runShillMarketDemoImpl` and assert the bundle of args
+  // the factory forwards. A lightweight default invokes the supplied
+  // `runShillerImpl` closure so the factory's output-capture path is also
+  // exercised.
+
+  const FAKE_CONFIG = {} as AppConfig;
+  const FAKE_ANTHROPIC = {} as unknown as Anthropic;
+
+  function buildMinimalDeps(
+    overrides: {
+      runShillMarketDemoImpl?: typeof runShillMarketDemo;
+      creatorPaymentImpl?: CreatorPaymentPhaseFn;
+      postShillForTool?: AgentTool<PostShillForInput, PostShillForOutput>;
+      onLog?: (event: LogEvent) => void;
+    } = {},
+  ): Parameters<typeof createInvokeShillerTool>[0] {
+    const store = new RunStore();
+    const rec = store.create('brain-chat');
+    const base = {
+      config: FAKE_CONFIG,
+      anthropic: FAKE_ANTHROPIC,
+      store,
+      runId: rec.runId,
+      shillOrderStore: new ShillOrderStore(),
+      loreStore: new LoreStore(),
+      postShillForTool: overrides.postShillForTool ?? fakePostShillForTool(),
+      ...(overrides.onLog !== undefined ? { onLog: overrides.onLog } : {}),
+    } satisfies Parameters<typeof createInvokeShillerTool>[0] extends infer T ? Partial<T> : never;
     return {
-      id: 'shiller',
-      description: 'stub shiller',
-      inputSchema: z.any() as unknown as z.ZodType<ShillerPersonaInput>,
-      outputSchema: z.any() as unknown as z.ZodType<ShillerPersonaOutput>,
-      run,
-    };
+      ...base,
+      ...(overrides.runShillMarketDemoImpl !== undefined
+        ? { runShillMarketDemoImpl: overrides.runShillMarketDemoImpl }
+        : {}),
+      ...(overrides.creatorPaymentImpl !== undefined
+        ? { creatorPaymentImpl: overrides.creatorPaymentImpl }
+        : {}),
+    } as Parameters<typeof createInvokeShillerTool>[0];
   }
 
-  it('accepts {tokenAddr} (brief optional) and rejects malformed addresses', () => {
-    const persona = makeShillerPersona(async () => ({
-      orderId: 'order-x',
-      tokenAddr: FAKE_TOKEN_ADDR,
+  /**
+   * Minimal spy orchestrator — when invoked, records the full deps bundle
+   * then fires the supplied `runShillerImpl` against a canned phase-deps
+   * record so the factory captures a ShillerPersonaOutput via closure.
+   */
+  function spyRunShillMarketDemo(
+    shillerResult: {
+      decision: 'shill' | 'skip';
+      tweetId?: string;
+      tweetUrl?: string;
+      tweetText?: string;
+      errorMessage?: string;
+    } = {
       decision: 'shill',
-      tweetId: 'tid-x',
-      tweetUrl: 'https://x.com/stub/status/tid-x',
-      tweetText: 'stub',
-      postedAt: '2026-04-19T00:00:00.000Z',
-      toolCalls: [],
-    }));
-    const tool = createInvokeShillerTool({
-      persona,
-      postShillForTool: fakePostShillForTool(),
-      resolveOrder: () => ({ orderId: 'order-x', loreSnippet: 'snippet' }),
-    });
+      tweetId: 'tid-spy',
+      tweetUrl: 'https://x.com/stub/status/tid-spy',
+      tweetText: 'spied tweet',
+    },
+  ): {
+    impl: typeof runShillMarketDemo;
+    calls: RunShillMarketDemoDeps[];
+  } {
+    const calls: RunShillMarketDemoDeps[] = [];
+    const impl: typeof runShillMarketDemo = async (orchestratorDeps) => {
+      calls.push(orchestratorDeps);
+      // Drive the supplied phase so the factory's capture closure runs.
+      if (orchestratorDeps.runShillerImpl !== undefined) {
+        await orchestratorDeps.runShillerImpl({
+          anthropic: orchestratorDeps.anthropic,
+          config: orchestratorDeps.config,
+          store: orchestratorDeps.store,
+          runId: orchestratorDeps.runId,
+          orderId: 'order-spy',
+          tokenAddr: orchestratorDeps.args.tokenAddr,
+          loreSnippet: 'spy lore',
+          ...(orchestratorDeps.args.creatorBrief !== undefined
+            ? { creatorBrief: orchestratorDeps.args.creatorBrief }
+            : {}),
+        });
+      }
+      // Mimic the real orchestrator's `void` resolution — the factory
+      // reads the captured output from its closure, not the returned value.
+      void shillerResult;
+      return undefined;
+    };
+    return { impl, calls };
+  }
 
+  it('keeps the invoke_shiller tool name + input schema contract', () => {
+    const tool = createInvokeShillerTool(
+      buildMinimalDeps({ runShillMarketDemoImpl: spyRunShillMarketDemo().impl }),
+    );
     expect(tool.name).toBe(INVOKE_SHILLER_TOOL_NAME);
     expect(tool.name).toBe('invoke_shiller');
     expect(() => tool.inputSchema.parse({ tokenAddr: FAKE_TOKEN_ADDR })).not.toThrow();
@@ -523,119 +597,144 @@ describe('createInvokeShillerTool', () => {
     expect(() => tool.inputSchema.parse({ tokenAddr: 'not-an-addr' })).toThrow();
   });
 
-  it('enriches with resolveOrder + threads postShillForTool to shillerPersona.run', async () => {
-    const run = vi.fn(
-      async (
-        _input: ShillerPersonaInput,
-        _ctx: PersonaRunContext,
-      ): Promise<ShillerPersonaOutput> => ({
-        orderId: 'order-42',
-        tokenAddr: FAKE_TOKEN_ADDR,
-        decision: 'shill',
-        tweetId: 'tid-42',
-        tweetUrl: 'https://x.com/stub/status/tid-42',
-        tweetText: 'curious tale of HBNB',
-        postedAt: '2026-04-19T01:00:00.000Z',
-        toolCalls: [],
-      }),
+  it('calls runShillMarketDemo with the orchestrator deps bundle and forwards tokenAddr + brief', async () => {
+    // Override the postShillForTool so runShillerAgent's single call
+    // resolves to a known tweetId when the spy drives the runShillerImpl.
+    const postShillForTool = fakePostShillForTool({ tweetId: 'tid-forwarded' });
+    const spy = spyRunShillMarketDemo();
+    const tool = createInvokeShillerTool(
+      buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, postShillForTool }),
     );
-    const persona = makeShillerPersona(run);
-    const postShillForTool = fakePostShillForTool();
-    const resolveOrder = vi.fn(() => ({
-      orderId: 'order-42',
-      loreSnippet: 'a whispered lore chapter',
-      tokenSymbol: 'HBNB2026-ALP',
-    }));
-
-    const tool = createInvokeShillerTool({
-      persona,
-      postShillForTool,
-      resolveOrder,
-    });
 
     const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, brief: 'please hype' });
 
-    expect(resolveOrder).toHaveBeenCalledWith(FAKE_TOKEN_ADDR, 'please hype');
-    expect(run).toHaveBeenCalledTimes(1);
-    const [input] = run.mock.calls[0]!;
-    expect(input.orderId).toBe('order-42');
-    expect(input.tokenAddr).toBe(FAKE_TOKEN_ADDR);
-    expect(input.loreSnippet).toBe('a whispered lore chapter');
-    expect(input.tokenSymbol).toBe('HBNB2026-ALP');
-    expect(input.creatorBrief).toBe('please hype');
-    expect(input.postShillForTool).toBe(postShillForTool);
+    // Orchestrator called exactly once with the bundle of deps the factory
+    // threads through.
+    expect(spy.calls).toHaveLength(1);
+    const call = spy.calls[0]!;
+    expect(call.args.tokenAddr).toBe(FAKE_TOKEN_ADDR);
+    expect(call.args.creatorBrief).toBe('please hype');
+    expect(call.config).toBe(FAKE_CONFIG);
+    expect(call.anthropic).toBe(FAKE_ANTHROPIC);
+    // Factory captured the shiller persona output via its runShillerImpl
+    // closure. The postShillForTool's tweetId shows up verbatim because the
+    // spy drives runShillerAgent → post_shill_for → ShillerAgentOutput.
     expect(output.decision).toBe('shill');
-    expect(output.tweetId).toBe('tid-42');
+    expect(output.tweetId).toBe('tid-forwarded');
+    expect(output.tokenAddr).toBe(FAKE_TOKEN_ADDR);
   });
 
-  it('emits entry/exit logs, a tweet-url artifact on shill, and threads ctx callbacks', async () => {
-    const run = vi.fn(
-      async (
-        _input: ShillerPersonaInput,
-        _ctx: PersonaRunContext,
-      ): Promise<ShillerPersonaOutput> => ({
-        orderId: 'order-z',
-        tokenAddr: FAKE_TOKEN_ADDR,
-        decision: 'shill',
-        tweetId: 'tid-z',
-        tweetUrl: 'https://x.com/stub/status/tid-z',
-        tweetText: 'z',
-        postedAt: '2026-04-19T00:00:00.000Z',
-        toolCalls: [],
+  it('omits creatorBrief from args when brief is undefined', async () => {
+    const spy = spyRunShillMarketDemo();
+    const tool = createInvokeShillerTool(buildMinimalDeps({ runShillMarketDemoImpl: spy.impl }));
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    expect(spy.calls[0]!.args.creatorBrief).toBeUndefined();
+  });
+
+  it('forwards creatorPaymentImpl into the orchestrator when supplied', async () => {
+    const spy = spyRunShillMarketDemo();
+    const creatorPaymentImpl: CreatorPaymentPhaseFn = async () => ({
+      orderId: 'order-paid',
+      paidTxHash: `0x${'ab'.repeat(32)}`,
+      paidAmountUsdc: '0.01',
+    });
+    const tool = createInvokeShillerTool(
+      buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, creatorPaymentImpl }),
+    );
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    expect(spy.calls[0]!.creatorPaymentImpl).toBe(creatorPaymentImpl);
+  });
+
+  it('leaves creatorPaymentImpl undefined when the factory dep is omitted (stub path)', async () => {
+    const spy = spyRunShillMarketDemo();
+    const tool = createInvokeShillerTool(buildMinimalDeps({ runShillMarketDemoImpl: spy.impl }));
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    expect(spy.calls[0]!.creatorPaymentImpl).toBeUndefined();
+  });
+
+  it('threads the injected postShillForTool into the runShillerImpl it builds', async () => {
+    // Capture the tool runShillerAgent actually receives by wrapping
+    // `postShillForTool.execute`. If the factory stops threading the
+    // injected tool through the runShillerImpl (e.g. accidentally rebuilds
+    // one via config), this spy never fires.
+    const executeSpy = vi.fn(
+      async (input: PostShillForInput): Promise<PostShillForOutput> => ({
+        orderId: input.orderId,
+        tokenAddr: input.tokenAddr,
+        tweetId: 'tid-threaded',
+        tweetUrl: 'https://x.com/stub/status/tid-threaded',
+        tweetText: 'threaded',
+        postedAt: '2026-04-20T00:00:00.000Z',
       }),
     );
-    const persona = makeShillerPersona(run);
-    const onLog = vi.fn<(event: LogEvent) => void>();
-    const onArtifact = vi.fn<(artifact: Artifact) => void>();
+    const postShillForTool: AgentTool<PostShillForInput, PostShillForOutput> = {
+      name: 'post_shill_for',
+      description: 'threaded stub',
+      inputSchema: postShillForInputSchema,
+      outputSchema: postShillForOutputSchema,
+      execute: executeSpy,
+    };
+    const spy = spyRunShillMarketDemo();
+    const tool = createInvokeShillerTool(
+      buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, postShillForTool }),
+    );
 
-    const tool = createInvokeShillerTool({
-      persona,
-      postShillForTool: fakePostShillForTool(),
-      resolveOrder: () => ({ orderId: 'order-z', loreSnippet: 'snip' }),
-      onLog,
-      onArtifact,
-    });
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
 
-    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
-
-    const logMessages = onLog.mock.calls.map((c) => c[0].message);
-    expect(logMessages.some((m) => m.includes('starting'))).toBe(true);
-    expect(logMessages.some((m) => m.includes('finished'))).toBe(true);
-    onLog.mock.calls.forEach((call) => expect(call[0].agent).toBe('shiller'));
-
-    const tweetUrl = onArtifact.mock.calls.find((c) => c[0].kind === 'tweet-url')?.[0];
-    expect(tweetUrl).toMatchObject({
-      kind: 'tweet-url',
-      url: 'https://x.com/stub/status/tid-z',
-      tweetId: 'tid-z',
-    });
-
-    // ctx carries onLog so runShillerAgent's [shill mode] logs flow through.
-    const [, ctx] = run.mock.calls[0]!;
-    expect(ctx.onLog).toBe(onLog);
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    expect(output.tweetId).toBe('tid-threaded');
   });
 
-  it('does NOT emit a tweet-url artifact when the persona decides to skip', async () => {
-    const persona = makeShillerPersona(async () => ({
-      orderId: 'order-q',
-      tokenAddr: FAKE_TOKEN_ADDR,
-      decision: 'skip',
-      toolCalls: [],
-      errorMessage: 'guard-exhausted',
-    }));
-    const onArtifact = vi.fn<(artifact: Artifact) => void>();
-
-    const tool = createInvokeShillerTool({
-      persona,
-      postShillForTool: fakePostShillForTool(),
-      resolveOrder: () => ({ orderId: 'order-q', loreSnippet: 's' }),
-      onArtifact,
-    });
+  it('emits entry/exit logs under agent=shiller', async () => {
+    const onLog = vi.fn<(event: LogEvent) => void>();
+    const spy = spyRunShillMarketDemo();
+    const tool = createInvokeShillerTool(
+      buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, onLog }),
+    );
 
     await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
 
-    const kinds = onArtifact.mock.calls.map((c) => c[0].kind);
-    expect(kinds).not.toContain('tweet-url');
+    // The factory's own bookend logs (entry "starting" + exit "finished")
+    // must tag agent=shiller so the UI groups them under the shiller
+    // activity rail. Phase-internal logs (runShillerAgent) forward through
+    // the same outer onLog — those tag themselves agent=market-maker per
+    // AC-P4.6-3, and we deliberately do NOT re-tag them here; re-tagging
+    // would hide the sub-agent attribution the SSE viewer relies on.
+    const bookendLogs = onLog.mock.calls
+      .map((c) => c[0])
+      .filter((e) => e.message.includes('starting') || e.message.includes('finished'));
+    expect(bookendLogs.length).toBeGreaterThanOrEqual(2);
+    bookendLogs.forEach((e) => expect(e.agent).toBe('shiller'));
+  });
+
+  it('re-raises when the orchestrator throws and emits an error log', async () => {
+    const onLog = vi.fn<(event: LogEvent) => void>();
+    const thrower: typeof runShillMarketDemo = async () => {
+      throw new Error('orchestrator exploded');
+    };
+    const tool = createInvokeShillerTool(
+      buildMinimalDeps({ runShillMarketDemoImpl: thrower, onLog }),
+    );
+
+    await expect(tool.execute({ tokenAddr: FAKE_TOKEN_ADDR })).rejects.toThrow(
+      'orchestrator exploded',
+    );
+    const errLogs = onLog.mock.calls.filter((c) => c[0].level === 'error');
+    expect(errLogs.length).toBeGreaterThanOrEqual(1);
+    expect(errLogs[0]![0].message).toContain('orchestrator exploded');
+  });
+
+  it('throws when the orchestrator completes without invoking the shiller phase', async () => {
+    // Defensive guard: if some future refactor skips runShillerImpl, the
+    // captured output would be undefined — the factory must throw a clear
+    // error instead of returning a malformed value.
+    const skipShiller: typeof runShillMarketDemo = async () => undefined;
+    const tool = createInvokeShillerTool(buildMinimalDeps({ runShillMarketDemoImpl: skipShiller }));
+    await expect(tool.execute({ tokenAddr: FAKE_TOKEN_ADDR })).rejects.toThrow(
+      /without invoking the shiller phase/,
+    );
   });
 });
 
@@ -1306,59 +1405,58 @@ describe('persona input contract', () => {
     expect(capturedInput.targetChapterNumber).toBe(5);
   });
 
-  it('invoke_shiller: tokenAddr + brief + resolveOrder output reach shillerPersona.run verbatim', async () => {
-    const run = vi.fn(
-      async (
-        _input: ShillerPersonaInput,
-        _ctx: PersonaRunContext,
-      ): Promise<ShillerPersonaOutput> => ({
-        orderId: 'order-contract',
-        tokenAddr: FAKE_TOKEN_ADDR,
-        decision: 'shill',
-        tweetId: 'tid-contract',
-        tweetUrl: 'https://x.com/stub/status/tid-contract',
-        tweetText: 'contract tweet',
-        postedAt: '2026-04-20T00:00:00.000Z',
-        toolCalls: [],
-      }),
-    );
-    const persona: Persona<ShillerPersonaInput, ShillerPersonaOutput> = {
-      id: 'shiller',
-      description: 'stub shiller',
-      inputSchema: z.any() as unknown as z.ZodType<ShillerPersonaInput>,
-      outputSchema: z.any() as unknown as z.ZodType<ShillerPersonaOutput>,
-      run,
+  it('invoke_shiller: tokenAddr + brief from Brain reach runShillMarketDemo args verbatim', async () => {
+    // Post-refactor the shiller invoke tool drives the full shill-market
+    // orchestrator. The persona input contract is reduced to "tokenAddr and
+    // brief must land on orchestrator.args verbatim"; everything else
+    // (orderId, loreSnippet, tokenSymbol) is now resolved INSIDE the
+    // orchestrator itself and covered by runShillMarketDemo's own tests.
+    const capturedCalls: RunShillMarketDemoDeps[] = [];
+    let capturedShillerPhaseDeps: Parameters<RunShillerPhaseFn>[0] | undefined;
+    const impl: typeof runShillMarketDemo = async (orchestratorDeps) => {
+      capturedCalls.push(orchestratorDeps);
+      if (orchestratorDeps.runShillerImpl !== undefined) {
+        capturedShillerPhaseDeps = {
+          anthropic: orchestratorDeps.anthropic,
+          config: orchestratorDeps.config,
+          store: orchestratorDeps.store,
+          runId: orchestratorDeps.runId,
+          orderId: 'order-contract',
+          tokenAddr: orchestratorDeps.args.tokenAddr,
+          loreSnippet: 'a whispered chapter about BNB',
+          ...(orchestratorDeps.args.creatorBrief !== undefined
+            ? { creatorBrief: orchestratorDeps.args.creatorBrief }
+            : {}),
+        };
+        await orchestratorDeps.runShillerImpl(capturedShillerPhaseDeps);
+      }
     };
-    const postShillForTool = fakePostShillForTool();
-    const resolveOrder = vi.fn(async () => ({
-      orderId: 'order-contract',
-      loreSnippet: 'a whispered chapter about BNB',
-      tokenSymbol: 'HBNB2026-ALP',
-      includeFourMemeUrl: true,
-    }));
+
+    const postShillForTool = fakePostShillForTool({ tweetId: 'tid-contract' });
+    const store = new RunStore();
+    const rec = store.create('brain-chat');
     const tool = createInvokeShillerTool({
-      persona,
+      config: {} as AppConfig,
+      anthropic: {} as unknown as Anthropic,
+      store,
+      runId: rec.runId,
+      shillOrderStore: new ShillOrderStore(),
+      loreStore: new LoreStore(),
       postShillForTool,
-      resolveOrder,
+      runShillMarketDemoImpl: impl,
     });
 
     await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, brief: 'pump the hype' });
 
-    expect(resolveOrder).toHaveBeenCalledWith(FAKE_TOKEN_ADDR, 'pump the hype');
-    expect(run).toHaveBeenCalledTimes(1);
-    const [capturedInput] = run.mock.calls[0]!;
-    // All user- and resolver-derived fields must land on TInput verbatim.
-    // The Brain LLM supplies tokenAddr + brief; everything else rides the
-    // resolver. If the wrapper drops any of these, the shiller persona
-    // posts a tweet with "HBNB2026" or no lore snippet at all.
-    expect(capturedInput.tokenAddr).toBe(FAKE_TOKEN_ADDR);
-    expect(capturedInput.creatorBrief).toBe('pump the hype');
-    expect(capturedInput.orderId).toBe('order-contract');
-    expect(capturedInput.loreSnippet).toBe('a whispered chapter about BNB');
-    expect(capturedInput.tokenSymbol).toBe('HBNB2026-ALP');
-    expect(capturedInput.includeFourMemeUrl).toBe(true);
-    // post_shill_for tool is wired through TInput — this is the only
-    // side-effect channel the shiller persona has.
-    expect(capturedInput.postShillForTool).toBe(postShillForTool);
+    expect(capturedCalls).toHaveLength(1);
+    const args = capturedCalls[0]!.args;
+    // The only user-facing params — tokenAddr + brief — must land on
+    // orchestrator.args verbatim so the downstream shill-market flow posts
+    // a tweet grounded in the actual creator prompt.
+    expect(args.tokenAddr).toBe(FAKE_TOKEN_ADDR);
+    expect(args.creatorBrief).toBe('pump the hype');
+    // The brief is also forwarded into the shiller phase closure so
+    // runShillerAgent's `creatorBrief` arg is populated.
+    expect(capturedShillerPhaseDeps?.creatorBrief).toBe('pump the hype');
   });
 });

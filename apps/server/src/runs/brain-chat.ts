@@ -14,26 +14,30 @@
  *     The orchestrator's only job is DI: wire the persona-invoke tools with
  *     their run-level context + adapters, then hand them + the messages to
  *     runBrainAgent.
- *   - Keeping state (tokenMetaByAddr, orderByAddr) local to a single run
- *     satisfies the spec's "no persistence, single server instance demo" rail.
+ *   - Run-scoped state (pending orders, latest lore, chat history) lives in
+ *     the shared PG-backed stores (LoreStore / ShillOrderStore / RunStore)
+ *     the orchestrator receives via DI, not in per-run in-memory maps.
  *
  * Registry isolation — why each persona gets its OWN sub-registry:
  *   - The Brain meta-agent (`runBrainAgent`) registers its four `invoke_*`
  *     tools into the registry we pass it, then runs its LLM loop against
  *     that registry. That is the *brain* registry.
- *   - Each `invoke_*` tool's execute path calls `persona.run(input, ctx)`
- *     where `ctx.registry` MUST be the persona's own internal sub-tool
- *     registry (e.g. creator needs narrative_generator / meme_image_creator
- *     / onchain_deployer / lore_writer). If we reused the brain's registry
- *     here, the creator persona's inner `runAgentLoop` would see the four
- *     `invoke_*` tools, call `invoke_creator` on itself, and spin an
- *     infinite recursion that wall-clocks the entire `/launch` demo path.
+ *   - Each of invoke_creator / invoke_narrator / invoke_heartbeat_tick's
+ *     execute path calls `persona.run(input, ctx)` where `ctx.registry`
+ *     MUST be the persona's own internal sub-tool registry (e.g. creator
+ *     needs narrative_generator / meme_image_creator / onchain_deployer /
+ *     lore_writer). If we reused the brain's registry here, the creator
+ *     persona's inner `runAgentLoop` would see the four `invoke_*` tools,
+ *     call `invoke_creator` on itself, and spin an infinite recursion that
+ *     wall-clocks the entire `/launch` demo path.
  *   - Therefore the orchestrator builds one fresh registry per sub-agent
  *     (creator / narrator / heartbeat) populated with only that persona's
  *     real sub-tools, plus a separate brain registry that only ever holds
- *     the four invoke_* tools. The shiller persona intentionally gets an
- *     empty fresh registry because its `run(...)` ignores `ctx.registry`
- *     (the post_shill_for tool is passed on TInput).
+ *     the four invoke_* tools.
+ *   - `invoke_shiller` is the exception: it drives `runShillMarketDemo`
+ *     end-to-end (x402 payment → shill-order enqueue → shiller persona),
+ *     bypassing the persona.run / ctx.registry pathway entirely — so no
+ *     shiller sub-registry exists.
  *
  * Not handled here (intentionally):
  *   - Per-run persistence of chat history — the HTTP caller ships the full
@@ -42,7 +46,6 @@
  *     `/launch`, `/order`, `/lore`, `/heartbeat` into tool calls; the
  *     orchestrator is transport-agnostic.
  */
-import { randomUUID } from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { PinataSDK } from 'pinata';
@@ -68,8 +71,8 @@ import {
   LIST_HEARTBEATS_TOOL_NAME,
   STOP_HEARTBEAT_TOOL_NAME,
   type NarratorTokenMeta,
-  type ShillerOrderContext,
 } from '../tools/invoke-persona.js';
+import type { CreatorPaymentPhaseFn, runShillMarketDemo } from './shill-market.js';
 import {
   createPostShillForTool,
   postShillForInputSchema,
@@ -86,7 +89,6 @@ import { createLoreExtendTool } from '../tools/lore-extend.js';
 import { createCheckTokenStatusTool } from '../tools/token-status.js';
 import { creatorPersona } from '../agents/creator.js';
 import { narratorPersona } from '../agents/narrator.js';
-import { shillerPersona } from '../agents/market-maker.js';
 import { heartbeatPersona } from '../agents/heartbeat.js';
 import { runBrainAgent, type RunBrainAgentParams } from '../agents/brain.js';
 import type { AgentLoopResult } from '../agents/runtime.js';
@@ -120,16 +122,6 @@ const HEARTBEAT_SYSTEM_PROMPT = [
   'that alone does NOT mean the token is undeployed — the contract can exist on-chain with',
   'fresh data; treat it as "newly launched" and still operate on the given tokenAddr.',
 ].join(' ');
-
-/**
- * Stub fallback lore snippet: used when the Brain dispatches `invoke_shiller`
- * before the Narrator has deposited any chapter for the token into LoreStore.
- * Mirrors `shill-market.ts::resolveLoreSnippet` — short, URL-free, non-empty
- * so the downstream post_shill_for guard is satisfied.
- */
-function fallbackLoreSnippet(tokenAddr: string): string {
-  return `A mysterious token appears at address ${tokenAddr}. No one has written its lore yet, but whispers hint at something curious worth watching.`;
-}
 
 /**
  * Build a `post_shill_for` tool from the run config. When X OAuth credentials
@@ -332,14 +324,30 @@ export interface RunBrainChatDeps {
   buildCreatorSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
   buildNarratorSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
   buildHeartbeatSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
+  /**
+   * Optional real creator-payment phase — threaded straight into the
+   * shill-market orchestrator when `/order` fires via `invoke_shiller`.
+   * Production wires `createRealCreatorPaymentPhase(...)` here so the
+   * settlement artifact carries a genuine Base Sepolia USDC tx hash. Left
+   * undefined by tests and CLI demos → `stubCreatorPaymentPhase` runs
+   * instead, emitting the zero-sentinel hash and never spending USDC.
+   */
+  creatorPaymentImpl?: CreatorPaymentPhaseFn;
+  /**
+   * Test seam for the `invoke_shiller` tool's internal `runShillMarketDemo`
+   * call. Integration tests override this so driving `/order` through the
+   * Brain agent doesn't touch Anthropic / X API / pg. Production leaves it
+   * undefined and the factory falls back to the real `runShillMarketDemo`.
+   */
+  invokeShillerRunShillMarketDemoImpl?: typeof runShillMarketDemo;
 }
 
 /**
  * BRAIN-P3 orchestrator entry point. Mirrors the shape of `runShillMarketDemo`
  * (phase callbacks injected at construction) but with only one phase — the
  * Brain agent loop itself. Persona-invoke tools are built here because they
- * need run-local state (Map-based `tokenMetaByAddr` / `orderByAddr`) that no
- * other caller has reason to manage.
+ * close over run-scoped deps (runId, RunStore, sub-registries, PG-backed
+ * stores) that no other caller has reason to manage.
  */
 export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   const {
@@ -377,10 +385,10 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   //     — each persona's internal tools. Passed to the matching
   //     `createInvoke*Tool({ registry })` so the persona's nested
   //     `runAgentLoop` (via `ctx.registry`) only sees its own sub-tools.
-  //   - `shillerSubRegistry` — a fresh empty registry. The shiller persona's
-  //     `run(...)` ignores `ctx.registry` (see market-maker.ts), but the
-  //     factory still requires a registry reference to thread onto the ctx.
-  //     An empty one avoids accidentally sharing state with any other scope.
+  //   - Shiller has NO sub-registry: `createInvokeShillerTool` now drives
+  //     `runShillMarketDemo` end-to-end and the shiller phase inside that
+  //     orchestrator calls `runShillerAgent` directly with the injected
+  //     `postShillForTool` — no Anthropic client or tool registry involved.
   //
   // Historical bug: this orchestrator used to build a single registry and
   // feed it to BOTH `runBrainAgent` AND each `createInvoke*Tool`. After
@@ -392,7 +400,6 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   const creatorSubRegistry = buildCreatorReg(config, anthropic);
   const narratorSubRegistry = buildNarratorReg(config, anthropic);
   const heartbeatSubRegistry = buildHeartbeatReg(config, anthropic);
-  const shillerSubRegistry = new ToolRegistry();
 
   // Shared event-forwarders — each tool factory takes this bundle so every
   // nested persona-side log / artifact / tool_use / assistant:delta event
@@ -456,61 +463,34 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     ...eventForwarders,
   });
 
-  // Shiller tool needs post_shill_for + an order resolver. The order resolver
-  // tries to pick up an enqueued ShillOrderStore order for the tokenAddr; if
-  // none exists, we synthesise one with a stub orderId so the tool still runs.
-  // TODO(BRAIN-P5): wire a real x402 creator-payment phase here if a user
-  // triggers a Brain-driven "/order" flow — for now, synthetic orderIds are
-  // acceptable because the Shiller persona itself still posts a real tweet.
+  // Shiller tool now delegates to the full shill-market orchestrator
+  // (runShillMarketDemo) so `/order <addr>` produces the same artifact set
+  // — x402-tx, shill-order (queued→done), shill-tweet — as a direct
+  // `POST /api/runs {kind:'shill-market'}` dispatch. This is the fix for
+  // the Ch12 evidence BASE tab "always shows sample" bug: prior to this
+  // change, Brain's `/order` short-circuited the orchestrator, never
+  // emitted `x402-tx`, and thus never landed a row in the artifacts log.
   //
   // When the X API credentials are not configured (CLI demos, unit tests),
-  // `createPostToXTool` throws at construction time. We gate the real tool on
-  // presence of all four OAuth creds and fall back to a stub that rejects
-  // cleanly when the Brain actually tries to invoke_shiller — keeping the
-  // other three tools (creator / narrator / heartbeat) usable.
+  // `buildPostShillForTool` falls back to a stub that rejects cleanly when
+  // invoked — keeping the other three tools (creator / narrator /
+  // heartbeat) usable.
   const postShillForTool = buildPostShillForTool(config, anthropic);
 
-  const resolveOrder = async (
-    tokenAddr: string,
-    _brief: string | undefined,
-  ): Promise<ShillerOrderContext> => {
-    const key = tokenAddr.toLowerCase();
-    const lore = await loreStore.getLatest(key);
-    const loreSnippet = lore?.chapterText ?? fallbackLoreSnippet(key);
-    // Token symbol travels on the lore entry itself (creator/narrator both
-    // write it on upsert), so LoreStore is the single source of truth here
-    // too — no parallel metadata cache needed.
-    const tokenSymbol = lore?.tokenSymbol;
-    // Prefer an existing queued ShillOrderStore entry (from a prior creator
-    // payment) so Brain-driven shills correlate to a real paid order when
-    // possible. Fallback to a synthetic UUID when no pending order exists —
-    // demo path acceptance per brain-conversational-surface.md.
-    const pending = (await shillOrderStore.findByTokenAddr(key)).filter(
-      (o) => o.status === 'queued' || o.status === 'processing',
-    );
-    const orderId = pending[0]?.orderId ?? randomUUID();
-    return {
-      orderId,
-      loreSnippet,
-      ...(tokenSymbol !== undefined ? { tokenSymbol } : {}),
-    };
-  };
-
-  // NB: the shiller persona's `run(...)` does not use `ctx.registry`. We
-  // still create and thread a fresh empty registry (via the
-  // createInvokeShillerTool factory's internal ctx construction) to keep
-  // the surface uniform; the factory itself currently does not accept a
-  // `registry` param, so we rely on its in-tool empty-stub (see
-  // invoke-persona.ts#createInvokeShillerTool where `ctx.registry` is set
-  // to `{}` before persona.run). The `shillerSubRegistry` variable below
-  // exists only to make the isolation rule grep-able and is deliberately
-  // unused by the factory today.
-  void shillerSubRegistry;
-
   const invokeShillerTool = createInvokeShillerTool({
-    persona: shillerPersona,
+    config,
+    anthropic,
+    store,
+    runId,
+    shillOrderStore,
+    loreStore,
     postShillForTool,
-    resolveOrder,
+    ...(deps.creatorPaymentImpl !== undefined
+      ? { creatorPaymentImpl: deps.creatorPaymentImpl }
+      : {}),
+    ...(deps.invokeShillerRunShillMarketDemoImpl !== undefined
+      ? { runShillMarketDemoImpl: deps.invokeShillerRunShillMarketDemoImpl }
+      : {}),
     ...eventForwarders,
   });
 

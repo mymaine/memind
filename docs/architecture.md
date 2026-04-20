@@ -245,8 +245,12 @@ Narrator emits lore-cid
 ### Flow 5 — Dashboard-driven A2A / Shill-market run
 
 ```
-Browser (Ch5 LaunchPanel or Ch6 OrderPanel or BrainPanel slash /order)
+Browser (Ch5 LaunchPanel or Ch6 OrderPanel) — direct kind dispatch
   → POST /api/runs { kind: 'a2a' | 'shill-market', ... }
+BrainPanel slash /order reaches the same runShillMarketDemo orchestrator
+indirectly: it POSTs kind='brain-chat', the Brain invokes its
+invoke_shiller tool, and the tool delegates to runShillMarketDemo (see
+Flow 7). Artifact set is identical.
   → server.RunStore.create(kind) → runId
   → 201 { runId }
 Browser
@@ -354,8 +358,12 @@ Server
      → runAgentLoop with BRAIN_SYSTEM_PROMPT + invoke_* tool factories
      → Brain picks invoke_creator | invoke_narrator | invoke_shiller |
          invoke_heartbeat_tick | stop_heartbeat | list_heartbeats
-         → runs the target persona inline (or reads session store state for
-           stop / list)
+         → invoke_creator / invoke_narrator / invoke_heartbeat_tick run the
+           target persona inline (or read session store state for stop / list)
+         → invoke_shiller delegates to the full runShillMarketDemo orchestrator
+           (creator x402 payment → shill-order enqueue → shiller persona), so
+           /order through BrainPanel produces the same x402-tx + shill-order
+           artifact set as a direct POST /api/runs {kind:'shill-market'}
      → every persona tool emits its own LogEvents + artifacts onto the run
   → runStore.setStatus → terminal
 Client

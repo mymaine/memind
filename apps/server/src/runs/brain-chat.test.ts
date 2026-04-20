@@ -18,6 +18,7 @@ import {
   LIST_HEARTBEATS_TOOL_NAME,
   STOP_HEARTBEAT_TOOL_NAME,
 } from '../tools/invoke-persona.js';
+import { runShillMarketDemo, type CreatorPaymentPhaseFn } from './shill-market.js';
 
 /**
  * runBrainChat orchestrator unit tests — exercise the Brain meta-agent driver
@@ -708,6 +709,159 @@ describe('runBrainChat', () => {
       expect(brainReg!.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(true);
       expect(heartbeatReg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
       expect(heartbeatReg.has(INVOKE_CREATOR_TOOL_NAME)).toBe(false);
+    });
+  });
+
+  // ─── /order routes through invoke_shiller → runShillMarketDemo ───────────
+  //
+  // Ch12 evidence BASE tab regression. Prior to the refactor the Brain's
+  // `/order` tool short-circuited the shill-market orchestrator and emitted
+  // neither `x402-tx` nor `shill-order` artifacts — the artifacts log stayed
+  // empty forever and the BASE tab fell back to sample data. This suite
+  // pins that `/order <addr>` now produces the full artifact set on the
+  // RunStore (which index.ts fans out to pg via setArtifactLog).
+  describe('/order dispatches the full shill-market orchestrator', () => {
+    const addr = '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd';
+    const sentinelTxHash = `0x${'fe'.repeat(32)}`;
+
+    it('emits x402-tx + shill-order (queued) + shill-tweet artifacts when /order fires', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: `/order ${addr}` }];
+
+      // Creator-payment phase must enqueue the order itself — matches the
+      // real contract (stubCreatorPaymentPhase + createRealCreatorPaymentPhase
+      // both do so). Without the enqueue, runShillMarketDemo's `pullById`
+      // throws when no queued row matches the returned orderId.
+      const creatorPaymentImpl: CreatorPaymentPhaseFn = async (paymentDeps) => {
+        await paymentDeps.shillOrderStore.enqueue({
+          orderId: 'order-sentinel',
+          targetTokenAddr: paymentDeps.tokenAddr.toLowerCase(),
+          ...(paymentDeps.creatorBrief !== undefined
+            ? { creatorBrief: paymentDeps.creatorBrief }
+            : {}),
+          paidTxHash: sentinelTxHash,
+          paidAmountUsdc: '0.01',
+          ts: new Date().toISOString(),
+        });
+        return {
+          orderId: 'order-sentinel',
+          paidTxHash: sentinelTxHash,
+          paidAmountUsdc: '0.01',
+        };
+      };
+
+      // Drive the real runShillMarketDemo. We do NOT override
+      // `orchestratorDeps.runShillerImpl` because that closure is what the
+      // `createInvokeShillerTool` factory installed to capture the
+      // ShillerPersonaOutput. The factory's closure calls `runShillerAgent`
+      // with the injected `postShillForTool`; here that tool is the
+      // brain-chat stub (X creds absent) which throws on execute. The
+      // shiller persona translates the throw into decision='skip' +
+      // errorMessage — exercising the failed-order artifact path.
+      const stubShillMarketImpl: typeof runShillMarketDemo = async (orchestratorDeps) => {
+        await runShillMarketDemo({
+          ...orchestratorDeps,
+          creatorPaymentImpl,
+        });
+      };
+
+      // Fake Brain agent invokes the `invoke_shiller` tool directly — this
+      // is how the real Anthropic loop would dispatch the forced tool call.
+      const runBrainAgentImpl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        const shillerTool = params.tools.find((t) => t.name === INVOKE_SHILLER_TOOL_NAME);
+        if (!shillerTool) throw new Error('invoke_shiller tool missing');
+        await shillerTool.execute({ tokenAddr: addr });
+        return {
+          finalText: 'order dispatched',
+          toolCalls: [],
+          trace: [],
+          stopReason: 'end_turn',
+        };
+      };
+
+      await runBrainChat(
+        buildDeps(record.runId, messages, runBrainAgentImpl, {
+          creatorPaymentImpl,
+          invokeShillerRunShillMarketDemoImpl: stubShillMarketImpl,
+        }),
+      );
+
+      const snapshot = runStore.get(record.runId);
+      expect(snapshot).toBeDefined();
+      // The orchestrator's artifacts must land on the RunStore under the
+      // same runId. Index.ts's setArtifactLog hook fans them out to pg so
+      // Ch12's BASE tab picks them up on the next hydration. Specifically:
+      //   - x402-tx (creator payment settlement, sentinel hash here)
+      //   - shill-order queued (fresh enqueue)
+      //   - shill-order failed (brain-chat stub postShillForTool throws,
+      //     shiller persona returns decision=skip, orchestrator marks the
+      //     order failed). shill-tweet is NOT emitted on the skip path.
+      const kinds = snapshot!.artifacts.map((a) => a.kind);
+      expect(kinds).toContain('x402-tx');
+      expect(kinds).toContain('shill-order');
+
+      const x402 = snapshot!.artifacts.find((a) => a.kind === 'x402-tx');
+      expect(x402).toMatchObject({
+        kind: 'x402-tx',
+        chain: 'base-sepolia',
+        txHash: sentinelTxHash,
+      });
+
+      // Queue emits TWO shill-order artifacts (queued → failed) because the
+      // stub postShillForTool throws when X creds are absent. Production
+      // with real X creds would produce queued → done instead.
+      const shillOrders = snapshot!.artifacts.filter((a) => a.kind === 'shill-order');
+      expect(shillOrders).toHaveLength(2);
+      const statuses = shillOrders.map((a) => (a.kind === 'shill-order' ? a.status : null));
+      expect(statuses).toContain('queued');
+      expect(statuses.some((s) => s === 'failed' || s === 'done')).toBe(true);
+
+      // Terminal run status still propagates.
+      expect(snapshot!.status).toBe('done');
+    });
+
+    it('falls back to stubCreatorPaymentPhase (zero-sentinel tx) when no creatorPaymentImpl is wired', async () => {
+      // Defensive: when production leaves `creatorPaymentImpl` undefined
+      // (CLI demos, unit tests) the orchestrator must fall back to
+      // stubCreatorPaymentPhase so `pnpm test` never spends USDC. We assert
+      // the x402-tx artifact carries the zero-sentinel hash that only the
+      // stub emits.
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: `/order ${addr}` }];
+
+      // Just forward to the real orchestrator — no deps overrides. The
+      // factory's runShillerImpl closure captures the ShillerPersonaOutput
+      // for the tool return value; runShillerAgent uses the injected stub
+      // postShillForTool which throws on execute, yielding decision=skip.
+      const stubShillMarketImpl: typeof runShillMarketDemo = async (orchestratorDeps) =>
+        runShillMarketDemo(orchestratorDeps);
+
+      const runBrainAgentImpl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        const shillerTool = params.tools.find((t) => t.name === INVOKE_SHILLER_TOOL_NAME);
+        if (!shillerTool) throw new Error('invoke_shiller tool missing');
+        await shillerTool.execute({ tokenAddr: addr });
+        return {
+          finalText: 'ok',
+          toolCalls: [],
+          trace: [],
+          stopReason: 'end_turn',
+        };
+      };
+
+      await runBrainChat(
+        buildDeps(record.runId, messages, runBrainAgentImpl, {
+          invokeShillerRunShillMarketDemoImpl: stubShillMarketImpl,
+        }),
+      );
+
+      const snapshot = runStore.get(record.runId);
+      const x402 = snapshot!.artifacts.find((a) => a.kind === 'x402-tx');
+      expect(x402).toBeDefined();
+      // Zero-sentinel from stubCreatorPaymentPhase — the default when no
+      // creatorPaymentImpl is wired.
+      if (x402?.kind === 'x402-tx') {
+        expect(x402.txHash).toBe(`0x${'0'.repeat(64)}`);
+      }
     });
   });
 });

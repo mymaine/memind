@@ -14,10 +14,11 @@ import type {
 import type { ToolRegistry } from './registry.js';
 import type { CreatorPersonaInput } from '../agents/creator.js';
 import type { NarratorPersonaInput, NarratorPersonaOutput } from '../agents/narrator.js';
-import type { ShillerPersonaInput, ShillerPersonaOutput } from '../agents/market-maker.js';
+import { runShillerAgent, type ShillerPersonaOutput } from '../agents/market-maker.js';
 import type { HeartbeatPersonaInput, HeartbeatPersonaOutput } from '../agents/heartbeat.js';
 import type { PostShillForInput, PostShillForOutput } from './post-shill-for.js';
 import type { LoreStore } from '../state/lore-store.js';
+import type { ShillOrderStore } from '../state/shill-order-store.js';
 import type {
   HeartbeatSessionAction,
   HeartbeatSessionState,
@@ -26,6 +27,13 @@ import type {
 } from '../state/heartbeat-session-store.js';
 import { DEFAULT_HEARTBEAT_MAX_TICKS } from '../state/heartbeat-session-store.js';
 import type { runAgentLoop } from '../agents/runtime.js';
+import type { AppConfig } from '../config.js';
+import type { RunStore } from '../runs/store.js';
+import {
+  runShillMarketDemo,
+  type CreatorPaymentPhaseFn,
+  type RunShillerPhaseFn,
+} from '../runs/shill-market.js';
 
 /**
  * Shared event-forwarding callback bundle. Each factory may accept these so the
@@ -70,13 +78,15 @@ export interface PersonaInvokeEventCallbacks {
  *    `NarratorPersonaInput` with `HeartbeatPersonaInput`). Forcing the Brain
  *    LLM to hand-craft all of those fields would bloat the system prompt and
  *    leak internal plumbing. The factory decides what the LLM sees.
- *  - Orchestrator-side enrichers (`resolveTokenMeta`, `resolveOrder`) are
- *    pure synchronous lookups against run-local state. The factory accepts
- *    them as callbacks so the Brain tool layer stays free of LoreStore /
- *    ShillOrderStore imports.
+ *  - Orchestrator-side enrichers (`resolveTokenMeta`) are pure lookups
+ *    against run-local state. The factory accepts them as callbacks so the
+ *    Brain tool layer stays free of LoreStore imports.
  *
- * This file deliberately does NOT touch persona internals: every tool ends
- * with a single `persona.run(input, ctx)` call.
+ * Most tools end with a single `persona.run(input, ctx)` call. The exception
+ * is `invoke_shiller`, which delegates to the full `runShillMarketDemo`
+ * orchestrator (creator x402 payment → shill-order enqueue → shiller
+ * persona) so `/order` produces the same artifact set as a direct
+ * `POST /api/runs {kind:'shill-market'}` dispatch.
  */
 
 // ─── Tool name constants ────────────────────────────────────────────────────
@@ -462,118 +472,155 @@ export function createInvokeNarratorTool(
 }
 
 // ─── invoke_shiller ─────────────────────────────────────────────────────────
+//
+// Brain-chat's `/order <addr>` slash command routes here. Unlike the other
+// invoke_* factories, this one does NOT call `shillerPersona.run` directly —
+// it runs the full `runShillMarketDemo` orchestrator so the creator payment
+// (x402 on Base Sepolia) + shill-order queue transition + shiller persona
+// fire in a single execution. That is the only way the `x402-tx`,
+// `shill-order` (queued→done), and `shill-tweet` artifacts land on the
+// RunStore and surface in the Ch12 evidence tab.
+//
+// The factory builds a custom `runShillerImpl` so it can reuse the Brain
+// orchestrator's `postShillForTool` (which has the X-creds stub guard). We
+// capture the Shiller persona output via closure so the tool's return value
+// still matches `ShillerPersonaOutput` — the orchestrator itself resolves
+// void.
+// ----------------------------------------------------------------------------
 
-export interface ShillerOrderContext {
-  orderId: string;
-  loreSnippet: string;
-  tokenSymbol?: string;
-  includeFourMemeUrl?: boolean;
-}
-
-export interface CreateInvokeShillerToolDeps extends PersonaInvokeEventCallbacks {
-  persona: Persona<ShillerPersonaInput, ShillerPersonaOutput>;
+/**
+ * Narrow subset of `PersonaInvokeEventCallbacks` — unlike the other invoke_*
+ * tools, this factory never drives a `persona.run(input, ctx)` call, so
+ * `onArtifact` / `onToolUseStart` / `onToolUseEnd` / `onAssistantDelta` have
+ * nowhere to be forwarded. Artifacts and tool_use events for the
+ * shill-market orchestrator flow through `store` directly. Only `onLog` is
+ * consumed — it wraps every shiller-phase log so the brain-chat forwarder
+ * sees the same stream it does for creator / narrator / heartbeat.
+ */
+export interface CreateInvokeShillerToolDeps {
+  onLog?: (event: LogEvent) => void;
+  /** App config — forwarded to `runShillMarketDemo` for downstream wiring. */
+  config: AppConfig;
+  /** Anthropic client — forwarded to `runShillMarketDemo`. */
+  anthropic: Anthropic;
+  /** Shared RunStore — `runShillMarketDemo` emits every artifact here. */
+  store: RunStore;
+  /** Run id the orchestrator tags every artifact / log with. */
+  runId: string;
+  /** Shared ShillOrderStore — producer (payment) + consumer (shiller) hit this. */
+  shillOrderStore: ShillOrderStore;
+  /** Shared LoreStore — orchestrator pulls the latest chapter for shill grounding. */
+  loreStore: LoreStore;
   /**
-   * Injected `post_shill_for` tool. Threaded directly onto the persona's
-   * TInput; the shiller persona is post-payment deterministic and does not
-   * go through the Anthropic client or tool registry.
+   * Pre-built `post_shill_for` tool. Brain-chat gates the real tool on X
+   * credentials; we reuse its stub when creds are missing so the shill flow
+   * fails with a clear error instead of a raw HTTP 4xx.
    */
   postShillForTool: AgentTool<PostShillForInput, PostShillForOutput>;
   /**
-   * Orchestrator-supplied lookup: given the tokenAddr (and the optional
-   * Brain-provided `brief`), resolve the order-level context — orderId,
-   * latest lore snippet, tokenSymbol, and the URL mode toggle. `brief` is
-   * forwarded separately so it reaches the shiller persona's `creatorBrief`
-   * slot verbatim. Async so the resolver can consult pg-backed stores.
+   * Test seam — defaults to the real `runShillMarketDemo` import. Unit tests
+   * pass a spy so they can assert the orchestrator was driven with the
+   * correct args without touching Anthropic / Base Sepolia.
    */
-  resolveOrder: (
-    tokenAddr: string,
-    brief: string | undefined,
-  ) => Promise<ShillerOrderContext> | ShillerOrderContext;
+  runShillMarketDemoImpl?: typeof runShillMarketDemo;
+  /**
+   * Creator-payment phase. Production wires
+   * `createRealCreatorPaymentPhase(...)` here so the tx is a genuine Base
+   * Sepolia USDC settlement; tests leave this undefined to fall back to
+   * `stubCreatorPaymentPhase` (zero-sentinel hash, no USDC spend).
+   */
+  creatorPaymentImpl?: CreatorPaymentPhaseFn;
 }
 
 export function createInvokeShillerTool(
   deps: CreateInvokeShillerToolDeps,
 ): AgentTool<InvokeShillerInput, ShillerPersonaOutput> {
   const {
-    persona,
+    config,
+    anthropic,
+    store,
+    runId,
+    shillOrderStore,
+    loreStore,
     postShillForTool,
-    resolveOrder,
+    runShillMarketDemoImpl,
+    creatorPaymentImpl,
     onLog,
-    onArtifact,
-    onToolUseStart,
-    onToolUseEnd,
-    onAssistantDelta,
   } = deps;
   return {
     name: INVOKE_SHILLER_TOOL_NAME,
     description:
-      'Dispatch the Shiller persona to post a promotional tweet for a token. Input: { tokenAddr, brief? }. Returns { orderId, tokenAddr, decision, tweetId?, tweetUrl?, tweetText?, postedAt?, toolCalls, errorMessage? }.',
+      'Run the full shill-market orchestrator: creator pays 0.01 USDC via x402 on Base Sepolia, then the Shiller persona posts a promotional tweet. Input: { tokenAddr, brief? }. Returns { orderId, tokenAddr, decision, tweetId?, tweetUrl?, tweetText?, postedAt?, toolCalls, errorMessage? }.',
     inputSchema: invokeShillerInputSchema,
     outputSchema: z.any() as unknown as z.ZodType<ShillerPersonaOutput>,
     async execute(input): Promise<ShillerPersonaOutput> {
       const parsed = invokeShillerInputSchema.parse(input);
-      const order = await resolveOrder(parsed.tokenAddr, parsed.brief);
-      const personaInput: ShillerPersonaInput = {
-        postShillForTool,
-        orderId: order.orderId,
-        tokenAddr: parsed.tokenAddr,
-        loreSnippet: order.loreSnippet,
-        ...(order.tokenSymbol !== undefined ? { tokenSymbol: order.tokenSymbol } : {}),
-        ...(parsed.brief !== undefined ? { creatorBrief: parsed.brief } : {}),
-        ...(order.includeFourMemeUrl !== undefined
-          ? { includeFourMemeUrl: order.includeFourMemeUrl }
-          : {}),
-      };
       const startedAt = Date.now();
       onLog?.({
         ts: new Date(startedAt).toISOString(),
         agent: 'shiller',
         tool: 'invoke_shiller',
         level: 'info',
-        message: `shiller persona starting (order: ${order.orderId}, token: ${parsed.tokenAddr})`,
+        message: `shill-market orchestrator starting for ${parsed.tokenAddr}`,
       });
-      // Shiller persona's run method ignores ctx.client / ctx.registry — the
-      // post_shill_for tool carries the only side-effect path. We still pass
-      // empty stubs so the PersonaRunContext shape stays uniform. Event
-      // callbacks are forwarded onto ctx so future instrumentation in the
-      // shiller adapter (e.g. wrapping post_shill_for to emit per-guard
-      // logs) can pick them up without another factory change.
-      const ctx: PersonaRunContext = {
-        client: {} as unknown,
-        registry: {} as unknown,
-        ...(onLog !== undefined ? { onLog } : {}),
-        ...(onArtifact !== undefined ? { onArtifact } : {}),
-        ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
-        ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
-        ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
-      };
-      try {
-        const result = await persona.run(personaInput, ctx);
-        // Emit a tweet-url artifact when the persona actually posted so the
-        // dashboard Artifacts tab surfaces the live tweet link.
-        if (
-          onArtifact &&
-          result.decision === 'shill' &&
-          typeof result.tweetUrl === 'string' &&
-          typeof result.tweetId === 'string'
-        ) {
-          onArtifact({
-            kind: 'tweet-url',
-            url: result.tweetUrl,
-            tweetId: result.tweetId,
-            label: 'Shiller tweet',
-          });
-        }
-        const durationMs = Date.now() - startedAt;
-        onLog?.({
-          ts: new Date().toISOString(),
-          agent: 'shiller',
-          tool: 'invoke_shiller',
-          level: 'info',
-          message: `shiller persona finished (${durationMs.toString()}ms, decision=${result.decision})`,
-          meta: { durationMs, decision: result.decision },
+
+      // Capture the Shiller phase's output through closure so the tool can
+      // return a `ShillerPersonaOutput` shaped value. `runShillMarketDemo`
+      // itself resolves void — the richer value lives inside the phase.
+      let capturedShillerOutput: ShillerPersonaOutput | undefined;
+
+      const runShillerImpl: RunShillerPhaseFn = async (phaseDeps) => {
+        const result = await runShillerAgent({
+          postShillForTool,
+          orderId: phaseDeps.orderId,
+          tokenAddr: phaseDeps.tokenAddr,
+          ...(phaseDeps.tokenSymbol !== undefined ? { tokenSymbol: phaseDeps.tokenSymbol } : {}),
+          loreSnippet: phaseDeps.loreSnippet,
+          ...(phaseDeps.creatorBrief !== undefined ? { creatorBrief: phaseDeps.creatorBrief } : {}),
+          ...(phaseDeps.includeFourMemeUrl !== undefined
+            ? { includeFourMemeUrl: phaseDeps.includeFourMemeUrl }
+            : {}),
+          // Prefer the outer `onLog` forwarder when wired so middleware
+          // wrapped around it (rate-limits, redaction, SSE bridging) also
+          // covers the shiller phase. Fall back to a direct store write so
+          // the CLI / unit-test path (no forwarder) still captures events.
+          onLog: onLog ?? ((event) => phaseDeps.store.addLog(phaseDeps.runId, event)),
         });
+        // Translate the agent output to the persona-shaped record so the
+        // surrounding orchestrator sees the identical shape it would from
+        // `defaultRunShillerImpl`. `ShillerAgentOutput` and
+        // `ShillerPersonaOutput` are structurally equivalent today; the
+        // explicit projection guards against future drift.
+        capturedShillerOutput = {
+          orderId: result.orderId,
+          tokenAddr: result.tokenAddr,
+          decision: result.decision,
+          ...(result.tweetId !== undefined ? { tweetId: result.tweetId } : {}),
+          ...(result.tweetUrl !== undefined ? { tweetUrl: result.tweetUrl } : {}),
+          ...(result.tweetText !== undefined ? { tweetText: result.tweetText } : {}),
+          ...(result.postedAt !== undefined ? { postedAt: result.postedAt } : {}),
+          toolCalls: result.toolCalls,
+          ...(result.errorMessage !== undefined ? { errorMessage: result.errorMessage } : {}),
+        };
         return result;
+      };
+
+      const orchestrator = runShillMarketDemoImpl ?? runShillMarketDemo;
+      try {
+        await orchestrator({
+          config,
+          anthropic,
+          store,
+          runId,
+          args: {
+            tokenAddr: parsed.tokenAddr,
+            ...(parsed.brief !== undefined ? { creatorBrief: parsed.brief } : {}),
+          },
+          shillOrderStore,
+          loreStore,
+          runShillerImpl,
+          ...(creatorPaymentImpl !== undefined ? { creatorPaymentImpl } : {}),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         onLog?.({
@@ -581,10 +628,38 @@ export function createInvokeShillerTool(
           agent: 'shiller',
           tool: 'invoke_shiller',
           level: 'error',
-          message: `shiller persona failed: ${message}`,
+          message: `shill-market orchestrator failed: ${message}`,
         });
         throw err;
       }
+
+      if (capturedShillerOutput === undefined) {
+        // Unreachable under the default orchestrator flow (runShiller always
+        // runs after payment). Emit a clear error so any future refactor
+        // that skips the shiller phase surfaces here instead of silently
+        // returning a malformed output.
+        const msg =
+          'invoke_shiller: runShillMarketDemo completed without invoking the shiller phase';
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'shiller',
+          tool: 'invoke_shiller',
+          level: 'error',
+          message: msg,
+        });
+        throw new Error(msg);
+      }
+
+      const durationMs = Date.now() - startedAt;
+      onLog?.({
+        ts: new Date().toISOString(),
+        agent: 'shiller',
+        tool: 'invoke_shiller',
+        level: 'info',
+        message: `shill-market orchestrator finished (${durationMs.toString()}ms, decision=${capturedShillerOutput.decision})`,
+        meta: { durationMs, decision: capturedShillerOutput.decision },
+      });
+      return capturedShillerOutput;
     },
   };
 }

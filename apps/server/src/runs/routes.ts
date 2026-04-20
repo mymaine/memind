@@ -387,6 +387,13 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
         loreStore,
         shillOrderStore: brainShillOrderStore,
         heartbeatSessionStore: brainHeartbeatSessionStore,
+        // Thread the same creator-payment impl shill-market runs use so
+        // brain-chat's `/order` slash fires a real x402 settlement when
+        // AGENT_WALLET_PRIVATE_KEY is configured; tests leave it undefined
+        // and fall back to stubCreatorPaymentPhase.
+        ...(deps.shillCreatorPaymentImpl !== undefined
+          ? { creatorPaymentImpl: deps.shillCreatorPaymentImpl }
+          : {}),
       })
         .then(() => {
           runStore.setStatus(created.runId, 'done');
