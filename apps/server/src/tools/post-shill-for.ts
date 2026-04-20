@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AgentTool } from '@hack-fourmeme/shared';
 import { type AnthropicMessagesClient, extractText } from './_anthropic.js';
 import type { XPostInput, XPostOutput } from './x-post.js';
+import { BASE_RULES_NO_URL, BASE_RULES_WITH_URL, checkTweetGuard } from './tweet-guard.js';
 
 /**
  * post_shill_for — paid-shill tweet generator.
@@ -76,122 +77,22 @@ export interface CreatePostShillForToolOptions {
   postToXTool: AgentTool<XPostInput, XPostOutput>;
 }
 
-// -------------------- content guard ----------------------------------------
-
-/**
- * Guard patterns applied to every LLM draft. A single match is sufficient
- * to trigger retry.
- *
- * Notes on what's NOT here:
- *   - `\bad\b`: excluded deliberately. Word-boundary `\bad\b` is safe for
- *     the exact word "ad", but false-positive risk from "already", "ahead",
- *     "adapted" vanishes under `\b` boundary — however, even with correct
- *     boundaries, "ad" is borderline for an organic tweet and the signal-
- *     to-noise is weak in a 250-char budget. Keeping the guard tight to
- *     strong violators ("paid", "sponsored", "promotion", "hired", "shill")
- *     avoids drowning real drafts in false retries during the hackathon.
- *   - URL/domain patterns ("http://", "www.", "bscscan") are matched as raw
- *     substrings; word boundaries would miss "bscscan.com/token" which is
- *     exactly what we want to block.
- */
-interface GuardPattern {
-  label: string;
-  pattern: RegExp;
-}
-
-/**
- * Guards applied in BOTH modes. Paid-intent leaks never fit the organic
- * voice and other block explorers (bscscan / base-sepolia) are always a
- * distraction for demo viewers.
- */
-const BASE_GUARDS: GuardPattern[] = [
-  { label: 'bscscan', pattern: /bscscan/i },
-  { label: 'base-sepolia', pattern: /base-sepolia/i },
-  // Paid-intent leak words — word-boundary so common substrings pass.
-  { label: 'paid', pattern: /\bpaid\b/i },
-  { label: 'sponsored', pattern: /\bsponsored\b/i },
-  { label: 'promotion', pattern: /\bpromotion\b/i },
-  { label: 'hired', pattern: /\bhired\b/i },
-  { label: 'shill', pattern: /\bshill\b/i },
-];
-
-/**
- * Extra guards applied ONLY in safe mode (`includeFourMemeUrl=false`).
- *
- * X's 2026 anti-spam rail blocks any post containing a URL or a raw
- * `0x…40-hex` crypto address during the first 7 days after OAuth token
- * regeneration. Hackathon demo-day falls inside that cooldown, so safe
- * mode refuses both classes of content entirely.
- */
-const NO_URL_GUARDS: GuardPattern[] = [
-  { label: 'http://', pattern: /http:\/\//i },
-  { label: 'https://', pattern: /https:\/\//i },
-  { label: 'www.', pattern: /www\./i },
-  { label: 'four.meme', pattern: /four\.meme/i },
-  // Raw EVM address (40 hex chars, case-insensitive). X treats this as a
-  // crypto-address marker regardless of URL context, so safe mode refuses
-  // the raw form in any part of the tweet.
-  { label: 'crypto-address', pattern: /0x[a-f0-9]{40}/i },
-];
-
-const TWEET_HARD_CAP = 280;
-
-interface GuardResult {
-  ok: boolean;
-  violations: string[];
-}
-
-function checkGuard(tweet: string, includeFourMemeUrl: boolean): GuardResult {
-  const violations: string[] = [];
-  const patterns = includeFourMemeUrl ? BASE_GUARDS : [...BASE_GUARDS, ...NO_URL_GUARDS];
-  for (const { label, pattern } of patterns) {
-    if (pattern.test(tweet)) violations.push(label);
-  }
-  if (tweet.length > TWEET_HARD_CAP) {
-    violations.push(`length>${String(TWEET_HARD_CAP)}`);
-  }
-  return { ok: violations.length === 0, violations };
-}
-
 // -------------------- prompt builders --------------------------------------
+//
+// Guard patterns, prompt-rule fragments, and the 280-char cap live in
+// ./tweet-guard.ts — three tweet-emitting surfaces share the same contract.
+// Here we just wrap the imported rule blocks with the paid-shill persona
+// preamble and the optional retry-feedback footer.
 
-const BASE_RULES_WITH_URL = `You are a promotional agent. A creator has paid you to shill their token on your X account. Read the lore below and write ONE tweet.
-
-Rules (all MANDATORY):
-- Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
-- Length <= 280 characters including the URL (we enforce raw char count — URLs do NOT t.co-fold for our guard).
-- The four.meme URL alone is ~66 chars — budget at most ~200 chars for the body + emoji + hashtags.
-- Lead with the $SYMBOL.
-- INCLUDE the four.meme token URL at the end of the tweet so readers can click through to the token page. Format: https://four.meme/token/<TOKEN_ADDRESS> — use the exact address supplied in the user prompt (full 0x...40-hex, lowercase).
-- Do NOT include any other URL — no bscscan, no base-sepolia explorers, no personal links. The single four.meme/token URL is the only allowed link.
-- Do NOT write the words "paid", "sponsored", "promotion", "hired", or "shill" anywhere.
-- Vary emoji + hashtag usage (boilerplate "check this out" drives X spam detection).
-- Write in the voice of a curious reader who just discovered the project.
-- Never mention that you were paid, sponsored, or hired to post.
-
-Output: tweet text only.`;
-
-const BASE_RULES_NO_URL = `You are a promotional agent. A creator has paid you to shill their token on your X account. Read the lore below and write ONE tweet.
-
-Rules (all MANDATORY):
-- Output the tweet text ONLY. No preamble, no JSON, no markdown fences.
-- Length <= 250 characters (hard cap).
-- Lead with the $SYMBOL, not a URL.
-- Do NOT include http:// or https:// or www. or any URL (URLs + crypto addresses are blocked by X for the first 7 days after authentication — safe mode skips them).
-- Do NOT mention bscscan, four.meme, base-sepolia, or any block explorer.
-- Do NOT write the words "paid", "sponsored", "promotion", "hired", or "shill".
-- Do NOT include the raw token address (0x... 40-hex) — X treats it as a crypto address and blocks the post during the 7-day cooldown.
-- Vary emoji + hashtag usage.
-- Write in the voice of a curious reader who just discovered the project.
-- Never mention that you were paid.
-
-Output: tweet text only.`;
+const PERSONA_PREAMBLE =
+  'You are a promotional agent. A creator has paid you to shill their token on your X account. Read the lore below and write ONE tweet.';
 
 function buildSystemPrompt(
   includeFourMemeUrl: boolean,
   previousViolations: string[] | null,
 ): string {
-  const base = includeFourMemeUrl ? BASE_RULES_WITH_URL : BASE_RULES_NO_URL;
+  const rules = includeFourMemeUrl ? BASE_RULES_WITH_URL : BASE_RULES_NO_URL;
+  const base = `${PERSONA_PREAMBLE}\n\n${rules}\n\nOutput: tweet text only.`;
   if (previousViolations === null || previousViolations.length === 0) {
     return base;
   }
@@ -265,12 +166,12 @@ export function createPostShillForTool(
         }
 
         const candidate = extractText(response).trim();
-        const guard = checkGuard(candidate, includeFourMemeUrl);
+        const guard = checkTweetGuard(candidate, { includeFourMemeUrl });
         if (guard.ok) {
           tweetText = candidate;
           break;
         }
-        lastViolations = guard.violations;
+        lastViolations = [...guard.violations];
       }
 
       if (tweetText === null) {
