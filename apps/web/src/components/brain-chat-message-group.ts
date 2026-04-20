@@ -16,12 +16,12 @@
  *      they are runtime noise, e.g. `loop start` → `turn 1` → `stop_reason`).
  *      Tests pin the "agent + tool" key so an interleaved tool switch opens a
  *      fresh row.
- *   3. Runtime noise (`tool === 'runtime'`, any agent) → kept in the group
- *      but tagged `isRuntimeNoise: true` so the renderer can collapse it
- *      into a toggle-able `<details>` block by default. Users reported the
- *      same SDK loop chatter ("loop start", "turn N requesting completion",
- *      stop_reason lines) bleeding in under the persona agents too — we keep
- *      the rows available on demand instead of silently dropping them.
+ *   3. Noise logs are filtered out entirely (see `shouldHidePersonaLog`):
+ *      info/debug-level SDK runtime chatter (`tool === 'runtime'`) and the
+ *      executeToolBlock echo lines (`invoke tool X` / `tool X ok`) that
+ *      duplicate the nested tool-use rows. Warn/error logs ALWAYS pass
+ *      through so real failures stay visible. Power users can still inspect
+ *      the full SSE stream in the left-side LogsDrawer.
  *   4. A `tool-use-start` with agent='brain' opens a nested scope. Every
  *      subsequent persona event (agent != brain) until the matching
  *      `tool-use-end` is folded INTO that scope as children so the renderer
@@ -53,13 +53,6 @@ export type BrainChatGroup =
       readonly tool: string;
       readonly message: string;
       readonly level: 'debug' | 'info' | 'warn' | 'error';
-      /**
-       * True when the log entry is SDK runtime chatter (`tool === 'runtime'`).
-       * Renderers collapse these rows into a toggle-able details block by
-       * default so the chat surface stays quiet, but the rows remain
-       * inspectable on demand.
-       */
-      readonly isRuntimeNoise: boolean;
     }
   | {
       readonly kind: 'persona-artifact';
@@ -84,17 +77,29 @@ export type BrainChatGroup =
     };
 
 /**
- * True if a log event is SDK runtime chatter the renderer should collapse by
- * default. We consider any `tool === 'runtime'` entry to be noise regardless
- * of agent — the persona runtime loops emit the same "loop start" / "turn N
- * requesting completion" lines under `creator` / `narrator` / `heartbeat`
- * attribution when the Brain invokes them as sub-loops, and users reported
- * those bleeding into the transcript just as loudly as the brain variant.
- * Instead of dropping the events, the grouping pass tags them so the renderer
- * can fold them into a details/summary toggle.
+ * Echo pattern emitted by `executeToolBlock` alongside the authoritative
+ * `tool-use-start` / `tool-use-end` events: `invoke tool <name>` and
+ * `tool <name> ok`. The nested tool-use row already conveys the same info, so
+ * the echo lines are redundant noise in the transcript. Matches bare tokens
+ * (no whitespace inside the tool name) to avoid eating genuine status
+ * messages that happen to contain similar prose.
  */
-export function isRuntimeNoise(event: Extract<BrainChatEvent, { kind: 'persona-log' }>): boolean {
-  return event.tool === 'runtime';
+const TOOL_ECHO_PATTERN = /^(?:invoke tool \S+|tool \S+ ok)$/;
+
+/**
+ * True if a `persona-log` event is transcript noise the grouping pass should
+ * drop. Warn / error logs ALWAYS pass through so real failures (stream
+ * failed, loop exceeded maxTurns, etc.) surface to the reader; only
+ * info/debug-level runtime chatter and tool-echo lines are hidden. Power
+ * users can still inspect the raw SSE stream in the left-side LogsDrawer.
+ */
+export function shouldHidePersonaLog(
+  event: Extract<BrainChatEvent, { kind: 'persona-log' }>,
+): boolean {
+  if (event.level === 'warn' || event.level === 'error') return false;
+  if (event.tool === 'runtime') return true;
+  if (TOOL_ECHO_PATTERN.test(event.message)) return true;
+  return false;
 }
 
 /**
@@ -162,27 +167,29 @@ export function groupBrainChatEvents(events: readonly BrainChatEvent[]): readonl
         break;
       }
       case 'persona-log': {
-        const noise = isRuntimeNoise(event);
+        if (shouldHidePersonaLog(event)) {
+          // SDK runtime chatter + tool-echo duplicates are filtered upstream
+          // rather than surfaced as collapsed rows: the nested tool-use
+          // groups already convey the same information, and LogsDrawer still
+          // has the full SSE stream for debugging.
+          break;
+        }
         const last = tail();
         if (
           last !== null &&
           last.kind === 'persona-log' &&
           last.agent === event.agent &&
-          last.tool === event.tool &&
-          last.isRuntimeNoise === noise
+          last.tool === event.tool
         ) {
           // Same persona+tool in a row → keep the latest message only. Older
           // lines are typically progress noise ("turn 1", "turn 2") that the
-          // last line already supersedes. We also require matching noise
-          // classification so a real persona log never collapses into a
-          // runtime-noise row and vice versa.
+          // last line already supersedes.
           replaceTail({
             kind: 'persona-log',
             agent: event.agent,
             tool: event.tool,
             message: event.message,
             level: event.level,
-            isRuntimeNoise: noise,
           });
         } else {
           push({
@@ -191,7 +198,6 @@ export function groupBrainChatEvents(events: readonly BrainChatEvent[]): readonl
             tool: event.tool,
             message: event.message,
             level: event.level,
-            isRuntimeNoise: noise,
           });
         }
         break;

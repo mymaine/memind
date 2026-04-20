@@ -6,7 +6,9 @@
  *      single thinking row whose text is concatenated.
  *   2. Consecutive persona-log events with same agent+tool collapse to the
  *      most-recent message (older runtime progress lines are dropped).
- *   3. Runtime noise (agent=brain, tool='runtime') is filtered out entirely.
+ *   3. Noise logs (SDK runtime chatter + executeToolBlock echo lines) are
+ *      hidden from the grouped output entirely, while warn/error and genuine
+ *      business logs pass through untouched.
  *   4. A brain tool-use-start opens a scope; persona events between it and
  *      the matching tool-use-end nest under its `children`.
  *   5. A persona tool-use (agent=creator) nested inside a brain scope lands
@@ -19,7 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Artifact } from '@hack-fourmeme/shared';
 import type { BrainChatEvent } from '@/hooks/useBrainChat-state';
-import { groupBrainChatEvents, isRuntimeNoise } from './brain-chat-message-group';
+import { groupBrainChatEvents } from './brain-chat-message-group';
 
 function delta(
   agent: BrainChatEvent extends { agent: infer A } ? A : never,
@@ -110,83 +112,86 @@ describe('groupBrainChatEvents — persona log dedup (scenario 2)', () => {
   });
 });
 
-describe('groupBrainChatEvents — runtime noise tagging (scenario 3)', () => {
-  it('retains brain runtime logs but tags them as noise', () => {
-    // Previously the grouping pass dropped these outright. The UX now keeps
-    // them so the renderer can fold them into a details/summary toggle and
-    // power users can still inspect the SDK loop chatter on demand.
+describe('groupBrainChatEvents — noise hiding (scenario 3)', () => {
+  it('drops info-level brain runtime logs entirely', () => {
+    // SDK loop chatter ("loop start", "turn N requesting completion",
+    // stop_reason lines) is pure debug noise — the left LogsDrawer still
+    // streams the raw SSE for power users, so the transcript hides them.
     const groups = groupBrainChatEvents([
-      log('brain', 'runtime', 'loop start'),
-      log('brain', 'runtime', 'turn 1 requesting completion'),
-      log('brain', 'runtime', 'turn 1 stop_reason=tool_use'),
+      log('brain', 'runtime', 'loop start', 'info'),
+      log('brain', 'runtime', 'turn 1 requesting completion', 'debug'),
+      log('brain', 'runtime', 'turn 1 stop_reason=tool_use', 'debug'),
     ]);
-    // Consecutive same-agent+tool still collapse to the most-recent line.
+    expect(groups).toHaveLength(0);
+  });
+
+  it('drops persona runtime logs too (creator/narrator/heartbeat)', () => {
+    // Persona runtime loops emit the same SDK chatter under their own agent
+    // attribution; we filter them alongside the brain variant.
+    const groups = groupBrainChatEvents([
+      log('creator', 'runtime', 'loop start', 'info'),
+      log('narrator', 'runtime', 'turn 2 requesting completion', 'debug'),
+      log('heartbeat', 'runtime', 'loop end stop_reason=end_turn', 'info'),
+    ]);
+    expect(groups).toHaveLength(0);
+  });
+
+  it('keeps warn/error runtime logs so real failures stay visible', () => {
+    // Consecutive same-agent+tool logs still collapse to the latest message
+    // (scenario 2's dedup rule also applies to warn/error), so two
+    // back-to-back errors on `brain/runtime` condense into one row whose
+    // message is the most recent failure.
+    const groups = groupBrainChatEvents([
+      log('brain', 'runtime', 'stream failed: boom', 'error'),
+      log('brain', 'runtime', 'loop exceeded maxTurns=8', 'error'),
+    ]);
     expect(groups).toHaveLength(1);
     const g = groups[0]!;
     expect(g.kind).toBe('persona-log');
     if (g.kind === 'persona-log') {
-      expect(g.isRuntimeNoise).toBe(true);
       expect(g.tool).toBe('runtime');
-      expect(g.message).toBe('turn 1 stop_reason=tool_use');
+      expect(g.level).toBe('error');
+      expect(g.message).toBe('loop exceeded maxTurns=8');
     }
   });
 
-  it('tags persona runtime logs as noise too (creator/narrator/heartbeat)', () => {
-    // Persona runtime loops emit the same SDK chatter under their own agent
-    // attribution; we collapse them alongside the brain variant rather than
-    // playing an agent whitelist.
+  it('drops executeToolBlock echo logs (`invoke tool X` / `tool X ok`)', () => {
+    // These info-level echoes are emitted by the runtime alongside the real
+    // tool-use-start/end events — they duplicate the nested tool-use row and
+    // add no information, so the grouping pass filters them out.
     const groups = groupBrainChatEvents([
-      log('brain', 'chat', 'replying'),
-      log('creator', 'runtime', 'loop start'),
+      log('creator', 'narrative_generator', 'invoke tool narrative_generator', 'info'),
+      log('creator', 'narrative_generator', 'tool narrative_generator ok', 'info'),
     ]);
-    expect(groups).toHaveLength(2);
-    const first = groups[0]!;
-    const second = groups[1]!;
-    expect(first.kind).toBe('persona-log');
-    if (first.kind === 'persona-log') expect(first.isRuntimeNoise).toBe(false);
-    expect(second.kind).toBe('persona-log');
-    if (second.kind === 'persona-log') expect(second.isRuntimeNoise).toBe(true);
+    expect(groups).toHaveLength(0);
   });
 
-  it('never collapses a runtime-noise row into a non-runtime persona log', () => {
-    // The dedup path keys on `agent + tool + isRuntimeNoise`. A real
-    // persona log immediately followed by a runtime-tool log must surface
-    // as two rows so the UI can fold the noise one separately.
+  it('keeps warn/error echo logs even though they match the echo pattern', () => {
+    // Consistency rule: level-based escape hatch wins so a rare warn-level
+    // "tool X ok" (e.g. tagged during an internal rate-limit path) still
+    // surfaces rather than being swallowed by the echo filter.
     const groups = groupBrainChatEvents([
-      log('creator', 'lore_writer', 'pinning chapter 1'),
-      log('creator', 'runtime', 'loop start'),
+      log('creator', 'narrative_generator', 'tool narrative_generator ok', 'warn'),
     ]);
-    expect(groups).toHaveLength(2);
+    expect(groups).toHaveLength(1);
+    const g = groups[0]!;
+    expect(g.kind).toBe('persona-log');
+    if (g.kind === 'persona-log') {
+      expect(g.level).toBe('warn');
+    }
   });
 
-  it('isRuntimeNoise helper pins the filter key (any agent + tool=runtime)', () => {
-    expect(
-      isRuntimeNoise({
-        kind: 'persona-log',
-        agent: 'brain',
-        tool: 'runtime',
-        message: 'loop start',
-        level: 'info',
-      }),
-    ).toBe(true);
-    expect(
-      isRuntimeNoise({
-        kind: 'persona-log',
-        agent: 'creator',
-        tool: 'runtime',
-        message: 'loop start',
-        level: 'info',
-      }),
-    ).toBe(true);
-    expect(
-      isRuntimeNoise({
-        kind: 'persona-log',
-        agent: 'creator',
-        tool: 'lore_writer',
-        message: 'x',
-        level: 'info',
-      }),
-    ).toBe(false);
+  it('keeps business persona logs (e.g. narrator IPFS upload) untouched', () => {
+    const groups = groupBrainChatEvents([
+      log('narrator', 'lore_writer', 'uploaded to IPFS cid=bafy1', 'info'),
+    ]);
+    expect(groups).toHaveLength(1);
+    const g = groups[0]!;
+    expect(g.kind).toBe('persona-log');
+    if (g.kind === 'persona-log') {
+      expect(g.tool).toBe('lore_writer');
+      expect(g.message).toBe('uploaded to IPFS cid=bafy1');
+    }
   });
 });
 

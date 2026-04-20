@@ -206,12 +206,12 @@ describe('<BrainChatMessage /> — UAT fixes', () => {
     expect(occurrences).toBe(1);
   });
 
-  it('collapses runtime-noise logs into a closed <details> toggle (UX fix 2026-04-21)', () => {
-    // Runtime noise used to be dropped wholesale which meant power users lost
-    // visibility into the SDK loop chatter when something misbehaved. The new
-    // behaviour: retain the log rows but fold them under a closed details
-    // block so the default reader never sees them, while still leaving the
-    // data one click away.
+  it('hides info/debug runtime-noise logs from the transcript entirely (UX fix 2026-04-21)', () => {
+    // Runtime noise used to render as a closed <details> toggle, which still
+    // left a visible summary row for every SDK loop emission. The new rule is
+    // stricter: info/debug-level runtime chatter is filtered upstream by
+    // `groupBrainChatEvents` so the transcript stays focused on real work.
+    // The left-side LogsDrawer still streams raw SSE for debugging.
     const out = renderToStaticMarkup(
       <BrainChatMessage
         turn={assistantTurn('done.', [
@@ -232,15 +232,32 @@ describe('<BrainChatMessage /> — UAT fixes', () => {
         ])}
       />,
     );
-    // <details> element present and NOT opened by default — renderToStaticMarkup
-    // emits `<details>` without an `open` attribute when `open={false}`.
-    expect(out).toMatch(/<details\b/);
-    expect(out).not.toMatch(/<details[^>]*\bopen\b/);
-    // Summary carries a runtime-log affordance users can click to expand.
-    expect(out).toMatch(/runtime log/i);
-    // The underlying noise text is still in the DOM (inside the folded body)
-    // so inspecting the details element surfaces the last message.
-    expect(out).toContain('stop_reason');
+    // Nothing from the runtime chatter survives in the rendered bubble.
+    expect(out).not.toMatch(/<details\b/);
+    expect(out).not.toMatch(/runtime log/i);
+    expect(out).not.toContain('stop_reason');
+    expect(out).not.toContain('loop start');
+  });
+
+  it('keeps warn/error runtime logs so real failures remain visible', () => {
+    // Level-based escape hatch: a warn/error log from the runtime tool (e.g.
+    // `stream failed: …`, `loop exceeded maxTurns`) must render so the user
+    // can see why a run stalled.
+    const out = renderToStaticMarkup(
+      <BrainChatMessage
+        turn={assistantTurn('', [
+          {
+            kind: 'persona-log',
+            agent: 'brain',
+            tool: 'runtime',
+            message: 'stream failed: upstream timeout',
+            level: 'error',
+          },
+        ])}
+      />,
+    );
+    expect(out).toContain('stream failed: upstream timeout');
+    expect(out).toContain('var(--color-danger)');
   });
 });
 

@@ -197,37 +197,17 @@ function PersonaLogRow({
 }: {
   group: Extract<BrainChatGroup, { kind: 'persona-log' }>;
 }): ReactElement {
+  // SDK runtime chatter + tool-echo duplicates are already filtered upstream
+  // by `groupBrainChatEvents` (`shouldHidePersonaLog`), so by the time a log
+  // reaches this renderer it is either a real business log or a warn/error
+  // escalation the user should see. Levels still drive colour tone so
+  // failures stand out.
   const levelClass =
     group.level === 'warn'
       ? 'text-[color:var(--color-warning)]'
       : group.level === 'error'
         ? 'text-[color:var(--color-danger)]'
         : 'text-fg-primary';
-  // Runtime noise (SDK loop chatter) folds into a closed <details> so the
-  // chat surface stays quiet by default. Power users can still click the
-  // summary to inspect the last-collapsed message when debugging a stuck
-  // agent loop. Note: native <details> gives us the click-to-toggle
-  // interaction for free — no client handler needed, which keeps this
-  // component SSR-pure (the file ships without 'use client').
-  if (group.isRuntimeNoise) {
-    return (
-      <details
-        className={`flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 text-[12px] ${AGENT_TONE[group.agent]}`}
-      >
-        <summary className="cursor-pointer list-none font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-fg-tertiary">
-          <span>{group.agent}</span>
-          <span> · </span>
-          <span>{group.tool}</span>
-          <span> · runtime log</span>
-        </summary>
-        <p
-          className={`mt-1 [overflow-wrap:anywhere] break-all font-[family-name:var(--font-sans-body)] ${levelClass}`}
-        >
-          {group.message}
-        </p>
-      </details>
-    );
-  }
   return (
     <div
       className={`flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-border-default border-l-4 bg-bg-surface px-3 py-2 text-[12px] ${AGENT_TONE[group.agent]}`}
