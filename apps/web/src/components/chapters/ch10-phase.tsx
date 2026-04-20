@@ -72,24 +72,30 @@ type Bubble = {
   readonly text: string;
 };
 
+// UAT 2026-04-20 (rev 2): staging must land *before* the dialogue
+// begins. Swarm-stage fades in over p=0.25 → 0.40 (mascots + empty
+// receipt frame arrive first), p=0.40 → 0.45 is a held beat that lets
+// the viewer register the set, then bubbles run on thresholds
+// [0.45, 0.60, 0.75, 0.90] — delta 0.15, ≈25% slower than the old
+// 0.12 cadence and safely behind the stage settle.
 const DIALOGUE: readonly Bubble[] = [
   {
-    t: 0.5,
+    t: 0.45,
     speaker: 'frog',
     text: 'gm. 500 USDC for 3 shills this weekend?',
   },
   {
-    t: 0.62,
+    t: 0.6,
     speaker: 'pepe',
     text: "counter 300, i'm viral enough. deal?",
   },
   {
-    t: 0.74,
+    t: 0.75,
     speaker: 'frog',
     text: 'deal. x402 handshake \u2014 signed on-chain.',
   },
   {
-    t: 0.86,
+    t: 0.9,
     speaker: 'system',
     text: 'tweets deploy \u00b7 both brains learn \u00b7 four.meme grows.',
   },
@@ -104,6 +110,72 @@ const SPEAKER_META: Record<
   system: { label: 'x402 \u00b7 settled', color: 'var(--chain-base)', align: 'center' },
 };
 
+/**
+ * x402 handshake receipt state machine (2026-04-20). The deal card sits
+ * alongside the theatre and mirrors the dialogue in structured form —
+ * buyer / seller / sku / price / take / tx / block — so the viewer
+ * gets both the colour (bubbles) and the receipt (numbers). Stages
+ * transition in lock-step with the four bubble thresholds above:
+ *
+ *   p < 0.50            → (stage dormant, deal hidden)
+ *   0.50 ≤ p < 0.62     → OFFERED   · 500 USDC quoted, tx pending
+ *   0.62 ≤ p < 0.74     → COUNTERED · 500 struck through, 300 USDC
+ *   0.74 ≤ p < 0.86     → SIGNING   · awaiting on-chain confirmation
+ *   p ≥ 0.86            → SETTLED   · real tx hash + block number
+ */
+type DealStage = {
+  readonly status: string;
+  readonly statusColor: string;
+  readonly priceBefore: string | null;
+  readonly priceNow: string;
+  readonly txText: string;
+  readonly blockText: string;
+};
+
+function dealStageFor(p: number): DealStage {
+  // Thresholds mirror the DIALOGUE bubble cadence (0.45 / 0.60 / 0.75
+  // / 0.90) so the receipt column always reads in lock-step with the
+  // talking column — never ahead, never lagging.
+  if (p < 0.6) {
+    return {
+      status: 'OFFERED',
+      statusColor: 'var(--chain-bnb)',
+      priceBefore: null,
+      priceNow: '500 USDC',
+      txText: '0x\u2026 (awaiting counter)',
+      blockText: 'block #pending',
+    };
+  }
+  if (p < 0.75) {
+    return {
+      status: 'COUNTERED',
+      statusColor: 'var(--chain-bnb)',
+      priceBefore: '500 USDC',
+      priceNow: '300 USDC',
+      txText: '0x\u2026 (accept?)',
+      blockText: 'block #pending',
+    };
+  }
+  if (p < 0.9) {
+    return {
+      status: 'SIGNING',
+      statusColor: 'var(--chain-ipfs)',
+      priceBefore: '500 USDC',
+      priceNow: '300 USDC',
+      txText: '0x4a7e\u2026pending',
+      blockText: 'block #submitting',
+    };
+  }
+  return {
+    status: 'SETTLED',
+    statusColor: 'var(--accent)',
+    priceBefore: '500 USDC',
+    priceNow: '300 USDC',
+    txText: '0x4a7e1c\u20269f02',
+    blockText: 'block #47,102,938',
+  };
+}
+
 export function Ch10Phase({ p }: Ch10PhaseProps): ReactElement {
   const cursor = lerp(0, 2, clamp(p * 1.2));
   const fillPct = (cursor / 2) * 100;
@@ -111,9 +183,16 @@ export function Ch10Phase({ p }: Ch10PhaseProps): ReactElement {
   // Swarm dialogue begins to matter once the cursor enters Phase 3's
   // active window. The two mascots breathe/animate based on whose turn
   // it is — FROG starts the conversation, PEPE counters, FROG closes.
-  const swarmStage = clamp((p - 0.4) / 0.6);
-  const frogMood: ShillingMood = p > 0.78 ? 'celebrate' : p > 0.5 ? 'megaphone' : 'walk-right';
-  const pepeMood: ShillingMood = p > 0.62 ? 'clap' : p > 0.5 ? 'surprise' : 'walk-left';
+  // Stage fades in over p=0.25 → 0.40 so mascots + the empty receipt
+  // card are fully on-screen by p=0.40. A deliberate 0.05-wide quiet
+  // beat (p=0.40 → 0.45) lets the viewer register the set before
+  // bubble 1 starts at p=0.45. Moods follow the same 0.45 / 0.60 /
+  // 0.90 beats as the dialogue itself.
+  const swarmStage = clamp((p - 0.25) / 0.15);
+  const frogMood: ShillingMood = p > 0.9 ? 'celebrate' : p > 0.45 ? 'megaphone' : 'walk-right';
+  const pepeMood: ShillingMood = p > 0.6 ? 'clap' : p > 0.45 ? 'surprise' : 'walk-left';
+
+  const deal = dealStageFor(p);
 
   return (
     <div className="ch ch-biz">
@@ -142,50 +221,102 @@ export function Ch10Phase({ p }: Ch10PhaseProps): ReactElement {
         <div className="swarm-caption">
           <Mono dim>{'// phase 3 preview \u2014 brains talking to brains, settled in USDC.'}</Mono>
         </div>
-        <div className="swarm-theatre">
-          <div className="swarm-actor swarm-actor-left">
-            <PixelHumanGlyph
-              size={88}
-              mood={frogMood}
-              primaryColor="var(--chain-bnb)"
-              accentColor="var(--accent)"
-            />
-            <Mono>$FROG.brain</Mono>
+        <div className="swarm-body">
+          <div className="swarm-theatre">
+            <div className="swarm-actor swarm-actor-left">
+              <PixelHumanGlyph
+                size={88}
+                mood={frogMood}
+                primaryColor="var(--chain-bnb)"
+                accentColor="var(--accent)"
+              />
+              <Mono>$FROG.brain</Mono>
+            </div>
+
+            <div className="swarm-bubbles">
+              {DIALOGUE.map((b, i) => {
+                const visible = p > b.t;
+                if (!visible) return null;
+                const fresh = clamp((p - b.t) * 10);
+                const meta = SPEAKER_META[b.speaker];
+                return (
+                  <div
+                    key={i}
+                    className={`swarm-bubble swarm-bubble-${meta.align}`}
+                    style={{
+                      opacity: fresh,
+                      transform: `translateY(${(1 - fresh) * 10}px)`,
+                      borderColor: meta.color,
+                    }}
+                  >
+                    <span className="swarm-bubble-speaker mono" style={{ color: meta.color }}>
+                      {meta.label}
+                    </span>
+                    <span className="swarm-bubble-text">{b.text}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="swarm-actor swarm-actor-right">
+              <PixelHumanGlyph
+                size={88}
+                mood={pepeMood}
+                primaryColor="var(--accent)"
+                accentColor="var(--chain-bnb)"
+              />
+              <Mono>$PEPE.brain</Mono>
+            </div>
           </div>
 
-          <div className="swarm-bubbles">
-            {DIALOGUE.map((b, i) => {
-              const visible = p > b.t;
-              if (!visible) return null;
-              const fresh = clamp((p - b.t) * 10);
-              const meta = SPEAKER_META[b.speaker];
-              return (
-                <div
-                  key={i}
-                  className={`swarm-bubble swarm-bubble-${meta.align}`}
-                  style={{
-                    opacity: fresh,
-                    transform: `translateY(${(1 - fresh) * 10}px)`,
-                    borderColor: meta.color,
-                  }}
-                >
-                  <span className="swarm-bubble-speaker mono" style={{ color: meta.color }}>
-                    {meta.label}
-                  </span>
-                  <span className="swarm-bubble-text">{b.text}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="swarm-actor swarm-actor-right">
-            <PixelHumanGlyph
-              size={88}
-              mood={pepeMood}
-              primaryColor="var(--accent)"
-              accentColor="var(--chain-bnb)"
-            />
-            <Mono>$PEPE.brain</Mono>
+          <div className="deal" aria-label="x402 handshake receipt">
+            <div className="deal-head">
+              <span>{'x402 \u00b7 handshake receipt'}</span>
+              <span
+                className="status"
+                style={{ color: deal.statusColor, borderColor: deal.statusColor }}
+              >
+                {deal.status}
+              </span>
+            </div>
+            <div className="deal-row">
+              <span className="k">BUYER</span>
+              <span className="v">
+                $FROG.brain <span className="mono-dim">{'0xf0\u2026be1'}</span>
+              </span>
+            </div>
+            <div className="deal-row">
+              <span className="k">SELLER</span>
+              <span className="v">
+                $PEPE.brain <span className="mono-dim">{'0xpe\u202642a'}</span>
+              </span>
+            </div>
+            <div className="deal-row">
+              <span className="k">SKU</span>
+              <span className="v">{'3\u00d7 shill \u00b7 weekend window'}</span>
+            </div>
+            <div className="deal-row">
+              <span className="k">PRICE</span>
+              <span className="v deal-price">
+                {deal.priceBefore ? <span className="strike was">{deal.priceBefore}</span> : null}
+                <span className="is">{deal.priceNow}</span>
+              </span>
+            </div>
+            <div className="deal-row">
+              <span className="k">TAKE</span>
+              <span className="v">
+                {'four.meme \u00b7 2% \u00b7 '}
+                <span className="mono-dim">6.00 USDC</span>
+              </span>
+            </div>
+            <div className="deal-row">
+              <span className="k">TX</span>
+              <span className="v mono-dim">{deal.txText}</span>
+            </div>
+            <div className="deal-foot">
+              <span>{'chain \u00b7 BNB'}</span>
+              <span>{deal.blockText}</span>
+            </div>
           </div>
         </div>
         <div className="swarm-tagline">

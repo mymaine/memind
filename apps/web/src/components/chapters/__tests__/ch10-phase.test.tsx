@@ -79,9 +79,10 @@ describe('<Ch10Phase>', () => {
   });
 
   it('swarm dialogue fades bubbles in with scripted thresholds', () => {
-    // At p=0.45 the stage itself is starting to fade in but no bubble
-    // thresholds have crossed yet (first bubble lands at t=0.5).
-    const early = renderToStaticMarkup(<Ch10Phase p={0.45} />);
+    // At p=0.40 the stage has finished fading in, but bubble 1 (t=0.45)
+    // is still dormant — the 0.05-wide "quiet beat" the viewer uses to
+    // register the set before the negotiation starts.
+    const early = renderToStaticMarkup(<Ch10Phase p={0.4} />);
     const earlyBubbles = early.match(/class="swarm-bubble swarm-bubble-/g) ?? [];
     expect(earlyBubbles).toHaveLength(0);
     // At p=1 all four bubbles have surfaced — FROG opens, PEPE counters,
@@ -100,5 +101,44 @@ describe('<Ch10Phase>', () => {
     expect(html).toContain('ecosystem flywheel');
     expect(html).toContain('brains pay brains');
     expect(html).toContain('four.meme grows');
+  });
+
+  it('surfaces an x402 handshake receipt card beside the theatre', () => {
+    // Shell regardless of p: the card is always in the DOM; only its
+    // status / price / tx contents swap as p progresses.
+    const html = renderToStaticMarkup(<Ch10Phase p={1} />);
+    expect(html).toMatch(/class="swarm-body"/);
+    expect(html).toMatch(/class="deal"/);
+    expect(html).toContain('x402 \u00b7 handshake receipt');
+    for (const key of ['BUYER', 'SELLER', 'SKU', 'PRICE', 'TAKE', 'TX']) {
+      expect(html).toContain(key);
+    }
+    expect(html).toContain('chain \u00b7 BNB');
+    expect(html).toContain('four.meme \u00b7 2%');
+  });
+
+  it('receipt walks OFFERED → COUNTERED → SIGNING → SETTLED with bubble thresholds', () => {
+    // p < 0.60 → OFFERED, flat 500 USDC (only the FROG offer on stage).
+    const offered = renderToStaticMarkup(<Ch10Phase p={0.5} />);
+    expect(offered).toContain('OFFERED');
+    expect(offered).toContain('awaiting counter');
+    expect(offered).not.toContain('strike was');
+
+    // 0.60 ≤ p < 0.75 → COUNTERED, 500 struck through + 300 USDC.
+    const countered = renderToStaticMarkup(<Ch10Phase p={0.68} />);
+    expect(countered).toContain('COUNTERED');
+    expect(countered).toMatch(/class="strike was"[^>]*>500 USDC/);
+    expect(countered).toMatch(/class="is"[^>]*>300 USDC/);
+
+    // 0.75 ≤ p < 0.90 → SIGNING, tx pending.
+    const signing = renderToStaticMarkup(<Ch10Phase p={0.82} />);
+    expect(signing).toContain('SIGNING');
+    expect(signing).toContain('pending');
+
+    // p ≥ 0.90 → SETTLED with real tx + block.
+    const settled = renderToStaticMarkup(<Ch10Phase p={0.95} />);
+    expect(settled).toContain('SETTLED');
+    expect(settled).toContain('0x4a7e1c\u20269f02');
+    expect(settled).toContain('block #47,102,938');
   });
 });
