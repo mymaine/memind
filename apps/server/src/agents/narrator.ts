@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type {
+  AnyAgentTool,
   Artifact,
   AssistantDeltaEventPayload,
   LogEvent,
@@ -9,7 +10,7 @@ import type {
   ToolUseEndEventPayload,
   ToolUseStartEventPayload,
 } from '@hack-fourmeme/shared';
-import type { ToolRegistry } from '../tools/registry.js';
+import { ToolRegistry } from '../tools/registry.js';
 import type { LoreStore } from '../state/lore-store.js';
 import { type AnchorLedger, computeAnchorId, computeContentHash } from '../state/anchor-ledger.js';
 import {
@@ -84,11 +85,11 @@ const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
 const NARRATOR_SYSTEM_PROMPT = `You are Narrator Agent, the archivist of the Four.Meme three-agent swarm. You are patient, archive-minded, and preserve timeline continuity across every token's saga.
 
-Your ONLY responsibility per invocation: call the \`extend_lore\` tool exactly once with the token inputs the caller provides, then report the result.
+Your ONLY responsibility per invocation: call the \`extend_lore\` tool exactly once, then report the result.
 
 Rules:
 - Call \`extend_lore\` exactly once. Do not call any other tool.
-- Pass the supplied tokenAddr, tokenName, tokenSymbol, previousChapters, and targetChapterNumber verbatim — do not invent alternatives.
+- The runtime injects tokenAddr, tokenName, tokenSymbol, previousChapters, and targetChapterNumber from server-side state before the tool executes — any values you pass for those fields will be overridden, so pass placeholders if needed.
 - After the tool returns, reply with a short plain-text acknowledgement referencing the chapter number and ipfsHash. No JSON, no code fences.
 - Do not post to X, do not touch on-chain state, do not attempt any action outside the single tool call above.`;
 
@@ -155,6 +156,137 @@ function expectExtendLoreOutput(output: unknown): ExtendLoreResultShape {
   };
 }
 
+/**
+ * Narrator-scoped fields the wrapper forcibly injects into every `extend_lore`
+ * call. These are the server-side authoritative values; whatever the LLM
+ * placed in its `tool_use.input` for the same fields is discarded.
+ */
+interface ExtendLoreInjection {
+  tokenAddr: string;
+  tokenName: string;
+  tokenSymbol: string;
+  previousChapters: string[];
+  targetChapterNumber: number;
+}
+
+/**
+ * Build a throwaway `ToolRegistry` for one narrator invocation. The returned
+ * registry contains every tool from `baseRegistry`, EXCEPT that `extend_lore`
+ * (if present) is swapped for a wrapper whose `execute` overrides chapter
+ * metadata with the injection values before delegating to the underlying
+ * tool. The wrapper's name / description / input & output schemas are
+ * identical to the original so the Anthropic tools payload the LLM sees does
+ * not change.
+ *
+ * Why a new registry instead of mutating `baseRegistry`: `ToolRegistry` is a
+ * process-wide singleton shared by every agent in the run (creator, heartbeat,
+ * CLI demos). Mutating it would corrupt those callers. A per-run copy keeps
+ * the injection narrator-local.
+ */
+function buildNarratorSubRegistryWithInjector(args: {
+  baseRegistry: ToolRegistry;
+  tokenAddr: string;
+  tokenName: string;
+  tokenSymbol: string;
+  previousChapters: string[];
+  targetChapterNumber: number;
+}): ToolRegistry {
+  const { baseRegistry } = args;
+  const injection: ExtendLoreInjection = {
+    tokenAddr: args.tokenAddr,
+    tokenName: args.tokenName,
+    tokenSymbol: args.tokenSymbol,
+    // Shallow copy: the caller's array may be mutated between registry build
+    // and the deferred LLM-driven execute. A one-time slice is cheap and
+    // guarantees the injection is a stable snapshot.
+    previousChapters: [...args.previousChapters],
+    targetChapterNumber: args.targetChapterNumber,
+  };
+
+  const subRegistry = new ToolRegistry();
+  for (const tool of baseRegistry.list()) {
+    if (tool.name === 'extend_lore') {
+      subRegistry.register(wrapExtendLoreWithInjector(tool, injection));
+    } else {
+      subRegistry.register(tool);
+    }
+  }
+  return subRegistry;
+}
+
+/**
+ * Wrap an `extend_lore` tool so its `execute()` receives the injection values
+ * regardless of what the LLM supplied. We also wrap the `inputSchema` with a
+ * `z.any().transform(...)` that replaces the LLM-supplied fields with the
+ * injection values during schema parse — crucially this means
+ * `runAgentLoop`'s `ToolCallTrace.input` reflects the INJECTED values, not
+ * the raw LLM input. Downstream guards (`pickExtendLoreCall`, the optional
+ * `calledAddr` hallucination check) therefore observe a fully-authoritative
+ * trace and keep passing even when the LLM attempted to pass wrong values.
+ *
+ * Output schema is preserved by reference so the existing
+ * `expectExtendLoreOutput` narrowing works unchanged.
+ */
+function wrapExtendLoreWithInjector(
+  original: AnyAgentTool,
+  injection: ExtendLoreInjection,
+): AnyAgentTool {
+  // The transform runs BEFORE execute() in runAgentLoop's flow, so by the
+  // time the runtime records `ToolCallTrace.input` the values are already
+  // overridden. We chain off the ORIGINAL inputSchema (not `z.any()`) so
+  // `ToolRegistry.toAnthropicTools()` — which drills through `ZodEffects`
+  // via `unwrapEffects` until it finds the root `ZodObject` — keeps producing
+  // the exact same JSON Schema for the LLM. In other words: the LLM sees
+  // the normal `extend_lore` shape, but whatever values it fills in are
+  // unconditionally replaced with the injection before `execute()` runs.
+  //
+  // Pre-parse guard: the LLM sometimes returns `tokenAddr` in a format that
+  // fails the original schema's `/^0x[a-fA-F0-9]{40}$/` regex (truncated,
+  // lower/upper mix, missing prefix). We tolerate that by short-circuiting
+  // the parse — call the outer transform against a safe placeholder so the
+  // injection values still land. This keeps the wrapper's contract ("runtime
+  // always wins over LLM input") intact regardless of LLM behaviour.
+  const injectedSchema = z.preprocess((input: unknown) => {
+    // Pass through whatever shape the LLM sent so the inner schema has
+    // something to chew on; the transform below will overwrite everything
+    // anyway. If the LLM sent a non-object (null / string / etc.), fall
+    // back to a minimal valid payload assembled from the injection.
+    if (typeof input !== 'object' || input === null) {
+      return {
+        tokenAddr: injection.tokenAddr,
+        tokenName: injection.tokenName,
+        tokenSymbol: injection.tokenSymbol,
+        previousChapters: injection.previousChapters,
+        targetChapterNumber: injection.targetChapterNumber,
+      };
+    }
+    // Always stuff the injection into the object BEFORE schema validation
+    // so the regex on tokenAddr passes even when the LLM supplied garbage.
+    return {
+      ...(input as Record<string, unknown>),
+      tokenAddr: injection.tokenAddr,
+      tokenName: injection.tokenName,
+      tokenSymbol: injection.tokenSymbol,
+      previousChapters: injection.previousChapters,
+      targetChapterNumber: injection.targetChapterNumber,
+    };
+  }, original.inputSchema) as unknown as AnyAgentTool['inputSchema'];
+
+  return {
+    name: original.name,
+    description: original.description,
+    inputSchema: injectedSchema,
+    outputSchema: original.outputSchema,
+    async execute(input: unknown): Promise<unknown> {
+      // `input` is already transformed (runtime parsed it through
+      // `injectedSchema` before calling execute). We still delegate to the
+      // original tool so its own validation + side effects (LLM prompt,
+      // Pinata upload) run exactly as they would unwrapped.
+      return original.execute(input);
+    },
+  };
+}
+
 export async function runNarratorAgent(
   params: RunNarratorAgentParams,
 ): Promise<NarratorAgentOutput> {
@@ -179,15 +311,43 @@ export async function runNarratorAgent(
 
   const chapterNumber = targetChapterNumber ?? previousChapters.length + 1;
 
+  // We deliberately omit prior chapter bodies from the prompt — the wrapper
+  // alone supplies them to `execute()`, keeping this LLM turn cheap and
+  // preventing the "N prior chapters attached" framing that historically
+  // made the model hallucinate chapter summaries. The user-facing instruction
+  // is a plain call-the-tool directive; we do NOT explain the wrapper because
+  // the LLM does not need to know it exists.
   const userInput =
-    `Extend the lore for token ${tokenName} (${tokenSymbol}) at ${tokenAddr}. ` +
-    `Target chapter number ${chapterNumber.toString()}. ` +
-    `${previousChapters.length.toString()} prior chapters attached.`;
+    `Call \`extend_lore\` exactly once for token ${tokenAddr}. ` +
+    'The server supplies all canonical chapter metadata; pass your best-effort values and proceed.';
+
+  // Build a per-run sub-registry in which `extend_lore` is replaced by a
+  // wrapper that force-overrides the LLM-supplied fields with the authoritative
+  // values from this runtime scope. The wrapper exposes the same name /
+  // description / schema pair so the model cannot tell it is wrapped; all it
+  // sees is the normal tool.
+  //
+  // Why override rather than trust the LLM: chapter-to-chapter continuity
+  // needs `previousChapters` (the actual prose of every prior chapter) to
+  // reach `extend_lore`'s execute path. Prior implementations relied on the
+  // system prompt telling the LLM to forward those values verbatim, but the
+  // runtime never placed the bodies into the LLM's context, so the model had
+  // nothing to forward and silently sent `[]` — causing every "continuation"
+  // to be generated under the FIRST_CHAPTER_SYSTEM_PROMPT. Wrapping guarantees
+  // the correct values land regardless of LLM behaviour.
+  const narratorSubRegistry = buildNarratorSubRegistryWithInjector({
+    baseRegistry: registry,
+    tokenAddr,
+    tokenName,
+    tokenSymbol,
+    previousChapters,
+    targetChapterNumber: chapterNumber,
+  });
 
   const loop = await runAgentLoop({
     client,
     model,
-    registry,
+    registry: narratorSubRegistry,
     systemPrompt: NARRATOR_SYSTEM_PROMPT,
     userInput,
     maxTurns,
@@ -200,11 +360,12 @@ export async function runNarratorAgent(
 
   const call = pickExtendLoreCall(loop.toolCalls);
 
-  // Guard against tool-input hallucination: the Narrator stores the chapter
-  // under `params.tokenAddr`, but `call.output` ultimately derives from the
-  // input the model fed to extend_lore. If the model rewrote that address
-  // (even accidentally), chapter data for token B would be filed under key
-  // A — a silent data-binding bug. Fail loud instead.
+  // Belt-and-suspenders hallucination guard. With the wrapper injection the
+  // trace input's `tokenAddr` is ALREADY the runtime value (the injected
+  // schema transform runs before runtime records the trace), so this check
+  // should pass unconditionally under normal operation. We keep it because
+  // the cost is one comparison and it would immediately surface any future
+  // refactor that bypasses the sub-registry or drops the schema transform.
   const calledAddr = (() => {
     const input = call.input;
     if (typeof input !== 'object' || input === null) return undefined;

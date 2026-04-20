@@ -335,17 +335,20 @@ describe('runNarratorAgent', () => {
     expect(await store.size()).toBe(0);
   });
 
-  it('throws when extend_lore was invoked with a tokenAddr different from the requested one', async () => {
+  it('overrides a hallucinated tokenAddr from the LLM with the runtime tokenAddr', async () => {
     // Model hallucinates the tool input: it swaps the address on the way in.
-    // The Narrator stores the chapter under `params.tokenAddr`, so if we let
-    // this through the chapter of the hallucinated token would be filed under
-    // the caller's key — a data-binding bug. Guard must fail loud.
-    const { tool } = makeFakeExtendLoreTool([
+    // Prior behaviour relied on a runtime guard to reject this — now the
+    // wrapper silently overwrites the LLM's tokenAddr with the authoritative
+    // runtime value, so the extend_lore execute path sees the correct
+    // address and the chapter is filed under `params.tokenAddr` as intended.
+    // This test pins that the override DOES happen (belt-and-suspenders guard
+    // stays in place and should never fire under normal operation).
+    const { tool, executeSpy } = makeFakeExtendLoreTool([
       {
         chapterNumber: 1,
-        chapterText: 'chapter for the wrong token',
-        ipfsHash: 'bafkrei-wrong',
-        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-wrong',
+        chapterText: 'chapter for the right token',
+        ipfsHash: 'bafkrei-right',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-right',
       },
     ]);
     const registry = makeRegistry(tool as unknown as AnyAgentTool);
@@ -369,16 +372,23 @@ describe('runNarratorAgent', () => {
       textOnlyResponse('ok'),
     ]);
 
-    await expect(
-      runNarratorAgent({
-        client,
-        registry,
-        store,
-        tokenAddr: TOKEN_ADDR,
-        tokenName: 'T',
-        tokenSymbol: 'T',
-      }),
-    ).rejects.toThrow(/unexpected tokenAddr/i);
+    const output = await runNarratorAgent({
+      client,
+      registry,
+      store,
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+    });
+
+    // Wrapper overwrote the hallucinated tokenAddr with the runtime value.
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const passedInput = executeSpy.mock.calls[0]?.[0] as ExtendLoreInput | undefined;
+    expect(passedInput?.tokenAddr).toBe(TOKEN_ADDR);
+    // Chapter was upserted under the runtime address, not the hallucinated one.
+    expect(output.tokenAddr).toBe(TOKEN_ADDR);
+    expect(await store.getLatest(TOKEN_ADDR)).toBeDefined();
+    expect(await store.getLatest(HALLUCINATED_ADDR)).toBeUndefined();
   });
 
   // ─── AC3 anchor hook ───────────────────────────────────────────────────────
@@ -583,6 +593,252 @@ describe('runNarratorAgent', () => {
 
     const anchors = artifacts.filter((a) => a.kind === 'lore-anchor');
     expect(anchors).toHaveLength(2);
+  });
+
+  // ─── Wrapper injection (2026-04-20) ───────────────────────────────────────
+  // The narrator wraps the registry's `extend_lore` tool so the authoritative
+  // `previousChapters` / `targetChapterNumber` / tokenAddr / tokenName /
+  // tokenSymbol always reach the real execute path regardless of what the LLM
+  // placed in its tool_use input. Prior behaviour trusted the LLM to forward
+  // these values, which broke chapter continuation because the LLM never saw
+  // the chapter bodies and silently sent `[]`.
+  //
+  // These tests pin the contract by inspecting the arguments the UNDERLYING
+  // extend_lore spy received — i.e. post-wrapper, pre-downstream.
+
+  it('injects previousChapters from runtime state even when the LLM supplies an empty array', async () => {
+    const { tool, executeSpy } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 2,
+        chapterText: 'continuation body',
+        ipfsHash: 'bafkrei-ch2',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch2',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+
+    // LLM fabricates an empty `previousChapters` — the exact failure mode
+    // that caused Chapter 2 to regress to a fresh Chapter 1. The wrapper
+    // must overwrite this with the runtime-supplied chapter text.
+    const { client } = fakeClient([
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: [],
+            targetChapterNumber: 99,
+          },
+        },
+      ]),
+      textOnlyResponse('ok'),
+    ]);
+
+    const RUNTIME_CH1 = 'ch1 full text here — runtime-supplied';
+    await runNarratorAgent({
+      client,
+      registry,
+      store,
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'HBNB2026-Alpha',
+      tokenSymbol: 'HBNB2026-ALP',
+      previousChapters: [RUNTIME_CH1],
+    });
+
+    // Critical assertion: the UNDERLYING extend_lore spy must have received
+    // the runtime's previousChapters, not the LLM's empty array.
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const passedInput = executeSpy.mock.calls[0]?.[0] as ExtendLoreInput | undefined;
+    expect(passedInput).toBeDefined();
+    expect(passedInput?.previousChapters).toEqual([RUNTIME_CH1]);
+    // Target chapter number must also be injected (2 = previousChapters.length + 1).
+    expect(passedInput?.targetChapterNumber).toBe(2);
+    // Name / symbol / addr are also forcibly overwritten.
+    expect(passedInput?.tokenAddr).toBe(TOKEN_ADDR);
+    expect(passedInput?.tokenName).toBe('HBNB2026-Alpha');
+    expect(passedInput?.tokenSymbol).toBe('HBNB2026-ALP');
+  });
+
+  it('injects the explicit targetChapterNumber over any value the LLM passes', async () => {
+    const { tool, executeSpy } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 5,
+        chapterText: 'ch5 body',
+        ipfsHash: 'bafkrei-ch5',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch5',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+
+    // LLM hallucinates a wildly wrong targetChapterNumber; the wrapper
+    // must overwrite it with the caller's explicit value (5).
+    const { client } = fakeClient([
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: ['a', 'b', 'c'],
+            targetChapterNumber: 999,
+          },
+        },
+      ]),
+      textOnlyResponse('ok'),
+    ]);
+
+    await runNarratorAgent({
+      client,
+      registry,
+      store,
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+      previousChapters: ['runtime-ch1', 'runtime-ch2', 'runtime-ch3', 'runtime-ch4'],
+      targetChapterNumber: 5,
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const passedInput = executeSpy.mock.calls[0]?.[0] as ExtendLoreInput | undefined;
+    expect(passedInput?.targetChapterNumber).toBe(5);
+    expect(passedInput?.previousChapters).toEqual([
+      'runtime-ch1',
+      'runtime-ch2',
+      'runtime-ch3',
+      'runtime-ch4',
+    ]);
+  });
+
+  it('injects runtime metadata on every LLM call when the model fires extend_lore twice', async () => {
+    // Some LLMs call the tool multiple times against spec. Regardless of how
+    // many times it fires or what the input looked like, each invocation
+    // must receive the authoritative runtime values. pickExtendLoreCall then
+    // picks the final (successful) call as the canonical result.
+    const { tool, executeSpy } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 2,
+        chapterText: 'ch2 first attempt',
+        ipfsHash: 'bafkrei-ch2a',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch2a',
+      },
+      {
+        chapterNumber: 2,
+        chapterText: 'ch2 second attempt',
+        ipfsHash: 'bafkrei-ch2b',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch2b',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+
+    const RUNTIME_CH1 = 'prior-chapter-runtime';
+    const { client } = fakeClient([
+      // Turn 1: first tool_use with an empty array
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: [],
+            targetChapterNumber: 1,
+          },
+        },
+      ]),
+      // Turn 2: model retries with a FAKE previousChapters + wrong number
+      toolUseResponse('msg_2', [
+        {
+          id: 'tu_2',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: ['fabricated chapter text'],
+            targetChapterNumber: 42,
+          },
+        },
+      ]),
+      textOnlyResponse('final ack'),
+    ]);
+
+    const result = await runNarratorAgent({
+      client,
+      registry,
+      store,
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+      previousChapters: [RUNTIME_CH1],
+    });
+
+    // Both calls landed on the underlying spy…
+    expect(executeSpy).toHaveBeenCalledTimes(2);
+    // …both carry the injected runtime values, NOT the fabricated ones.
+    for (const call of executeSpy.mock.calls) {
+      const passed = call[0] as ExtendLoreInput;
+      expect(passed.previousChapters).toEqual([RUNTIME_CH1]);
+      expect(passed.targetChapterNumber).toBe(2);
+    }
+    // pickExtendLoreCall picks the LAST call — so Chapter 2's stored CID is
+    // the second attempt's output, proving the trace is stable.
+    expect(result.ipfsHash).toBe('bafkrei-ch2b');
+  });
+
+  it('still injects runtime values when the LLM supplies a non-object input (null)', async () => {
+    // Defensive path: `z.preprocess` must recognise non-object input and
+    // substitute a fresh object assembled from the injection, instead of
+    // letting the original ZodObject parse reject a null. If this test ever
+    // fails it signals that the preprocess fallback branch was dropped.
+    const { tool, executeSpy } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 2,
+        chapterText: 'ch2 from null input',
+        ipfsHash: 'bafkrei-null',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-null',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+
+    // Craft a tool_use whose `input` is a non-object — Anthropic's JSON
+    // serialisation normally enforces object, but a malformed model response
+    // (or a fake stream for a defensive test) can still land here.
+    const { client } = fakeClient([
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: null as unknown as Record<string, unknown>,
+        },
+      ]),
+      textOnlyResponse('ok'),
+    ]);
+
+    await runNarratorAgent({
+      client,
+      registry,
+      store,
+      tokenAddr: TOKEN_ADDR,
+      tokenName: 'T',
+      tokenSymbol: 'T',
+      previousChapters: ['runtime-ch1'],
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const passed = executeSpy.mock.calls[0]?.[0] as ExtendLoreInput | undefined;
+    expect(passed?.tokenAddr).toBe(TOKEN_ADDR);
+    expect(passed?.previousChapters).toEqual(['runtime-ch1']);
+    expect(passed?.targetChapterNumber).toBe(2);
   });
 
   it('emits LogEvents tagged with agent="narrator"', async () => {
