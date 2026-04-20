@@ -79,8 +79,11 @@ registerRunRoutes(app, {
   ...(shillCreatorPaymentImpl !== undefined ? { shillCreatorPaymentImpl } : {}),
 });
 
-app.listen(config.port, () => {
-  console.info(`[server] listening on :${config.port}`);
+// Bind to 0.0.0.0 so Railway/containerised proxies can reach the app.
+// Express's default host is 127.0.0.1, which is only reachable from inside
+// the container.
+app.listen(config.port, '0.0.0.0', () => {
+  console.info(`[server] listening on 0.0.0.0:${config.port}`);
   console.info(`[server] x402 network: ${config.x402.network}`);
   console.info(`[server] facilitator: ${config.x402.facilitatorUrl}`);
 });
