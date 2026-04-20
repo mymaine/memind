@@ -5,7 +5,7 @@
  * The previous sticky-per-chapter layout wrapped every chapter in its own
  * `h-screen` slot with an inner sticky child. That has been replaced by a
  * single `<div class="scroll-slot">` plus the `<StickyStage />` engine,
- * which shares one sticky viewport across all 11 chapters. We assert:
+ * which shares one sticky viewport across all 12 chapters. We assert:
  *
  *   1. The shell mounts `.scroll-slot` exactly once (the whole narrative
  *      is driven from that single pinned viewport).
@@ -13,9 +13,10 @@
  *      + vh` so the sticky pin stays active for the entire scroll duration.
  *   3. At scrollY=0 the StickyStage culls every chapter (no `data-chapter`
  *      tiles) and the `.sticky-viewport` placeholder still mounts.
- *   4. The 11 chapter ids declared by this module stay in the
+ *   4. The 12 chapter ids declared by this module stay in the
  *      spec-mandated order — used by anchor-jump (`/market`,
- *      `location.hash`) in P0 Task 16.
+ *      `location.hash`) in P0 Task 16. (The Saga at slot 7 was inserted
+ *      2026-04-20.)
  *
  * vitest runs under `node` with no jsdom (matches every existing scene
  * test), so we render via `renderToStaticMarkup` + regex. The previous
@@ -30,7 +31,7 @@ const SLOT_VH = 3.0;
 // page.tsx seeds `vh` to 800 when `window` is undefined (the SSR default
 // used by `renderToStaticMarkup`). Keep this in sync with the module.
 const SSR_DEFAULT_VH = 800;
-const EXPECTED_CHAPTER_COUNT = 11;
+const EXPECTED_CHAPTER_COUNT = 12;
 
 function renderHome(): string {
   return renderToStaticMarkup(<HomePage />);
@@ -162,7 +163,7 @@ describe('HomePage StickyStage shell', () => {
     expect(panelMatches.length).toBe(1);
   });
 
-  it('still declares the 11 spec-mandated chapter ids in order via StickyStage props', () => {
+  it('still declares the 12 spec-mandated chapter ids in order via StickyStage props', () => {
     // The chapter ids drive anchor-jump + TOC highlighting (P0 Task 16 /
     // `/market` redirect). At scrollY=0 every chapter is culled so the
     // ids are not visible in the SSR markup; the strongest SSR-only

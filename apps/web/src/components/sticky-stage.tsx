@@ -4,7 +4,7 @@
  * StickyStage — the cross-fade scrollytelling engine
  * (memind-scrollytelling-rebuild AC-MSR-1 / AC-MSR-2).
  *
- * All 11 chapters are absolutely positioned inside a single sticky viewport.
+ * All 12 chapters are absolutely positioned inside a single sticky viewport.
  * Each chapter owns `SLOT_VH * vh` pixels of scroll distance. Within that
  * slot the chapter cross-fades in (12%), holds fully resolved (76%), then
  * cross-fades out (12%) — opacity / scale / blur only, NO translateY.

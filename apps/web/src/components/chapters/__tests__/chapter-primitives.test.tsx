@@ -3,7 +3,7 @@
  * (memind-scrollytelling-rebuild P0 Task 3).
  *
  * Ported from the design handoff. These four primitives are shared across
- * all 11 chapter components and their output must match the CSS classes
+ * all 12 chapter components and their output must match the CSS classes
  * already ported into `app/globals.css` (`.ch-label`, `.ch-label-num`,
  * `.ch-headline`, `.mono`, `.pill`, `.pill-dot`).
  *

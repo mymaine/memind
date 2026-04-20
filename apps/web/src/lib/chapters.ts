@@ -1,6 +1,8 @@
 /**
- * Canonical 11-chapter registry for the Memind scrollytelling surface
- * (memind-scrollytelling-rebuild §架構總圖).
+ * Canonical 12-chapter registry for the Memind scrollytelling surface
+ * (memind-scrollytelling-rebuild §架構總圖). The Saga (`saga`) was
+ * inserted at slot 7 on 2026-04-20 to give the Narrator persona its
+ * own scene; everything from `heartbeat-demo` onward shifted down one.
  *
  * Only `id` + `title` live here — chapter React components are wired up in
  * `app/page.tsx` next to the placeholder/real comp mapping so this registry
@@ -24,6 +26,7 @@ export const CHAPTER_META: readonly ChapterMeta[] = [
   { id: 'brain-architecture', title: 'BRAIN ARCHITECTURE' },
   { id: 'launch-demo', title: 'LAUNCH DEMO' },
   { id: 'order-shill', title: 'SHILL DEMO' },
+  { id: 'saga', title: 'THE SAGA' },
   { id: 'heartbeat-demo', title: 'HEARTBEAT' },
   { id: 'take-rate', title: 'TAKE RATE' },
   { id: 'sku-matrix', title: 'SKU MATRIX' },

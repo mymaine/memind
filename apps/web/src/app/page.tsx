@@ -4,17 +4,18 @@
  * Home page — StickyStage scrollytelling shell + TopBar / TOC / Watermark
  * (memind-scrollytelling-rebuild AC-MSR-1/-3/-4/-5).
  *
- * All 11 chapters are absolutely positioned inside a single sticky viewport
+ * All 12 chapters are absolutely positioned inside a single sticky viewport
  * (`.sticky-viewport`) and cross-fade in place as the user scrolls through
  * the surrounding `.scroll-slot` spacer. The spacer's height reserves
  * `SLOT_VH * vh` pixels per chapter plus one tail `vh`, so the sticky pin
  * stays active for the entire narrative. Opacity / scale / blur are driven
  * by a single `useScrollY()` → `StickyStage` chain — no translateY anywhere.
  *
- * Real chapter components replace placeholders one-by-one in P0 Tasks 3-13;
+ * Real chapter components replace placeholders one-by-one in P0 Tasks 3-13
+ * (Ch1-12 after the 2026-04-20 The Saga insertion at slot 7);
  * each slot currently gets a <ChPlaceholder /> tile unless an entry in
- * `REAL_COMPS` overrides it. FooterDrawer / BrainPanel mounts land in the
- * next P0 tasks.
+ * `REAL_COMPS` overrides it (Ch1-12 are all real today). FooterDrawer /
+ * BrainPanel mounts land in the next P0 tasks.
  *
  * Shell composition (AC-MSR-3/-4/-5):
  *   - <Header /> (TopBar) - fixed top, reads activeIdx + progress
@@ -34,6 +35,7 @@ import { Ch3Solution } from '@/components/chapters/ch3-solution';
 import { Ch4Brain } from '@/components/chapters/ch4-brain';
 import { Ch5Launch } from '@/components/chapters/ch5-launch';
 import { Ch6Shill } from '@/components/chapters/ch6-shill';
+import { Ch7Saga } from '@/components/chapters/ch7-saga';
 import { Ch8Heartbeat } from '@/components/chapters/ch8-heartbeat';
 import { Ch9TakeRate } from '@/components/chapters/ch9-take-rate';
 import { Ch10SKU } from '@/components/chapters/ch10-sku';
@@ -108,6 +110,7 @@ const REAL_COMPS: Partial<Record<string, StickyStageChapter['Comp']>> = {
   'brain-architecture': Ch4Brain,
   'launch-demo': Ch5Launch,
   'order-shill': Ch6Shill,
+  saga: Ch7Saga,
   'heartbeat-demo': Ch8Heartbeat,
   'take-rate': Ch9TakeRate,
   'sku-matrix': Ch10SKU,

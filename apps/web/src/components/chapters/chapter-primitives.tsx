@@ -1,5 +1,5 @@
 /**
- * Chapter primitives — shared building blocks for Ch1-11 components
+ * Chapter primitives — shared building blocks for Ch1-12 components
  * (memind-scrollytelling-rebuild P0 Task 3, AC-MSR-9).
  *
  * Ported verbatim from the design handoff and rewritten in TypeScript. These
