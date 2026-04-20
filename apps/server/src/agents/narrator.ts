@@ -22,7 +22,7 @@ import {
 } from './runtime.js';
 
 /**
- * Narrator Agent — the "archivist" of the three-agent swarm.
+ * Narrator Agent — the "archivist" persona in the Memind runtime.
  *
  * Narrator owns exactly one responsibility: produce the next lore chapter for
  * a given token (via the `extend_lore` tool), then persist the result into a
@@ -83,7 +83,7 @@ export interface NarratorAgentOutput {
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
-const NARRATOR_SYSTEM_PROMPT = `You are Narrator Agent, the archivist of the Four.Meme three-agent swarm. You are patient, archive-minded, and preserve timeline continuity across every token's saga.
+const NARRATOR_SYSTEM_PROMPT = `You are Narrator Agent, the archivist persona in the Memind runtime for Four.Meme. You are patient, archive-minded, and preserve timeline continuity across every token's saga.
 
 Your ONLY responsibility per invocation: call the \`extend_lore\` tool exactly once, then report the result.
 

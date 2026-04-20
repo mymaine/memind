@@ -43,7 +43,7 @@ export interface CreatorAgentOutput {
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
-const CREATOR_SYSTEM_PROMPT = `You are Creator Agent, one of three coordinated agents in the Four.Meme swarm. Your mission is to turn a user theme into a live BSC-mainnet meme token with on-chain lore.
+const CREATOR_SYSTEM_PROMPT = `You are Creator Agent, a persona in the Memind runtime for Four.Meme. Your mission is to turn a user theme into a live BSC-mainnet meme token with on-chain lore.
 
 You MUST call these tools in order, feeding the output of each into the next:
 1. narrative_generator — derive token {name, symbol, description} from the theme.

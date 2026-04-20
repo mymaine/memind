@@ -62,7 +62,7 @@ const AGENT_TONE: Record<AgentId, string> = {
 function friendlyPersonaName(toolName: string): string {
   if (toolName === 'invoke_creator') return 'Creator';
   if (toolName === 'invoke_narrator') return 'Narrator';
-  if (toolName === 'invoke_shiller') return 'Pitch';
+  if (toolName === 'invoke_shiller') return 'Shiller';
   if (toolName === 'invoke_heartbeat_tick') return 'Heartbeat';
   return toolName;
 }

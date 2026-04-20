@@ -59,7 +59,7 @@ const PHASES: readonly Phase[] = [
   {
     name: 'PHASE 2 \u00b7 Executable AI Agents',
     when: 'memind \u00b7 live',
-    desc: 'LLM-chat driven agents launch, shill, and settle on BNB. autonomous 60s heartbeat shipped 2026-04-20.',
+    desc: 'LLM-chat driven agents launch on BNB, settle x402 on Base Sepolia. autonomous 60s heartbeat shipped 2026-04-20.',
     status: 'shipped',
   },
   {
@@ -115,7 +115,7 @@ const SPEAKER_META: Record<
 > = {
   frog: { label: '$FROG.brain', color: 'var(--chain-bnb)', align: 'left' },
   pepe: { label: '$PEPE.brain', color: 'var(--accent)', align: 'right' },
-  system: { label: 'x402 \u00b7 settled', color: 'var(--chain-base)', align: 'center' },
+  system: { label: 'x402 \u00b7 settled', color: 'var(--chain-bnb)', align: 'center' },
 };
 
 /**
