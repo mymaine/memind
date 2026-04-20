@@ -104,7 +104,7 @@ describe('<Ch2Problem>', () => {
     expect(html).toContain('creator walks away');
     // Sleep-mood glyph sits next to the aside copy.
     expect(html).toMatch(/data-mood="sleep"/);
-    // Primary sources on-chapter so reviewers can verify the two big stats.
+    // Primary sources on-chapter so visitors can verify the two big stats.
     expect(html).toContain('coinspot.io');
     expect(html).toContain('chainplay.gg/blog/state-of-memecoin-2024');
     // Regression: the stale Dune-only link must be gone.

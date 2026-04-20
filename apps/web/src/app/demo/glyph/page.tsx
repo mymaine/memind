@@ -4,7 +4,7 @@
  * /demo/glyph — visual QA surface for the <PixelHumanGlyph> component.
  *
  * Renders all 10 moods in a grid on a near-black terminal canvas so a
- * designer / reviewer can eyeball whether each mood reads distinctly.
+ * designer / developer can eyeball whether each mood reads distinctly.
  *
  * Not part of the main nav on purpose — it is an internal QA route only.
  */

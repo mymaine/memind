@@ -506,7 +506,7 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
 
   // ─── GET /api/artifacts ──────────────────────────────────────────────────
   // Ch12 evidence hydration. Returns the most recent artifacts in
-  // `created_at DESC` order so the reviewer sees real on-chain proof even
+  // `created_at DESC` order so the visitor sees real on-chain proof even
   // before kicking off a live run. Every row is revalidated through the
   // shared `artifactSchema` before leaving the server; invalid legacy rows
   // are dropped with a warn log so one bad row never 500s the whole page.

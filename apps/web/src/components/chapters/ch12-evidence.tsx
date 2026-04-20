@@ -222,7 +222,7 @@ function tabForArtifact(a: Artifact): EvidenceTab | null {
 // + 2026-04-20 Phase 4.5 demo run. Split per tab so we can pad each tab
 // independently when the live run hasn't produced enough real data yet.
 // All hashes here are real sample artifacts — they point at working
-// BSCScan / Basescan / Pinata URLs the reviewer can click.
+// BSCScan / Basescan / Pinata URLs the visitor can click.
 const FALLBACK_ONCHAIN_TABS: Readonly<Record<EvidenceTab, readonly EvidenceRow[]>> = {
   BNB: [
     {
@@ -513,7 +513,7 @@ export function Ch12Evidence({ p }: Ch12EvidenceProps): ReactElement {
 
   // Ch12 hydration: on first real chapter entry (`p > 0`) fetch the last 20
   // artifacts from `/api/artifacts` and splice them into the mirror so the
-  // reviewer sees real evidence even before any run has kicked off. `useRef`
+  // visitor sees real evidence even before any run has kicked off. `useRef`
   // guards against React 19 StrictMode's double-invoke and against multiple
   // re-entries as the user scrolls in-and-out of the chapter. Any failure
   // (endpoint down, network error, schema drift) is swallowed silently —
@@ -677,7 +677,7 @@ export function Ch12Evidence({ p }: Ch12EvidenceProps): ReactElement {
               className="cta cta-primary"
               onClick={() => {
                 // Clicking `open the demo` slides open the BrainPanel so
-                // reviewers can try the live flow in-place. Ch11 has no
+                // visitors can try the live flow in-place. Ch11 has no
                 // access to page.tsx's `openBrain` state setter, so we
                 // dispatch a CustomEvent on `window` and let the page
                 // listen. Fails silently in non-browser environments.

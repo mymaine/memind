@@ -4,7 +4,7 @@
  * <Ch2Problem> — second chapter of the Memind scrollytelling narrative.
  *
  * Narrative pivot (2026-04-22): the prior "351 launches/day" anchor was
- * stale. The most citable, reviewer-checkable four.meme stat is the
+ * stale. The most citable, fact-checkable four.meme stat is the
  * October 2025 spam peak — ~32,480 tokens in a single day, reported by
  * coinspot (linked in the source strip). We count up to that peak, then
  * collapse the graveyard to read the 97% survivor curve from Chainplay's

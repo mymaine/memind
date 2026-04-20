@@ -102,7 +102,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: 'order',
-    description: 'Order a promotional tweet via the Pitch persona',
+    description: 'Order a promotional tweet via the Shiller persona',
     usage: '/order <tokenAddr> [brief]',
     kind: 'server',
     scopes: ['order', 'global'],
