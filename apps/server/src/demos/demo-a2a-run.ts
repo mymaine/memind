@@ -35,6 +35,7 @@ import express from 'express';
 
 import { loadConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
+import { AnchorLedger } from '../state/anchor-ledger.js';
 import { registerX402Routes } from '../x402/index.js';
 import { RunStore } from '../runs/store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from '../runs/a2a.js';
@@ -166,6 +167,11 @@ async function main(): Promise<void> {
   const anthropic = new Anthropic({ apiKey: openrouterKey, baseURL: OPENROUTER_BASE_URL });
 
   const loreStore = new LoreStore();
+  // AC3 layer-1 anchor ledger — mirrors `apps/server/src/index.ts` so the CLI
+  // path produces the same `lore-anchor` artifact stream the HTTP server does.
+  // In-memory ledger (no pg pool) is fine here: the CLI shell is short-lived
+  // and writes are only consumed by the same process.
+  const anchorLedger = new AnchorLedger();
   const runStore = new RunStore();
   const runRecord = runStore.create('a2a');
   // Subscribe early so orchestrator-level log events emitted before the
@@ -191,6 +197,10 @@ async function main(): Promise<void> {
       level: 'info',
       message: `x402 server listening on http://localhost:${config.port.toString()}`,
     });
+    // Surface the on-chain anchor layer's state at boot so the CLI transcript
+    // matches the long-lived HTTP server's boot log (see index.ts).
+    const anchorEnabled = process.env.ANCHOR_ON_CHAIN === 'true';
+    console.info(`[anchor] on-chain anchor layer: ${anchorEnabled ? 'enabled' : 'disabled'}`);
 
     await runA2ADemo({
       config,
@@ -199,6 +209,7 @@ async function main(): Promise<void> {
       runId: runRecord.runId,
       args,
       loreStore,
+      anchorLedger,
     });
     runStore.setStatus(runRecord.runId, 'done');
     printSummary(args, runStore, runRecord.runId);

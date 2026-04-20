@@ -31,6 +31,8 @@ import { createNarrativeTool } from '../tools/narrative.js';
 import { createImageTool } from '../tools/image.js';
 import { createLoreTool } from '../tools/lore.js';
 import { createOnchainDeployerTool } from '../tools/deployer.js';
+import { AnchorLedger } from '../state/anchor-ledger.js';
+import { anchorChapterOne } from '../chain/anchor-tx.js';
 
 const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
@@ -90,6 +92,13 @@ async function main(): Promise<void> {
   registry.register(createLoreTool({ anthropic, pinata, model: MODEL }));
   registry.register(createOnchainDeployerTool({ privateKey: env.BSC_DEPLOYER_PRIVATE_KEY }));
 
+  // AC3 layer-1 anchor ledger — gives the `demo:creator` CLI the same
+  // `lore-anchor` artifact surface the long-lived HTTP server produces. CLI is
+  // short-lived so in-memory ledger is sufficient.
+  const anchorLedger = new AnchorLedger();
+  const anchorEnabled = process.env.ANCHOR_ON_CHAIN === 'true';
+  console.info(`[anchor] on-chain anchor layer: ${anchorEnabled ? 'enabled' : 'disabled'}`);
+
   console.info(`[demo] theme:   ${theme}`);
   console.info(`[demo] gateway: ${OPENROUTER_BASE_URL}`);
   console.info(`[demo] model:   ${MODEL}`);
@@ -101,18 +110,57 @@ async function main(): Promise<void> {
   );
   console.info('[demo] starting Creator agent loop ...\n');
 
+  const printLog = (e: {
+    ts: string;
+    agent: string;
+    tool: string;
+    level: string;
+    message: string;
+  }): void => {
+    const ts = e.ts.slice(11, 19);
+    console.info(`[${ts}] ${e.agent}.${e.tool} [${e.level}] ${e.message}`);
+  };
+
   const started = Date.now();
   const { result, loop } = await runCreatorAgent({
     client: anthropic,
     registry,
     theme,
     model: MODEL,
-    onLog: (e) => {
-      const ts = e.ts.slice(11, 19);
-      console.info(`[${ts}] ${e.agent}.${e.tool} [${e.level}] ${e.message}`);
-    },
+    onLog: printLog,
   });
   const elapsedSec = ((Date.now() - started) / 1000).toFixed(1);
+
+  // AC3 — anchor Chapter 1 symmetrically with the `runCreatorPhase` path so
+  // the CLI produces the same on-chain evidence surface. Layer-1 always runs
+  // when the ledger is wired; layer-2 is gated inside `anchorChapterOne` by
+  // `ANCHOR_ON_CHAIN`. Non-fatal by contract — a failure here never breaks
+  // the CLI's summary print.
+  // `env.BSC_DEPLOYER_PRIVATE_KEY` is already validated non-empty + 0x-hex by
+  // `envSchema`, so we only need to guard the lore CID here.
+  if (result.loreIpfsCid !== '') {
+    await anchorChapterOne({
+      anchorLedger,
+      tokenAddr: result.tokenAddr,
+      loreCid: result.loreIpfsCid,
+      bscDeployerPrivateKey: env.BSC_DEPLOYER_PRIVATE_KEY as `0x${string}`,
+      onArtifact: (artifact) => {
+        // Surface the anchor artifacts alongside the log stream so the CLI
+        // transcript matches what the dashboard's left column would render.
+        if (artifact.kind === 'lore-anchor') {
+          const layer = artifact.onChainTxHash !== undefined ? 'layer-2' : 'layer-1';
+          const tail =
+            artifact.onChainTxHash !== undefined
+              ? ` tx=${artifact.onChainTxHash} ${artifact.explorerUrl ?? ''}`
+              : '';
+          console.info(
+            `[anchor] ${layer} ${artifact.anchorId} chapter=${artifact.chapterNumber.toString()} cid=${artifact.loreCid}${tail}`,
+          );
+        }
+      },
+      onLog: printLog,
+    });
+  }
 
   console.info('\n════════════════════════════════════════════════');
   console.info(' Creator agent run complete');
