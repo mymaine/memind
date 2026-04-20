@@ -314,7 +314,11 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect(snap.tickCount).toBe(3);
     });
 
-    it('restarting with a higher maxTicks lets a stopped session resume', async () => {
+    it('restarting a stopped session resets counters so the new run starts fresh', async () => {
+      // Regression for the "/heartbeat <addr> <ms> <n>" re-issue bug: after
+      // the first run hits its cap, the next /heartbeat should run N fresh
+      // ticks, NOT auto-stop on the immediate tick because the prior
+      // counters were still at N.
       const runTick = vi.fn(async () => makeDelta());
       await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 2 });
 
@@ -322,14 +326,47 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect((await store.get(FAKE_ADDR))!.running).toBe(false);
       expect(runTick).toHaveBeenCalledTimes(2);
 
-      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 5 });
-      await vi.advanceTimersByTimeAsync(5_000);
+      // Second run with the SAME cap — would break under the old semantics
+      // (tickCount=2, maxTicks=2 → immediate auto-stop). New semantics:
+      // stopped session restart resets counters + startedAt.
+      const second = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 1_000,
+        runTick,
+        maxTicks: 2,
+      });
+      expect(second.restarted).toBe(true);
+      expect(second.snapshot.tickCount).toBe(0);
+      expect(second.snapshot.running).toBe(true);
+      expect(second.snapshot.maxTicks).toBe(2);
 
+      await vi.advanceTimersByTimeAsync(5_000);
       const snap = (await store.get(FAKE_ADDR))!;
       expect(snap.running).toBe(false);
-      expect(snap.tickCount).toBe(5);
-      expect(snap.maxTicks).toBe(5);
-      expect(runTick).toHaveBeenCalledTimes(5);
+      expect(snap.tickCount).toBe(2);
+      expect(runTick).toHaveBeenCalledTimes(4); // 2 from first run + 2 from fresh restart
+    });
+
+    it('restarting a still-running session (interval change) preserves counters', async () => {
+      // The counter-preservation contract is still honoured when the user
+      // tweaks the cadence of a running session (NOT a stopped one).
+      const runTick = vi.fn(async () => makeDelta());
+      await store.start({ tokenAddr: FAKE_ADDR, intervalMs: 1_000, runTick, maxTicks: 10 });
+
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(runTick).toHaveBeenCalledTimes(2);
+      expect((await store.get(FAKE_ADDR))!.running).toBe(true);
+
+      // Interval changes while still running → counters preserved.
+      const second = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 500,
+        runTick,
+        maxTicks: 10,
+      });
+      expect(second.restarted).toBe(true);
+      expect(second.snapshot.tickCount).toBe(2);
+      expect(second.snapshot.running).toBe(true);
     });
   });
 });

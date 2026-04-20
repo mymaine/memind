@@ -152,6 +152,16 @@ export class HeartbeatSessionStore {
         await this.persist(existing);
         return { snapshot: snapshotOf(existing), restarted: false };
       }
+      // Restart path. Two sub-cases with different counter semantics:
+      //   1. Session still running, interval changed → user is tweaking the
+      //      cadence of the SAME run, so counters + startedAt are preserved.
+      //   2. Session was previously stopped (explicit stop OR hit its cap) →
+      //      user is starting a NEW run, so counters reset to 0 and
+      //      startedAt is refreshed. Without this, re-issuing
+      //      `/heartbeat <addr> <ms> <n>` after hitting the cap immediately
+      //      auto-stops (tickCount is already `n` from the prior run), which
+      //      is exactly the bug the user reported.
+      const wasStopped = !existing.running;
       if (existing.timer !== null) {
         this.clearIntervalImpl(existing.timer);
         existing.timer = null;
@@ -159,10 +169,18 @@ export class HeartbeatSessionStore {
       existing.intervalMs = params.intervalMs;
       existing.running = true;
       existing.runTick = params.runTick;
-      existing.maxTicks =
-        params.maxTicks !== undefined
-          ? resolvedMaxTicks
-          : Math.max(existing.maxTicks, existing.tickCount + DEFAULT_HEARTBEAT_MAX_TICKS);
+      existing.maxTicks = resolvedMaxTicks;
+      if (wasStopped) {
+        existing.startedAt = new Date().toISOString();
+        existing.tickCount = 0;
+        existing.successCount = 0;
+        existing.errorCount = 0;
+        existing.skippedCount = 0;
+        existing.lastTickAt = null;
+        existing.lastTickId = null;
+        existing.lastAction = null;
+        existing.lastError = null;
+      }
       existing.timer = this.installTimer(key);
       await this.persist(existing);
       return { snapshot: snapshotOf(existing), restarted: true };
