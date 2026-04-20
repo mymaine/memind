@@ -46,6 +46,7 @@ import {
   type XPostInput,
   type XPostOutput,
 } from '../tools/x-post.js';
+import { BASE_RULES_NO_URL } from '../tools/tweet-guard.js';
 import type { AgentTool } from '@hack-fourmeme/shared';
 import type { RunStore } from './store.js';
 import type { AppConfig } from '../config.js';
@@ -59,19 +60,27 @@ const DEFAULT_INTERVAL_MS = 10_000;
 const MAX_TURNS_PER_TICK = 4;
 
 /**
- * Same per-tick system prompt used by the CLI demo. Pulled inline so the
- * two entry points are independent but share semantics; a future refactor
- * can lift this into a shared constants file if it starts drifting.
+ * Per-tick system prompt. Cross-references the shared `BASE_RULES_NO_URL`
+ * fragment from `tweet-guard.ts` so the LLM draft this agent ships to
+ * `post_to_x` lines up with the guard the tool enforces. Before this
+ * share the prompt told the model to embed the full tokenAddr + bscscan
+ * URL — X's 2026 post-OAuth cooldown rejected every such post with a
+ * 403. Safe mode: no URL, no raw address, lore chapter reference only.
  */
 const SYSTEM_PROMPT = [
   'You are an autonomous agent operating a meme token on BSC mainnet.',
   'Each tick, call check_token_status on the configured token. Based on the status,',
-  'EITHER call post_to_x with a short tweet (<=240 chars, include the tokenAddr and a',
-  'bscscan link) OR call extend_lore to add a new chapter to the on-chain story.',
+  'EITHER call post_to_x with a short tweet drafted per the tweet rules below,',
+  'OR call extend_lore to add a new chapter to the on-chain story.',
+  'When drafting the tweet body, refer to the latest lore chapter for flavour;',
+  'the token is denoted by its $SYMBOL only — never the raw 0x address.',
+  '',
+  BASE_RULES_NO_URL,
+  '',
   'Pick exactly ONE action per tick. Your final response is a single JSON object:',
   '{"action": "post_to_x" | "extend_lore" | "idle", "reason": "..."}.',
   'Do NOT invent addresses — only use the tokenAddr provided by check_token_status.',
-].join(' ');
+].join('\n');
 
 export interface RunHeartbeatDemoDeps {
   anthropic: Anthropic;

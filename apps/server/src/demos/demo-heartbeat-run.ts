@@ -29,6 +29,7 @@ import {
   type XPostInput,
   type XPostOutput,
 } from '../tools/x-post.js';
+import { BASE_RULES_NO_URL } from '../tools/tweet-guard.js';
 import { HeartbeatAgent } from '../agents/heartbeat.js';
 
 const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
@@ -116,12 +117,17 @@ function createDryRunPostTool(): AgentTool<XPostInput, XPostOutput> {
 const SYSTEM_PROMPT = [
   'You are an autonomous agent operating a meme token on BSC mainnet.',
   'Each tick, call check_token_status on the configured token. Based on the status,',
-  'EITHER call post_to_x with a short tweet (<=240 chars, include the tokenAddr and a',
-  'bscscan link) OR call extend_lore to add a new chapter to the on-chain story.',
+  'EITHER call post_to_x with a short tweet drafted per the tweet rules below,',
+  'OR call extend_lore to add a new chapter to the on-chain story.',
+  'When drafting the tweet body, refer to the latest lore chapter for flavour;',
+  'the token is denoted by its $SYMBOL only — never the raw 0x address.',
+  '',
+  BASE_RULES_NO_URL,
+  '',
   'Pick exactly ONE action per tick. Your final response is a single JSON object:',
   '{"action": "post_to_x" | "extend_lore" | "idle", "reason": "..."}.',
   'Do NOT invent addresses — only use the tokenAddr provided by check_token_status.',
-].join(' ');
+].join('\n');
 
 function printSummary(
   args: DemoArgs,
