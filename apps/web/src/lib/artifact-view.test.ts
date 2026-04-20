@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Artifact } from '@hack-fourmeme/shared';
-import { describeArtifact } from './artifact-view';
+import { describeArtifact, isPillArtifact } from './artifact-view';
 
 /**
  * Pure-render unit coverage for describeArtifact. Existing five kinds are
@@ -88,5 +88,69 @@ describe('describeArtifact', () => {
     }
     const d = describeArtifact(a);
     expect(d.kindLabel).toMatch(/unknown error/);
+  });
+
+  // ─── lore-anchor (UX fix 2026-04-21) ───────────────────────────────────────
+  //
+  // Layer-1 lore-anchor (no on-chain tx hash yet) stays off the pill row —
+  // clicking would dead-link. Layer-2 upgraded lore-anchor (carries the full
+  // on-chain trio) opts into the pill row and renders a clickable BSC scan
+  // link so users can verify the anchor settled on-chain.
+
+  it('keeps lore-anchor OFF the pill row when only layer-1 fields are present', () => {
+    const a: Artifact = {
+      kind: 'lore-anchor',
+      anchorId: '0xabc-1',
+      tokenAddr: '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd',
+      chapterNumber: 1,
+      loreCid: 'bafkrei-ch1',
+      contentHash: `0x${'a'.repeat(64)}`,
+      ts: '2026-04-21T00:00:00.000Z',
+    };
+    expect(isPillArtifact(a)).toBe(false);
+  });
+
+  it('describes a layer-2 lore-anchor with BSC chain colour + bscscan href', () => {
+    const txHash = `0x${'e'.repeat(64)}`;
+    const a: Artifact = {
+      kind: 'lore-anchor',
+      anchorId: '0xabc-1',
+      tokenAddr: '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd',
+      chapterNumber: 1,
+      loreCid: 'bafkrei-ch1',
+      contentHash: `0x${'a'.repeat(64)}`,
+      ts: '2026-04-21T00:00:00.000Z',
+      onChainTxHash: txHash,
+      chain: 'bsc-mainnet',
+      explorerUrl: `https://bscscan.com/tx/${txHash}`,
+      label: 'lore anchor (on-chain)',
+    };
+    expect(isPillArtifact(a)).toBe(true);
+    if (!isPillArtifact(a)) throw new Error('unreachable: settled lore-anchor must be pillable');
+    const d = describeArtifact(a);
+    expect(d.chainLabel).toBe('BSC');
+    expect(d.chainColorVar).toBe('--color-chain-bnb');
+    expect(d.primaryText.startsWith('BSC ')).toBe(true);
+    expect(d.href).toBe(`https://bscscan.com/tx/${txHash}`);
+    expect(d.kindLabel).toBe('lore anchor (on-chain)');
+  });
+
+  it('falls back to a chapter-aware kindLabel when no label is provided', () => {
+    const txHash = `0x${'f'.repeat(64)}`;
+    const a: Artifact = {
+      kind: 'lore-anchor',
+      anchorId: '0xabc-3',
+      tokenAddr: '0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd',
+      chapterNumber: 3,
+      loreCid: 'bafkrei-ch3',
+      contentHash: `0x${'b'.repeat(64)}`,
+      ts: '2026-04-21T00:01:00.000Z',
+      onChainTxHash: txHash,
+      chain: 'bsc-mainnet',
+      explorerUrl: `https://bscscan.com/tx/${txHash}`,
+    };
+    if (!isPillArtifact(a)) throw new Error('unreachable: settled lore-anchor must be pillable');
+    const d = describeArtifact(a);
+    expect(d.kindLabel).toBe('lore anchor (ch.3)');
   });
 });
