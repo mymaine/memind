@@ -16,9 +16,12 @@
  *      they are runtime noise, e.g. `loop start` → `turn 1` → `stop_reason`).
  *      Tests pin the "agent + tool" key so an interleaved tool switch opens a
  *      fresh row.
- *   3. Runtime noise (agent=brain, tool='runtime') → dropped entirely. These
- *      are the Brain's internal SDK loop chatter ("loop start", "turn N
- *      requesting completion") which the user never wants to see.
+ *   3. Runtime noise (`tool === 'runtime'`, any agent) → kept in the group
+ *      but tagged `isRuntimeNoise: true` so the renderer can collapse it
+ *      into a toggle-able `<details>` block by default. Users reported the
+ *      same SDK loop chatter ("loop start", "turn N requesting completion",
+ *      stop_reason lines) bleeding in under the persona agents too — we keep
+ *      the rows available on demand instead of silently dropping them.
  *   4. A `tool-use-start` with agent='brain' opens a nested scope. Every
  *      subsequent persona event (agent != brain) until the matching
  *      `tool-use-end` is folded INTO that scope as children so the renderer
@@ -50,6 +53,13 @@ export type BrainChatGroup =
       readonly tool: string;
       readonly message: string;
       readonly level: 'debug' | 'info' | 'warn' | 'error';
+      /**
+       * True when the log entry is SDK runtime chatter (`tool === 'runtime'`).
+       * Renderers collapse these rows into a toggle-able details block by
+       * default so the chat surface stays quiet, but the rows remain
+       * inspectable on demand.
+       */
+      readonly isRuntimeNoise: boolean;
     }
   | {
       readonly kind: 'persona-artifact';
@@ -74,17 +84,17 @@ export type BrainChatGroup =
     };
 
 /**
- * True if a log event is runtime noise we never surface to the user. Runtime
- * logs come from the Brain SDK loop itself ("loop start", "turn 1 requesting
- * completion", "turn 1 stop_reason=tool_use") and carry no product value —
- * they are the UAT #2 ask.
+ * True if a log event is SDK runtime chatter the renderer should collapse by
+ * default. We consider any `tool === 'runtime'` entry to be noise regardless
+ * of agent — the persona runtime loops emit the same "loop start" / "turn N
+ * requesting completion" lines under `creator` / `narrator` / `heartbeat`
+ * attribution when the Brain invokes them as sub-loops, and users reported
+ * those bleeding into the transcript just as loudly as the brain variant.
+ * Instead of dropping the events, the grouping pass tags them so the renderer
+ * can fold them into a details/summary toggle.
  */
 export function isRuntimeNoise(event: Extract<BrainChatEvent, { kind: 'persona-log' }>): boolean {
-  if (event.agent === 'brain' && event.tool === 'runtime') return true;
-  // A couple of debug-level ops logs (e.g. "flushed buffer") are also noise —
-  // we only keep info/warn/error runtime output from personas. Personas never
-  // use tool='runtime', so this branch fires only for future instrumentation.
-  return false;
+  return event.tool === 'runtime';
 }
 
 /**
@@ -152,23 +162,27 @@ export function groupBrainChatEvents(events: readonly BrainChatEvent[]): readonl
         break;
       }
       case 'persona-log': {
-        if (isRuntimeNoise(event)) break;
+        const noise = isRuntimeNoise(event);
         const last = tail();
         if (
           last !== null &&
           last.kind === 'persona-log' &&
           last.agent === event.agent &&
-          last.tool === event.tool
+          last.tool === event.tool &&
+          last.isRuntimeNoise === noise
         ) {
           // Same persona+tool in a row → keep the latest message only. Older
           // lines are typically progress noise ("turn 1", "turn 2") that the
-          // last line already supersedes.
+          // last line already supersedes. We also require matching noise
+          // classification so a real persona log never collapses into a
+          // runtime-noise row and vice versa.
           replaceTail({
             kind: 'persona-log',
             agent: event.agent,
             tool: event.tool,
             message: event.message,
             level: event.level,
+            isRuntimeNoise: noise,
           });
         } else {
           push({
@@ -177,6 +191,7 @@ export function groupBrainChatEvents(events: readonly BrainChatEvent[]): readonl
             tool: event.tool,
             message: event.message,
             level: event.level,
+            isRuntimeNoise: noise,
           });
         }
         break;

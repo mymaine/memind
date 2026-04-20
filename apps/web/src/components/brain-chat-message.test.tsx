@@ -206,9 +206,12 @@ describe('<BrainChatMessage /> — UAT fixes', () => {
     expect(occurrences).toBe(1);
   });
 
-  it('drops runtime-noise brain logs from the bubble', () => {
-    // Fix #2: `brain · runtime` logs ("loop start", "turn N requesting
-    // completion") must never appear in the visual transcript.
+  it('collapses runtime-noise logs into a closed <details> toggle (UX fix 2026-04-21)', () => {
+    // Runtime noise used to be dropped wholesale which meant power users lost
+    // visibility into the SDK loop chatter when something misbehaved. The new
+    // behaviour: retain the log rows but fold them under a closed details
+    // block so the default reader never sees them, while still leaving the
+    // data one click away.
     const out = renderToStaticMarkup(
       <BrainChatMessage
         turn={assistantTurn('done.', [
@@ -221,7 +224,7 @@ describe('<BrainChatMessage /> — UAT fixes', () => {
           },
           {
             kind: 'persona-log',
-            agent: 'brain',
+            agent: 'creator',
             tool: 'runtime',
             message: 'turn 1 stop_reason=tool_use',
             level: 'info',
@@ -229,8 +232,15 @@ describe('<BrainChatMessage /> — UAT fixes', () => {
         ])}
       />,
     );
-    expect(out).not.toContain('loop start');
-    expect(out).not.toContain('stop_reason');
+    // <details> element present and NOT opened by default — renderToStaticMarkup
+    // emits `<details>` without an `open` attribute when `open={false}`.
+    expect(out).toMatch(/<details\b/);
+    expect(out).not.toMatch(/<details[^>]*\bopen\b/);
+    // Summary carries a runtime-log affordance users can click to expand.
+    expect(out).toMatch(/runtime log/i);
+    // The underlying noise text is still in the DOM (inside the folded body)
+    // so inspecting the details element surfaces the last message.
+    expect(out).toContain('stop_reason');
   });
 });
 

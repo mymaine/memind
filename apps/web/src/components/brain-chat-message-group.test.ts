@@ -110,28 +110,56 @@ describe('groupBrainChatEvents — persona log dedup (scenario 2)', () => {
   });
 });
 
-describe('groupBrainChatEvents — runtime noise filter (scenario 3)', () => {
-  it('drops brain runtime logs entirely', () => {
+describe('groupBrainChatEvents — runtime noise tagging (scenario 3)', () => {
+  it('retains brain runtime logs but tags them as noise', () => {
+    // Previously the grouping pass dropped these outright. The UX now keeps
+    // them so the renderer can fold them into a details/summary toggle and
+    // power users can still inspect the SDK loop chatter on demand.
     const groups = groupBrainChatEvents([
       log('brain', 'runtime', 'loop start'),
       log('brain', 'runtime', 'turn 1 requesting completion'),
       log('brain', 'runtime', 'turn 1 stop_reason=tool_use'),
     ]);
-    expect(groups).toEqual([]);
+    // Consecutive same-agent+tool still collapse to the most-recent line.
+    expect(groups).toHaveLength(1);
+    const g = groups[0]!;
+    expect(g.kind).toBe('persona-log');
+    if (g.kind === 'persona-log') {
+      expect(g.isRuntimeNoise).toBe(true);
+      expect(g.tool).toBe('runtime');
+      expect(g.message).toBe('turn 1 stop_reason=tool_use');
+    }
   });
 
-  it('keeps non-runtime brain logs and persona runtime logs', () => {
-    // Personas don't currently emit tool='runtime', but we document the rule:
-    // only (agent=brain, tool='runtime') is filtered. A creator log on a
-    // hypothetical "runtime" tool stays.
+  it('tags persona runtime logs as noise too (creator/narrator/heartbeat)', () => {
+    // Persona runtime loops emit the same SDK chatter under their own agent
+    // attribution; we collapse them alongside the brain variant rather than
+    // playing an agent whitelist.
     const groups = groupBrainChatEvents([
       log('brain', 'chat', 'replying'),
-      log('creator', 'runtime', 'should stay'),
+      log('creator', 'runtime', 'loop start'),
+    ]);
+    expect(groups).toHaveLength(2);
+    const first = groups[0]!;
+    const second = groups[1]!;
+    expect(first.kind).toBe('persona-log');
+    if (first.kind === 'persona-log') expect(first.isRuntimeNoise).toBe(false);
+    expect(second.kind).toBe('persona-log');
+    if (second.kind === 'persona-log') expect(second.isRuntimeNoise).toBe(true);
+  });
+
+  it('never collapses a runtime-noise row into a non-runtime persona log', () => {
+    // The dedup path keys on `agent + tool + isRuntimeNoise`. A real
+    // persona log immediately followed by a runtime-tool log must surface
+    // as two rows so the UI can fold the noise one separately.
+    const groups = groupBrainChatEvents([
+      log('creator', 'lore_writer', 'pinning chapter 1'),
+      log('creator', 'runtime', 'loop start'),
     ]);
     expect(groups).toHaveLength(2);
   });
 
-  it('isRuntimeNoise helper pins the filter key', () => {
+  it('isRuntimeNoise helper pins the filter key (any agent + tool=runtime)', () => {
     expect(
       isRuntimeNoise({
         kind: 'persona-log',
@@ -146,6 +174,15 @@ describe('groupBrainChatEvents — runtime noise filter (scenario 3)', () => {
         kind: 'persona-log',
         agent: 'creator',
         tool: 'runtime',
+        message: 'loop start',
+        level: 'info',
+      }),
+    ).toBe(true);
+    expect(
+      isRuntimeNoise({
+        kind: 'persona-log',
+        agent: 'creator',
+        tool: 'lore_writer',
         message: 'x',
         level: 'info',
       }),
