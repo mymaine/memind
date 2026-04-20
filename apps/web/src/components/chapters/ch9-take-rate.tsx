@@ -8,7 +8,7 @@
  * 2026-04-20 rebuild: the prior version quoted `$3.20 projected lifetime /
  * token` with four SKU bars but no derivation. The new panel keeps the
  * same $3.20 headline (averaged across a 97% churn × 3% survivor curve on
- * four.meme's real ~351 launches/day) and exposes the three things every
+ * four.meme's daily launch throughput) and exposes the three things every
  * investor-grade pitch is expected to show:
  *
  *   1. A four-stage adoption projection. Year-1 solo-dev ARR (~$27k–$53k)
@@ -90,9 +90,9 @@ const BARS: readonly Bar[] = [
   },
 ];
 
-// Four-stage adoption projection. All numbers derived from the real
-// four.meme baseline (351 launches / day × 97% churn) combined with the
-// SKU pricing above — see the chapter brief for the line-item spread.
+// Four-stage adoption projection. All numbers derived from the
+// four.meme daily throughput × 97% churn × the SKU pricing above —
+// see the chapter brief for the line-item spread.
 type Projection = {
   readonly when: string;
   readonly adoption: string;
@@ -155,7 +155,7 @@ export function Ch9TakeRate({ p }: Ch9TakeRateProps): ReactElement {
           </div>
           <Mono dim>
             {
-              'avg lifetime / token \u00b7 351 launches \u00d7 3% survival curve \u00b7 highly conservative estimate'
+              'avg lifetime / token \u00b7 97% churn \u00d7 3% survival \u00d7 blended SKU mix \u00b7 highly conservative estimate'
             }
           </Mono>
         </div>

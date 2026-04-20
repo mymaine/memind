@@ -1,16 +1,16 @@
 /**
- * Tests for <Ch2Problem /> — the "after the filter" chapter.
+ * Tests for <Ch2Problem /> — the "one day in october 2025" chapter.
  *
- * 2026-04-20 rebuild: the prior draft counted up to a fictional 32,140
- * (one-off October 2025 spike conflated with daily reality). The new
- * copy counts up to 351 — the l0k1 Dune dashboard's real four.meme
- * daily launch rate — and spreads four alive cells across the 384-cell
- * graveyard so the 3% survival curve reads visually.
+ * 2026-04-22 rebuild: the prior draft counted up to 351 citing a Dune
+ * dashboard that drifts weekly. Primary-source verification drove the
+ * pivot to the coinspot-reported October 2025 spam peak (~32,480 tokens
+ * in 24h), paired with Chainplay's 97% eventual-death stat. Both
+ * numbers now have citation links on-chapter.
  *
- *   - Count-up: `Math.floor(lerp(0, 351, clamp(p/0.6)))`.
+ *   - Count-up: `Math.floor(lerp(0, 32480, clamp(p/0.6)))`.
  *   - Graveyard grid: 384 cells; indices 47 / 183 / 241 / 309 are alive.
- *   - Aside: "four.meme filtered the spam" comment + sleep mascot +
- *     Dune source link.
+ *   - Aside: "four.meme raised the launch fee" comment + sleep mascot +
+ *     coinspot + chainplay source links.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -29,11 +29,12 @@ describe('<Ch2Problem>', () => {
     expect(html).toMatch(/class="ch-headline"[^>]*>\s*<span[^>]*>0<\/span>/);
   });
 
-  it('at p=0.6 the count-up reaches 351 (real four.meme daily rate, Dune-verified)', () => {
+  it('at p=0.6 the count-up reaches 32,480 (October 2025 spam peak, coinspot-verified)', () => {
     const html = renderToStaticMarkup(<Ch2Problem p={0.6} />);
-    expect(html).toContain('>351<');
-    // Regression: the old fabricated 32,140 number must be gone.
+    expect(html).toContain('>32,480<');
+    // Regression: the old unsourced 32,140 and stale Dune-only 351 must be gone.
     expect(html).not.toContain('32,140');
+    expect(html).not.toMatch(/>351</);
   });
 
   it('renders exactly 384 graveyard cells (32 cols × 12 rows)', () => {
@@ -74,7 +75,8 @@ describe('<Ch2Problem>', () => {
     // at p=0.6, then sweeps the graveyard dim across p=0.6→1.0. Two
     // checkpoints lock the contract:
     //   - At p=0.6 (count-up complete, fade about to start) the dim
-    //     average sits ≥ 0.7 — viewer still reads "351 live tokens".
+    //     average sits ≥ 0.7 — viewer still reads a full field of
+    //     live tokens.
     //   - At p=1.0 the dim average collapses below 0.06 — only the 4
     //     alive cells remain legible.
     const dimFor = (p: number): number[] =>
@@ -95,15 +97,17 @@ describe('<Ch2Problem>', () => {
     expect(avgEnd).toBeLessThan(0.06);
   });
 
-  it('renders the "filtered the spam" aside + the sleep mascot + the Dune source link', () => {
+  it('renders the "raised the launch fee" aside + the sleep mascot + coinspot + chainplay links', () => {
     const html = renderToStaticMarkup(<Ch2Problem p={0.5} />);
-    expect(html).toContain('four.meme filtered the spam');
+    expect(html).toContain('four.meme raised the launch fee');
     // Core thesis: creator walks away at hour 0.
     expect(html).toContain('creator walks away');
     // Sleep-mood glyph sits next to the aside copy.
     expect(html).toMatch(/data-mood="sleep"/);
-    // Dune dashboard source link — honest data attribution.
-    expect(html).toContain('dune.com/l0k1/fourmeme-insights');
-    expect(html).toContain('https://dune.com/l0k1/fourmeme-insights');
+    // Primary sources on-chapter so reviewers can verify the two big stats.
+    expect(html).toContain('coinspot.io');
+    expect(html).toContain('chainplay.gg/blog/state-of-memecoin-2024');
+    // Regression: the stale Dune-only link must be gone.
+    expect(html).not.toContain('dune.com/l0k1/fourmeme-insights');
   });
 });

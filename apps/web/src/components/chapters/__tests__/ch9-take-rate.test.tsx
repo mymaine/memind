@@ -28,8 +28,12 @@ describe('<Ch9TakeRate>', () => {
   it('at p=0.6 the big number reaches "$3.20"', () => {
     const html = renderToStaticMarkup(<Ch9TakeRate p={0.6} />);
     expect(html).toContain('3.20');
-    // Cohort caption: 351 launches × 3% survival curve.
-    expect(html).toContain('351 launches');
+    // Cohort caption: 97% churn × 3% survival × blended SKU mix.
+    expect(html).toContain('97% churn');
+    expect(html).toContain('3% survival');
+    expect(html).toContain('blended SKU mix');
+    // Regression: the stale 351 launches/day anchor must be gone.
+    expect(html).not.toContain('351 launches');
     // Every commercial projection in the chapter must be flagged as a
     // highly conservative estimate per UAT 2026-04-20.
     expect(html).toContain('highly conservative estimate');

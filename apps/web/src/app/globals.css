@@ -629,9 +629,9 @@ body:has(.logs-drawer.open) .toc {
   gap: 4px 6px;
   font-family: var(--font-mono);
   /* UAT 2026-04-20: dim cells jumped from 0.08–0.28 to 0.6–0.92
-   * opacity so viewers register "351 live tokens" before the fade
-   * starts. The glyph size bumps accordingly — 20px gives the `·`
-   * enough weight to read on a 900px+ stage without crowding. */
+   * opacity so viewers register a full field of live tokens before
+   * the fade starts. The glyph size bumps accordingly — 20px gives
+   * the `·` enough weight to read on a 900px+ stage without crowding. */
   font-size: 20px;
   line-height: 1;
   padding: 20px;
