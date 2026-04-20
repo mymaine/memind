@@ -56,7 +56,7 @@ const PORT = 4021;
 const NETWORK = 'eip155:84532' as const;
 const ROUTE = 'GET /weather';
 const PRICE = '$0.001';
-const FACILITATOR_URL = 'https://x402.org/facilitator';
+const FACILITATOR_URL = 'https://www.x402.org/facilitator';
 
 const envSchema = z.object({
   AGENT_WALLET_PRIVATE_KEY: z

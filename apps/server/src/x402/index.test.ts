@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import express from 'express';
+import type { Request, Response } from 'express';
 
 import { createPublicClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -11,7 +12,7 @@ import { baseSepolia } from 'viem/chains';
 
 import { wrapFetchWithPayment } from '@x402/fetch';
 import { x402Client } from '@x402/core/client';
-import { decodePaymentResponseHeader } from '@x402/core/http';
+import { decodePaymentResponseHeader, encodePaymentResponseHeader } from '@x402/core/http';
 import { ExactEvmScheme as ClientExactEvmScheme, toClientEvmSigner } from '@x402/evm';
 
 import { loadConfig } from '../config.js';
@@ -169,14 +170,23 @@ describe('registerX402Routes', () => {
       expect(settlement.transaction).toMatch(/^0x[a-fA-F0-9]{64}$/);
 
       // Proves the handler actually enqueued into the store wired at beforeAll.
-      // Exact paidTxHash equality with the header is left to a follow-up task:
-      // the handler runs before x402 settlement, so it can only see a stub hash
-      // at enqueue time (see createShillHandler doc-comment for the full story).
       const stored = await pollUntil(() => sharedShillStore.getById(body.orderId ?? ''));
       expect(stored).toBeDefined();
       expect(stored?.targetTokenAddr).toBe(targetTokenAddr);
       expect(stored?.creatorBrief).toBe('integration-test');
       expect(stored?.status).toBe('queued');
+
+      // `createShillHandler` subscribes to `res.on('finish', …)` and decodes
+      // PAYMENT-RESPONSE after the middleware flushes it, replacing the
+      // enqueue-time sentinel with the real on-chain hash. Poll rather than
+      // race the finish hook — the response body can land on the client
+      // microseconds before the server-side finish listener fires.
+      const reconciled = await pollUntil(async () => {
+        const row = await sharedShillStore.getById(body.orderId ?? '');
+        return row && row.paidTxHash !== `0x${'0'.repeat(64)}` ? row : undefined;
+      });
+      expect(reconciled?.paidTxHash).toBe(settlement.transaction);
+      expect(reconciled?.paidTxHash).toMatch(/^0x[a-fA-F0-9]{64}$/);
     },
     120_000, // Real settlement can take 30–60s on Base Sepolia.
   );
@@ -396,6 +406,124 @@ describe('createShillHandler', () => {
       expect(body.targetTokenAddr).toBe('0xdeadbeef');
       expect(typeof body.orderId).toBe('string');
       expect(body.orderId ?? '').toMatch(/[0-9a-f-]{36}/);
+    } finally {
+      await close();
+    }
+  });
+});
+
+/**
+ * Finish-hook reconciliation coverage (Case A/B/C).
+ *
+ * These tests simulate the x402 paymentMiddleware by mounting a tiny pre-handler
+ * that writes `PAYMENT-RESPONSE` (or a malformed value, or nothing) onto the
+ * response before `createShillHandler` runs. `res.on('finish', …)` fires after
+ * `res.end()` but still sees the header via `res.getHeader`, so this is the
+ * cheapest way to prove the reconciliation path without spending USDC. The
+ * real-settlement test above still anchors the full x402 → reconciled hash
+ * contract end-to-end.
+ */
+describe('createShillHandler finish-hook reconciliation', () => {
+  const PENDING = `0x${'0'.repeat(64)}`;
+
+  /**
+   * Mount the shill handler on a bare Express app, optionally with a
+   * pre-handler middleware that plants headers on the response. The
+   * pre-handler runs before `createShillHandler`, so when the handler
+   * subscribes to `res.on('finish')` the header is already set.
+   */
+  function startShillAppWithPreHook(
+    preHook: ((req: Request, res: Response, next: () => void) => void) | undefined,
+    store: ShillOrderStore,
+  ): { baseUrl: string; close: () => Promise<void> } {
+    const app = express();
+    app.use(express.json({ limit: '1mb' }));
+    if (preHook) app.use(preHook);
+    app.post('/shill/:tokenAddr', createShillHandler({ shillOrderStore: store }));
+    const server = app.listen(0);
+    const address = server.address() as AddressInfo;
+    return {
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      close: () => new Promise<void>((r) => server.close(() => r())),
+    };
+  }
+
+  it('Case A: decodes PAYMENT-RESPONSE in the finish hook and upgrades the sentinel', async () => {
+    const store = new ShillOrderStore();
+    const realHash = `0x${'a'.repeat(64)}`;
+    const header = encodePaymentResponseHeader({
+      success: true,
+      transaction: realHash,
+      network: 'eip155:84532',
+      payer: `0x${'c'.repeat(40)}`,
+    } as Parameters<typeof encodePaymentResponseHeader>[0]);
+
+    const { baseUrl, close } = startShillAppWithPreHook((_req, res, next) => {
+      res.setHeader('PAYMENT-RESPONSE', header);
+      next();
+    }, store);
+    try {
+      const response = await fetch(`${baseUrl}/shill/0xdeadbeef`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ creatorBrief: 'case-a' }),
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { orderId?: string };
+
+      const reconciled = await pollUntil(async () => {
+        const row = await store.getById(body.orderId ?? '');
+        return row && row.paidTxHash !== PENDING ? row : undefined;
+      });
+      expect(reconciled?.paidTxHash).toBe(realHash);
+    } finally {
+      await close();
+    }
+  });
+
+  it('Case B: missing PAYMENT-RESPONSE header leaves the sentinel intact', async () => {
+    const store = new ShillOrderStore();
+    // No pre-hook means no PAYMENT-RESPONSE header — this mirrors the 402
+    // path where the middleware never reached the settlement step.
+    const { baseUrl, close } = startShillAppWithPreHook(undefined, store);
+    try {
+      const response = await fetch(`${baseUrl}/shill/0xfeedbeef`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ creatorBrief: 'case-b' }),
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { orderId?: string };
+
+      const stored = await pollUntil(() => store.getById(body.orderId ?? ''));
+      expect(stored?.paidTxHash).toBe(PENDING);
+    } finally {
+      await close();
+    }
+  });
+
+  it('Case C: malformed PAYMENT-RESPONSE header is swallowed and leaves the sentinel intact', async () => {
+    const store = new ShillOrderStore();
+    const { baseUrl, close } = startShillAppWithPreHook((_req, res, next) => {
+      // Garbage that `decodePaymentResponseHeader` cannot parse — the hook
+      // must catch the throw, log a warning, and leave the store untouched.
+      res.setHeader('PAYMENT-RESPONSE', 'this is not a valid x402 payment response header');
+      next();
+    }, store);
+    try {
+      const response = await fetch(`${baseUrl}/shill/0xdeadc0de`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ creatorBrief: 'case-c' }),
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { orderId?: string };
+
+      // Give the finish hook a beat to run; the sentinel must stay in place.
+      // 50ms is generous for a same-process event loop hop.
+      await new Promise<void>((r) => setTimeout(r, 50));
+      const stored = await store.getById(body.orderId ?? '');
+      expect(stored?.paidTxHash).toBe(PENDING);
     } finally {
       await close();
     }

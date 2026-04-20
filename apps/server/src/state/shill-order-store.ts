@@ -21,6 +21,18 @@
  */
 import type { Pool } from 'pg';
 
+/**
+ * Sentinel tx hash written at enqueue time, replaced by `recordSettlement`
+ * once the x402 middleware finalises the response and the real on-chain
+ * settlement hash becomes available. Exported so the x402 handler and the
+ * store's settlement-update SQL both reference the same literal and can
+ * never drift.
+ */
+export const PENDING_PAID_TX_HASH = `0x${'0'.repeat(64)}`;
+
+/** 0x-prefixed 32-byte EVM tx hash. */
+const TX_HASH_PATTERN = /^0x[a-fA-F0-9]{64}$/;
+
 export type ShillOrderStatus = 'queued' | 'processing' | 'done' | 'failed';
 
 export interface ShillOrderEntry {
@@ -231,6 +243,49 @@ export class ShillOrderStore {
     entry.status = 'failed';
     entry.errorMessage = errorMessage;
     return { ...entry };
+  }
+
+  /**
+   * Replace the enqueue-time sentinel `paidTxHash` with the real on-chain
+   * settlement hash once the x402 middleware has finalised the response and
+   * emitted the `PAYMENT-RESPONSE` header. Called from
+   * `createShillHandler`'s `res.on('finish')` hook — see the PENDING_PAID_TX_HASH
+   * doc-comment in `x402/index.ts` for the full story.
+   *
+   * Idempotent by construction: the SQL `WHERE paid_tx_hash = <sentinel>`
+   * guard means a second call after the real hash has been written is a
+   * silent no-op, so a duplicated `finish` fire (or a process retry) can
+   * never overwrite the settled value. Rows that never carried the sentinel
+   * (legacy entries or tests that pre-populate a real hash) are likewise
+   * untouched. An unknown `orderId` is also a no-op.
+   *
+   * Throws synchronously on a malformed `paidTxHash` so the caller surfaces
+   * a loud error in logs instead of persisting garbage.
+   */
+  async recordSettlement(orderId: string, paidTxHash: string): Promise<void> {
+    if (!TX_HASH_PATTERN.test(paidTxHash)) {
+      throw new Error(
+        `recordSettlement: invalid paidTxHash ${JSON.stringify(paidTxHash)} — expected 0x-prefixed 32-byte hex`,
+      );
+    }
+    if (this.pool !== undefined) {
+      // Mirror the pattern used by markDone / markFailed: the real source of
+      // truth is the JSONB `payload`. The WHERE clause binds the sentinel
+      // literal so a row that already carries a real hash is left alone.
+      await this.pool.query(
+        `UPDATE shill_orders
+           SET payload = jsonb_set(payload, '{paidTxHash}', to_jsonb($1::text)),
+               updated_at = now()
+         WHERE order_id = $2
+           AND payload->>'paidTxHash' = $3`,
+        [paidTxHash, orderId, PENDING_PAID_TX_HASH],
+      );
+      return;
+    }
+    const entry = this.orders.get(orderId);
+    if (!entry) return;
+    if (entry.paidTxHash !== PENDING_PAID_TX_HASH) return;
+    entry.paidTxHash = paidTxHash;
   }
 
   /** Single-order lookup. Returns a copy so callers can't mutate the store. */

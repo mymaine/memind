@@ -50,8 +50,15 @@ const envSchema = z.object({
       .optional(),
   ),
 
-  X402_FACILITATOR_URL: z.string().url().default('https://x402.org/facilitator'),
+  X402_FACILITATOR_URL: z.string().url().default('https://www.x402.org/facilitator'),
   X402_NETWORK: z.string().default('eip155:84532'),
+  // Facilitator mode. `local` runs an in-process x402Facilitator (signs settle
+  // txs with AGENT_WALLET_PRIVATE_KEY, needs Base Sepolia ETH for gas).
+  // `http` calls out to X402_FACILITATOR_URL — kept as a fallback so the
+  // public facilitator or a managed provider (CDP) can be used once reliable.
+  // Default is `local` because the public facilitator's /settle handler was
+  // broken as of 2026-04-21.
+  X402_FACILITATOR_MODE: z.enum(['local', 'http']).default('local'),
 
   // BSC mainnet RPC for read-path tools (check_token_status, etc).
   BSC_RPC_URL: z.string().url().default('https://bsc-dataseed.binance.org'),
@@ -90,7 +97,7 @@ export type AppConfig = {
     agent: { privateKey: string | undefined; address: string | undefined };
     bscDeployer: { privateKey: string | undefined; address: string | undefined };
   };
-  x402: { facilitatorUrl: string; network: string };
+  x402: { facilitatorUrl: string; network: string; mode: 'local' | 'http' };
   bsc: { rpcUrl: string };
   heartbeat: { intervalMs: number };
   x: {
@@ -123,6 +130,7 @@ export function loadConfig(): AppConfig {
     x402: {
       facilitatorUrl: env.X402_FACILITATOR_URL,
       network: env.X402_NETWORK,
+      mode: env.X402_FACILITATOR_MODE,
     },
     bsc: { rpcUrl: env.BSC_RPC_URL },
     heartbeat: { intervalMs: env.HEARTBEAT_INTERVAL_MS },

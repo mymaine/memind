@@ -2,37 +2,40 @@ import { randomUUID } from 'node:crypto';
 import type { Express, Request, RequestHandler, Response } from 'express';
 import { privateKeyToAccount } from 'viem/accounts';
 import { paymentMiddleware } from '@x402/express';
-import { HTTPFacilitatorClient, x402ResourceServer } from '@x402/core/server';
+import { x402ResourceServer, HTTPFacilitatorClient } from '@x402/core/server';
 import type { RouteConfig } from '@x402/core/server';
 import type { Network } from '@x402/core/types';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { decodePaymentResponseHeader } from '@x402/core/http';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
-import type { ShillOrderStore } from '../state/shill-order-store.js';
+import { PENDING_PAID_TX_HASH, type ShillOrderStore } from '../state/shill-order-store.js';
 import { PAID_ROUTES, routeKey, type PaidRoute } from './config.js';
+import { createLocalFacilitator, toFacilitatorClient } from './local-facilitator.js';
 
 /**
- * Stub tx hash used when the handler enqueues before x402 settlement completes.
+ * Stub tx hash used when the handler enqueues *before* x402 settlement
+ * completes. Defined in `state/shill-order-store.ts` and re-imported here so
+ * the handler, the store, and every consumer use the same literal.
  *
- * The express paymentMiddleware runs settlement *after* the handler calls
- * `res.end()` (see @x402/express/dist/cjs/index.js — it buffers writeHead/write/end
- * and only settles once the handler finishes). That means the real
- * `PAYMENT-RESPONSE` header with the settled transaction hash is not available
- * at enqueue time. We still need `paidTxHash` to satisfy the ShillOrderStore
- * contract (non-empty string) so we write a zeroed sentinel.
+ * Root cause: the express paymentMiddleware buffers `writeHead / write / end`
+ * and only settles once the handler finishes (see
+ * `@x402/express/dist/cjs/index.js`). The real `PAYMENT-RESPONSE` header with
+ * the on-chain tx hash is not available at enqueue time, and the
+ * ShillOrderStore contract requires a non-empty `paidTxHash`, so we write a
+ * zeroed sentinel and reconcile later.
  *
- * **MVP behaviour (Phase 4.6, shipped 2026-04-18)**: the sentinel is never
- * reconciled — store entries keep the all-zero hash for their entire lifetime
- * and the dashboard renders a `0x0000…pending` placeholder instead of a live
- * BaseScan link. The actual on-chain settlement DID happen (evident from the
- * 200 response with a valid `PAYMENT-RESPONSE` header); the client retains
- * that hash if it wants. This is an accepted MVP trade-off, not a bug.
+ * Reconciliation (shipped 2026-04-21 — bug fix for /shill `0x0000…pending`):
+ * `createShillHandler` subscribes to `res.on('finish', …)` so after the
+ * middleware has finalised the response it decodes `PAYMENT-RESPONSE` (or its
+ * `X-` prefix) and calls `ShillOrderStore.recordSettlement(orderId, txHash)`.
+ * The store's SQL guard `WHERE payload->>'paidTxHash' = <sentinel>` makes the
+ * update idempotent — duplicate finish fires and retries are silent no-ops.
  *
- * **Reconciliation path (post-hackathon)**: add `ShillOrderStore.recordSettlement(orderId, txHash)`
- * and wire it via `res.on('finish', …)` to decode `X-PAYMENT-RESPONSE` after
- * the middleware has finalised the response.
+ * The sentinel is **not** a dead constant: it still backs the enqueue write
+ * and doubles as the SQL guard inside `recordSettlement`, so deleting it
+ * would silently regress idempotency.
  */
-const PENDING_PAID_TX_HASH = `0x${'0'.repeat(64)}`;
 
 /**
  * Optional runtime wiring for the x402 routes.
@@ -56,11 +59,18 @@ export interface RegisterX402RoutesOpts {
 /**
  * Register the three paid x402 endpoints on the given Express app.
  *
- * Wiring (mirrors scripts/probe-x402.ts, which end-to-end proved the flow on
- * 2026-04-18 — tx 0x4331ff58…bff000a on Base Sepolia):
- *   1. HTTPFacilitatorClient talks to config.x402.facilitatorUrl.
- *   2. x402ResourceServer registers the ExactEvmScheme for config.x402.network.
- *   3. paymentMiddleware guards the three routes from x402/config.ts.
+ * Wiring (2026-04-21):
+ *   1. Facilitator is chosen by `config.x402.mode`:
+ *      - `local` (default): in-process `x402Facilitator` signs settle txs with
+ *        the agent EOA. Needs Base Sepolia ETH for gas. Shipped because the
+ *        public facilitator's /settle returned `invalid_exact_evm_transaction_failed`
+ *        on 2026-04-21.
+ *      - `http`: delegates to `config.x402.facilitatorUrl` (x402.org, CDP,
+ *        self-hosted x402.rs, etc). Flip via `X402_FACILITATOR_MODE=http`.
+ *   2. x402ResourceServer registers the server-side ExactEvmScheme (the one
+ *      from `@x402/evm/exact/server` — do not confuse with the facilitator
+ *      class of the same name) for config.x402.network.
+ *   3. paymentMiddleware guards the four routes from x402/config.ts.
  *   4. Express handlers serve agent output (when a LoreStore is wired) or
  *      mock payloads (Phase 2 fallback — keeps every paid route returning a
  *      non-empty body even before the Narrator has published).
@@ -68,8 +78,8 @@ export interface RegisterX402RoutesOpts {
  * Wallet configuration:
  *   - payTo address is resolved via resolvePayTo(config): env-provided address
  *     wins; otherwise we derive it from the agent private key.
- *   - If both are missing we throw before any middleware is mounted so the
- *     server fails fast instead of silently issuing unsigned 402s.
+ *   - `AGENT_WALLET_PRIVATE_KEY` is load-bearing in `local` mode (facilitator
+ *     signer); optional in `http` mode if AGENT_WALLET_ADDRESS is provided.
  */
 export function registerX402Routes(
   app: Express,
@@ -79,8 +89,34 @@ export function registerX402Routes(
   const payTo = resolvePayTo(config);
   const network = config.x402.network as Network;
 
-  const facilitator = new HTTPFacilitatorClient({ url: config.x402.facilitatorUrl });
-  const resourceServer = new x402ResourceServer(facilitator).register(
+  // No auto-failover between local and http — pick one per deployment via env.
+  // Auto-failover would double the test surface and hide the real x402.org
+  // outage mode (200 with success:false, not a network error).
+  let facilitatorClient;
+  if (config.x402.mode === 'local') {
+    const agentPrivateKey = config.wallets.agent.privateKey;
+    if (agentPrivateKey === undefined) {
+      throw new Error(
+        '[x402] AGENT_WALLET_PRIVATE_KEY must be set in .env.local when ' +
+          'X402_FACILITATOR_MODE=local — the in-process facilitator needs the ' +
+          'agent EOA to sign settle txs. Set MODE=http to delegate instead.',
+      );
+    }
+    // Wrap in the FacilitatorClient interface x402ResourceServer expects.
+    // x402Facilitator.getSupported() is synchronous in @x402/core@2.10.0 while
+    // FacilitatorClient.getSupported() returns a Promise — runtime the resource
+    // server just `await`s the value, but the TS adapter is explicit here so
+    // the type contract stays honest. See toFacilitatorClient for details.
+    facilitatorClient = toFacilitatorClient(
+      createLocalFacilitator({
+        agentPrivateKey: agentPrivateKey as `0x${string}`,
+        network,
+      }),
+    );
+  } else {
+    facilitatorClient = new HTTPFacilitatorClient({ url: config.x402.facilitatorUrl });
+  }
+  const resourceServer = new x402ResourceServer(facilitatorClient).register(
     network,
     new ExactEvmScheme(),
   );
@@ -278,6 +314,17 @@ export function createShillHandler(
           res.status(500).json({ error: `shill enqueue failed: ${message}` });
           return;
         }
+
+        // Reconcile the sentinel paidTxHash with the real x402 settlement
+        // hash once the paymentMiddleware has flushed `PAYMENT-RESPONSE`.
+        // `finish` fires after `res.end()` returns — by that point the
+        // middleware has written the header onto the response object, so
+        // `res.getHeader` can read it back. Any failure is logged and
+        // swallowed: the sentinel stays, which matches pre-fix behaviour
+        // and keeps the 200 response intact for the caller.
+        res.on('finish', () => {
+          void reconcileSettlement(res, shillOrderStore, orderId);
+        });
       }
 
       res.status(200).json({
@@ -288,4 +335,43 @@ export function createShillHandler(
       });
     })();
   };
+}
+
+/**
+ * Decode the x402 `PAYMENT-RESPONSE` header from the finished response and
+ * upgrade the corresponding shill-order's `paidTxHash` from the sentinel to
+ * the real tx hash. Header name precedence mirrors `x-fetch-lore.ts` and
+ * `runs/shill-market.ts`: canonical `PAYMENT-RESPONSE` first, `X-` prefix as
+ * a fallback for intermediaries that still add it.
+ *
+ * Every failure path (missing header, malformed header, store rejection)
+ * logs via `console.warn` and returns — never throws. The handler already
+ * responded 200; any error here must not crash the process.
+ */
+async function reconcileSettlement(
+  res: Response,
+  shillOrderStore: ShillOrderStore,
+  orderId: string,
+): Promise<void> {
+  try {
+    const raw = res.getHeader('PAYMENT-RESPONSE') ?? res.getHeader('X-PAYMENT-RESPONSE');
+    if (typeof raw !== 'string' || raw.length === 0) return;
+    const settlement = decodePaymentResponseHeader(raw);
+    // Settle can report `success: false` with an empty `transaction` when the
+    // facilitator failed to submit on-chain (e.g. out of gas, RPC down). In
+    // that case leave the sentinel — the client's 402/500 handling surfaces
+    // the failure elsewhere, and we must not pass "" to recordSettlement
+    // (which validates a 0x-prefixed 32-byte hex and throws otherwise).
+    if (!settlement.transaction || settlement.transaction === '') {
+      console.warn(
+        `[x402] settle did not return a tx hash for order ${orderId}` +
+          (settlement.errorReason ? ` (errorReason=${settlement.errorReason})` : '') +
+          ' — sentinel paidTxHash preserved.',
+      );
+      return;
+    }
+    await shillOrderStore.recordSettlement(orderId, settlement.transaction);
+  } catch (err) {
+    console.warn('[x402] recordSettlement failed:', err);
+  }
 }

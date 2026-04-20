@@ -132,7 +132,10 @@ async function main(): Promise<void> {
   app.listen(config.port, '0.0.0.0', () => {
     console.info(`[server] listening on 0.0.0.0:${config.port}`);
     console.info(`[server] x402 network: ${config.x402.network}`);
-    console.info(`[server] facilitator: ${config.x402.facilitatorUrl}`);
+    console.info(`[server] x402 mode:    ${config.x402.mode}`);
+    if (config.x402.mode === 'http') {
+      console.info(`[server] facilitator: ${config.x402.facilitatorUrl}`);
+    }
     // AC3 — surface the on-chain anchor layer's state at boot so operators
     // can verify at a glance whether layer 2 is active for this run.
     const anchorEnabled = process.env.ANCHOR_ON_CHAIN === 'true';

@@ -3,7 +3,12 @@ import type { Pool } from 'pg';
 import { createPool, resolveDatabaseUrl } from '../db/pool.js';
 import { ensureSchema } from '../db/schema.js';
 import { resetDb } from '../db/reset.js';
-import { ShillOrderStore, type EnqueueInput, type ShillOrderEntry } from './shill-order-store.js';
+import {
+  PENDING_PAID_TX_HASH,
+  ShillOrderStore,
+  type EnqueueInput,
+  type ShillOrderEntry,
+} from './shill-order-store.js';
 
 const hasDatabaseUrl = resolveDatabaseUrl() !== undefined;
 
@@ -149,6 +154,48 @@ function runBehaviouralSuite(
       await store.pullPending(); // now processing
       expect(await store.pullById('o1')).toBeUndefined();
       expect((await store.getById('o1'))?.status).toBe('processing');
+    });
+
+    it('recordSettlement replaces the pending sentinel with the real tx hash', async () => {
+      await store.enqueue(makeInput({ orderId: 'o1', paidTxHash: PENDING_PAID_TX_HASH }));
+      const realHash = `0x${'a'.repeat(64)}`;
+
+      await store.recordSettlement('o1', realHash);
+
+      const fetched = await store.getById('o1');
+      expect(fetched?.paidTxHash).toBe(realHash);
+    });
+
+    it('recordSettlement is idempotent — a second call never overwrites a non-sentinel value', async () => {
+      await store.enqueue(makeInput({ orderId: 'o1', paidTxHash: PENDING_PAID_TX_HASH }));
+      const firstHash = `0x${'a'.repeat(64)}`;
+      const secondHash = `0x${'b'.repeat(64)}`;
+
+      await store.recordSettlement('o1', firstHash);
+      // Duplicate finish fire / retry — must be a silent no-op so we never
+      // clobber the hash that is already on file.
+      await store.recordSettlement('o1', secondHash);
+
+      const fetched = await store.getById('o1');
+      expect(fetched?.paidTxHash).toBe(firstHash);
+    });
+
+    it('recordSettlement throws on a malformed tx hash and leaves the sentinel intact', async () => {
+      await store.enqueue(makeInput({ orderId: 'o1', paidTxHash: PENDING_PAID_TX_HASH }));
+
+      await expect(store.recordSettlement('o1', '0xnothex')).rejects.toThrow(/invalid paidTxHash/);
+
+      const fetched = await store.getById('o1');
+      expect(fetched?.paidTxHash).toBe(PENDING_PAID_TX_HASH);
+    });
+
+    it('recordSettlement on an unknown orderId is a silent no-op', async () => {
+      // No throw, no side effect — matches markDone / markFailed's "best-effort
+      // reconciliation" contract for callers that can't know whether the
+      // finish hook fired before the row landed.
+      await expect(
+        store.recordSettlement('does-not-exist', `0x${'a'.repeat(64)}`),
+      ).resolves.toBeUndefined();
     });
 
     it('size tracks total entries across all statuses and clear empties the store', async () => {

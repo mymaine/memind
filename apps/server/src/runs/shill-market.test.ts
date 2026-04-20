@@ -34,7 +34,11 @@ function makeConfigStub(): AppConfig {
       agent: { privateKey: undefined, address: undefined },
       bscDeployer: { privateKey: undefined, address: undefined },
     },
-    x402: { facilitatorUrl: 'https://x402.org/facilitator', network: 'eip155:84532' },
+    x402: {
+      facilitatorUrl: 'https://x402.org/facilitator',
+      network: 'eip155:84532',
+      mode: 'local' as const,
+    },
     bsc: { rpcUrl: 'https://bsc-dataseed.binance.org' },
     heartbeat: { intervalMs: 60_000 },
     x: {
