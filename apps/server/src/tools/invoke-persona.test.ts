@@ -726,6 +726,59 @@ describe('createInvokeHeartbeatTickTool', () => {
     expect(await sessionStore.get(FAKE_TOKEN_ADDR)).toBeUndefined();
   });
 
+  // Regression — without this, the heartbeat LLM never sees which token it is
+  // supposed to operate on and hallucinates a random address to feed
+  // check_token_status, producing bogus "Token contract not deployed" reports
+  // on clearly-deployed tokens.
+  it('threads tokenAddr into the persona buildUserInput so the LLM never has to guess it', async () => {
+    let capturedBuildUserInput: ((ctx: { tickId: string; tickAt: string }) => string) | undefined;
+    const run = vi.fn(
+      async (
+        input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => {
+        capturedBuildUserInput = input.buildUserInput as (ctx: {
+          tickId: string;
+          tickAt: string;
+        }) => string;
+        return {
+          lastTickAt: '2026-04-19T00:00:00.000Z',
+          lastTickId: 'tick_ok',
+          successCount: 1,
+          errorCount: 0,
+          skippedCount: 0,
+          lastError: null,
+          lastDecision: null,
+        };
+      },
+    );
+    const persona = makeHeartbeatPersona(run);
+    const buildUserInput = ({ tickId }: { tickId: string }): string => `tick ${tickId}`;
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'test-model',
+      systemPrompt: 'HB system prompt',
+      buildUserInput,
+      sessionStore: new HeartbeatSessionStore(),
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    expect(capturedBuildUserInput).toBeDefined();
+    const built = capturedBuildUserInput!({
+      tickId: 'tick_1',
+      tickAt: '2026-04-20T00:00:00.000Z',
+    });
+    // Address must appear verbatim so the LLM pipes it into
+    // check_token_status / post_to_x / extend_lore instead of guessing.
+    expect(built).toContain(FAKE_TOKEN_ADDR);
+    // The original caller-supplied line is still present so existing
+    // prompt content (tickId anchoring etc.) is not lost.
+    expect(built).toContain('tick tick_1');
+  });
+
   it('background-started mode: no session + intervalMs → start session and run one immediate tick', async () => {
     const run = vi.fn(
       async (

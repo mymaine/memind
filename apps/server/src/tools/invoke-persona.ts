@@ -649,6 +649,7 @@ const HEARTBEAT_TICK_ARTIFACT_KINDS: ReadonlySet<Artifact['kind']> = new Set([
 async function executeHeartbeatPersonaRun(
   deps: CreateInvokeHeartbeatTickToolDeps,
   intervalMs: number,
+  tokenAddr: string,
 ): Promise<{ result: HeartbeatPersonaOutput; capturedArtifacts: Artifact[] }> {
   const {
     persona,
@@ -674,10 +675,20 @@ async function executeHeartbeatPersonaRun(
       capturedArtifacts.push(artifact);
     }
   };
+  // Wrap the caller-supplied buildUserInput so every tick prompt carries the
+  // target tokenAddr verbatim. Without this, the Brain-supplied buildUserInput
+  // only mentions tickId + tickAt, and the heartbeat LLM hallucinates a
+  // random address to feed `check_token_status` each fire — users saw
+  // "Token contract not deployed" on a clearly-deployed token because the
+  // chain read was against a bogus address (different on each tick).
+  const buildUserInputWithToken = (ctx: { tickId: string; tickAt: string }): string => {
+    const base = buildUserInput(ctx);
+    return `${base}\nCurrent token under observation: ${tokenAddr}. Use this exact address for check_token_status, post_to_x, and extend_lore — do NOT substitute any other address.`;
+  };
   const personaInput: HeartbeatPersonaInput = {
     model,
     systemPrompt,
-    buildUserInput,
+    buildUserInput: buildUserInputWithToken,
     intervalMs,
     ...(onLog !== undefined ? { onLog } : {}),
     ...(runAgentLoopImpl !== undefined ? { runAgentLoopImpl } : {}),
@@ -802,7 +813,7 @@ export function createInvokeHeartbeatTickTool(
           message: `heartbeat tick starting (token: ${tokenAddr}, one-shot)`,
         });
         try {
-          const { result } = await executeHeartbeatPersonaRun(deps, defaultIntervalMs);
+          const { result } = await executeHeartbeatPersonaRun(deps, defaultIntervalMs, tokenAddr);
           const durationMs = Date.now() - startedAt;
           onLog?.({
             ts: new Date().toISOString(),
@@ -836,7 +847,11 @@ export function createInvokeHeartbeatTickTool(
         void prior;
         const tickAt = new Date().toISOString();
         try {
-          const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(deps, intervalMs);
+          const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(
+            deps,
+            intervalMs,
+            tokenAddr,
+          );
           const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
           const decision = decisionFromPersonaResult(result);
           return {
@@ -881,7 +896,11 @@ export function createInvokeHeartbeatTickTool(
             : `heartbeat background loop started (token: ${tokenAddr}, intervalMs=${intervalMs.toString()})`,
       });
       try {
-        const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(deps, intervalMs);
+        const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(
+          deps,
+          intervalMs,
+          tokenAddr,
+        );
         const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
         const tickAt = result.lastTickAt ?? new Date().toISOString();
         const decision = decisionFromPersonaResult(result);
