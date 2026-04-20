@@ -26,14 +26,13 @@ const config: NextConfig = {
     return config;
   },
   async rewrites() {
+    // Catch-all proxy to the backend. The web app owns no Next API routes,
+    // so forwarding everything under `/api/*` keeps endpoints like
+    // `/api/artifacts` (Ch12 hydration) reachable without a per-route entry.
     return [
       {
-        source: '/api/runs/:path*',
-        destination: `${SERVER_ORIGIN}/api/runs/:path*`,
-      },
-      {
-        source: '/api/runs',
-        destination: `${SERVER_ORIGIN}/api/runs`,
+        source: '/api/:path*',
+        destination: `${SERVER_ORIGIN}/api/:path*`,
       },
     ];
   },

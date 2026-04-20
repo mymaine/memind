@@ -531,7 +531,12 @@ export function Ch12Evidence({ p }: Ch12EvidenceProps): ReactElement {
         if (!res.ok) return;
         const body = (await res.json()) as { artifacts?: unknown };
         if (!Array.isArray(body.artifacts)) return;
-        for (const raw of body.artifacts) {
+        // Server returns `created_at DESC` (newest first). Live SSE appends
+        // in chronological order so `artifacts[length-1]` is the newest —
+        // reverse the hydrated batch to match that convention, otherwise
+        // `rowsForTab` / `pickMemeImage` (which scan from the tail) would
+        // surface the oldest rows instead of the most recent ones.
+        for (const raw of [...body.artifacts].reverse()) {
           const parsed = artifactSchema.safeParse(raw);
           if (parsed.success) {
             mirror.pushArtifact(parsed.data);
