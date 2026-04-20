@@ -73,6 +73,15 @@ const DEFAULT_MAX_TURNS_PER_TICK = 5;
  * chat-bubble surface. Keeping a dedicated parser here sidesteps a
  * circular import (heartbeat-runner already imports HeartbeatAgent).
  */
+// Exported for test corpus coverage only. Renamed from `parseTickDecision`
+// to `parseHeartbeatTickDecision` to avoid a naming collision with
+// `heartbeat-runner.parseTickDecision` (different behavioural contract —
+// see the doc comment above). Production code still imports and calls the
+// symbol internally via `parseTickDecision` below.
+export function parseHeartbeatTickDecision(finalText: string): HeartbeatTickDecision | null {
+  return parseTickDecision(finalText);
+}
+
 function parseTickDecision(finalText: string): HeartbeatTickDecision | null {
   const firstBrace = finalText.indexOf('{');
   const lastBrace = finalText.lastIndexOf('}');

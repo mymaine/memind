@@ -1195,3 +1195,170 @@ describe('createListHeartbeatsTool', () => {
     expect(output.sessions).toEqual([]);
   });
 });
+
+// ─── persona input contract ─────────────────────────────────────────────────
+//
+// Regression layer for the "brain layer silently drops / fabricates LLM-
+// visible persona inputs" class of bug. Each test below captures the TInput
+// the persona adapter receives via a spy on `persona.run` and asserts that
+// every user-facing field the Brain LLM supplies (theme / tokenAddr / brief /
+// intervalMs) or the orchestrator enricher derives (tokenName /
+// previousChapters / loreSnippet / orderId) reaches the persona verbatim.
+//
+// The heartbeat case is NOT duplicated here — the canonical regression test
+// is "threads tokenAddr into the persona buildUserInput so the LLM never has
+// to guess it" (~line 733 of this file), which both captures the TInput and
+// invokes `buildUserInput` to assert the tokenAddr lands in the final LLM
+// prompt string. That one fix is what stopped the hallucinated-tokenAddr bug
+// (commit 8cdd429). Do not add a parallel heartbeat test here; extend the
+// canonical one if the contract grows.
+
+describe('persona input contract', () => {
+  it('invoke_creator: theme from Brain reaches creatorPersona.run verbatim', async () => {
+    const run = vi.fn(
+      async (_input: CreatorPersonaInput, _ctx: PersonaRunContext): Promise<CreatorResult> => ({
+        tokenAddr: FAKE_TOKEN_ADDR,
+        tokenDeployTx: FAKE_TX,
+        loreIpfsCid: 'bafkrei-contract-creator',
+        metadata: {
+          name: 'HBNB2026-CONTRACT',
+          symbol: 'HBNB2026-CONTRACT',
+          description: 'contract-test',
+          imageLocalPath: '/tmp/contract.png',
+        },
+      }),
+    );
+    const persona: Persona<CreatorPersonaInput, CreatorResult> = {
+      id: 'creator',
+      description: 'stub creator',
+      inputSchema: z.object({
+        theme: z.string().min(1),
+        model: z.string().optional(),
+        maxTurns: z.number().int().positive().optional(),
+      }) as unknown as z.ZodType<CreatorPersonaInput>,
+      outputSchema: z.any() as unknown as z.ZodType<CreatorResult>,
+      run,
+    };
+    const tool = createInvokeCreatorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+    });
+
+    await tool.execute({ theme: 'BNB Chain 2026 growth' });
+
+    expect(run).toHaveBeenCalledTimes(1);
+    const [capturedInput] = run.mock.calls[0]!;
+    // The only user-facing param. Must land on TInput verbatim so the
+    // creator persona's LLM prompt sees exactly what the Brain received.
+    expect(capturedInput).toEqual({ theme: 'BNB Chain 2026 growth' });
+  });
+
+  it('invoke_narrator: tokenAddr + resolveTokenMeta output reach narratorPersona.run verbatim', async () => {
+    const run = vi.fn(
+      async (
+        _input: NarratorPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<NarratorPersonaOutput> => ({
+        tokenAddr: FAKE_TOKEN_ADDR,
+        chapterNumber: 5,
+        ipfsHash: 'bafkrei-contract-narr',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-contract-narr',
+        chapterText: 'ch5',
+      }),
+    );
+    const persona: Persona<NarratorPersonaInput, NarratorPersonaOutput> = {
+      id: 'narrator',
+      description: 'stub narrator',
+      inputSchema: z.any() as unknown as z.ZodType<NarratorPersonaInput>,
+      outputSchema: z.any() as unknown as z.ZodType<NarratorPersonaOutput>,
+      run,
+    };
+    // Real-looking resolver output — exercises the LoreStore plumbing that,
+    // if it regresses, gives us a "HBNB2026-Unknown" Narrator run.
+    const resolveTokenMeta = vi.fn(async () => ({
+      tokenName: 'HBNB2026-Alpha',
+      tokenSymbol: 'HBNB2026-ALP',
+      previousChapters: ['chapter one body', 'chapter two body'],
+      targetChapterNumber: 5,
+    }));
+    const tool = createInvokeNarratorTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      store: { __brand: 'LoreStore' } as unknown as never,
+      resolveTokenMeta,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    expect(resolveTokenMeta).toHaveBeenCalledWith(FAKE_TOKEN_ADDR);
+    expect(run).toHaveBeenCalledTimes(1);
+    const [capturedInput] = run.mock.calls[0]!;
+    // tokenAddr comes straight from Brain; the rest comes from the
+    // resolver. All four must land on TInput verbatim so the narrator
+    // persona's LLM prompt sees real token metadata instead of
+    // "HBNB2026-Unknown".
+    expect(capturedInput.tokenAddr).toBe(FAKE_TOKEN_ADDR);
+    expect(capturedInput.tokenName).toBe('HBNB2026-Alpha');
+    expect(capturedInput.tokenSymbol).toBe('HBNB2026-ALP');
+    expect(capturedInput.previousChapters).toEqual(['chapter one body', 'chapter two body']);
+    expect(capturedInput.targetChapterNumber).toBe(5);
+  });
+
+  it('invoke_shiller: tokenAddr + brief + resolveOrder output reach shillerPersona.run verbatim', async () => {
+    const run = vi.fn(
+      async (
+        _input: ShillerPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<ShillerPersonaOutput> => ({
+        orderId: 'order-contract',
+        tokenAddr: FAKE_TOKEN_ADDR,
+        decision: 'shill',
+        tweetId: 'tid-contract',
+        tweetUrl: 'https://x.com/stub/status/tid-contract',
+        tweetText: 'contract tweet',
+        postedAt: '2026-04-20T00:00:00.000Z',
+        toolCalls: [],
+      }),
+    );
+    const persona: Persona<ShillerPersonaInput, ShillerPersonaOutput> = {
+      id: 'shiller',
+      description: 'stub shiller',
+      inputSchema: z.any() as unknown as z.ZodType<ShillerPersonaInput>,
+      outputSchema: z.any() as unknown as z.ZodType<ShillerPersonaOutput>,
+      run,
+    };
+    const postShillForTool = fakePostShillForTool();
+    const resolveOrder = vi.fn(async () => ({
+      orderId: 'order-contract',
+      loreSnippet: 'a whispered chapter about BNB',
+      tokenSymbol: 'HBNB2026-ALP',
+      includeFourMemeUrl: true,
+    }));
+    const tool = createInvokeShillerTool({
+      persona,
+      postShillForTool,
+      resolveOrder,
+    });
+
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, brief: 'pump the hype' });
+
+    expect(resolveOrder).toHaveBeenCalledWith(FAKE_TOKEN_ADDR, 'pump the hype');
+    expect(run).toHaveBeenCalledTimes(1);
+    const [capturedInput] = run.mock.calls[0]!;
+    // All user- and resolver-derived fields must land on TInput verbatim.
+    // The Brain LLM supplies tokenAddr + brief; everything else rides the
+    // resolver. If the wrapper drops any of these, the shiller persona
+    // posts a tweet with "HBNB2026" or no lore snippet at all.
+    expect(capturedInput.tokenAddr).toBe(FAKE_TOKEN_ADDR);
+    expect(capturedInput.creatorBrief).toBe('pump the hype');
+    expect(capturedInput.orderId).toBe('order-contract');
+    expect(capturedInput.loreSnippet).toBe('a whispered chapter about BNB');
+    expect(capturedInput.tokenSymbol).toBe('HBNB2026-ALP');
+    expect(capturedInput.includeFourMemeUrl).toBe(true);
+    // post_shill_for tool is wired through TInput — this is the only
+    // side-effect channel the shiller persona has.
+    expect(capturedInput.postShillForTool).toBe(postShillForTool);
+  });
+});

@@ -474,6 +474,226 @@ describe('HeartbeatSessionStore (memory backend)', () => {
       expect(second.snapshot.running).toBe(true);
     });
   });
+
+  // The matrix below is the canonical coverage of `start(...)` semantics
+  // when a prior session already exists. The neighbouring "restarting a
+  // stopped session resets counters" test (~line 317) overlaps with two
+  // of the cells below but is keyed by a different assertion shape and
+  // protects the specific `/heartbeat <addr> <ms> <n>` re-issue UX
+  // regression — keep both.
+  describe('restart state machine matrix', () => {
+    // Use `recordTick` to drive counters rather than fake-timer scheduling
+    // so each test is fast, deterministic, and cannot flake on timer
+    // coalescing. Fake timers are therefore NOT installed here.
+
+    const TICK_A: HeartbeatTickDelta = {
+      tickId: 'tick_a',
+      tickAt: '2026-04-20T00:00:01.000Z',
+      success: true,
+      action: 'post',
+    };
+    const TICK_B: HeartbeatTickDelta = {
+      tickId: 'tick_b',
+      tickAt: '2026-04-20T00:00:02.000Z',
+      success: true,
+      action: 'idle',
+    };
+
+    async function seedRunningWith(
+      s: HeartbeatSessionStore,
+      intervalMs: number,
+      maxTicks: number | undefined,
+      ticks: HeartbeatTickDelta[],
+    ): Promise<HeartbeatSessionState> {
+      await s.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs,
+        runTick: async () => makeDelta(),
+        ...(maxTicks !== undefined ? { maxTicks } : {}),
+      });
+      for (const t of ticks) {
+        await s.recordTick(FAKE_ADDR, t);
+      }
+      return (await s.get(FAKE_ADDR))!;
+    }
+
+    it('running + same intervalMs + maxTicks omitted → keep counters, keep cap, running=true', async () => {
+      const prior = await seedRunningWith(store, 5_000, 7, [TICK_A]);
+      expect(prior.running).toBe(true);
+      expect(prior.tickCount).toBe(1);
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 5_000,
+        runTick: async () => makeDelta(),
+      });
+
+      expect(restarted).toBe(false);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.tickCount).toBe(1);
+      expect(snapshot.successCount).toBe(1);
+      expect(snapshot.maxTicks).toBe(7);
+    });
+
+    it('running + same intervalMs + higher maxTicks → keep counters, raise cap, running=true', async () => {
+      await seedRunningWith(store, 5_000, 5, [TICK_A]);
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 5_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 20,
+      });
+
+      expect(restarted).toBe(false);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.tickCount).toBe(1);
+      expect(snapshot.maxTicks).toBe(20);
+    });
+
+    it('running + same intervalMs + lower maxTicks → keep counters, lower cap, running=true', async () => {
+      // Do NOT drive any further ticks here — the contract only asserts
+      // the snapshot state after start(). The next tick MAY trigger an
+      // auto-stop if tickCount>=maxTicks, but that belongs on a
+      // dedicated auto-stop test.
+      await seedRunningWith(store, 5_000, 10, [TICK_A]);
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 5_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 3,
+      });
+
+      expect(restarted).toBe(false);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.tickCount).toBe(1);
+      expect(snapshot.maxTicks).toBe(3);
+    });
+
+    it('running + new intervalMs + maxTicks omitted → keep counters, default cap, restarted=true', async () => {
+      await seedRunningWith(store, 5_000, 7, [TICK_A, TICK_B]);
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 10_000,
+        runTick: async () => makeDelta(),
+      });
+
+      expect(restarted).toBe(true);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.intervalMs).toBe(10_000);
+      expect(snapshot.tickCount).toBe(2);
+      expect(snapshot.successCount).toBe(2);
+      // Restart path with no explicit maxTicks always resolves to the
+      // default cap. This is a subtle contract — omitting maxTicks on
+      // restart silently reverts a previously-customised cap back to 5.
+      expect(snapshot.maxTicks).toBe(DEFAULT_HEARTBEAT_MAX_TICKS);
+    });
+
+    it('running + new intervalMs + explicit maxTicks → keep counters, explicit cap, restarted=true', async () => {
+      await seedRunningWith(store, 5_000, 7, [TICK_A]);
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 20_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 12,
+      });
+
+      expect(restarted).toBe(true);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.intervalMs).toBe(20_000);
+      expect(snapshot.tickCount).toBe(1);
+      expect(snapshot.maxTicks).toBe(12);
+    });
+
+    it('stopped (hit cap) + same intervalMs + same maxTicks → reset counters, refresh startedAt, restarted=true', async () => {
+      // Drive the real cap-hit path: start with maxTicks=2, recordTick
+      // twice, assert the auto-stop fired, then restart with the same cap.
+      await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 5_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 2,
+      });
+      await store.recordTick(FAKE_ADDR, TICK_A);
+      await store.recordTick(FAKE_ADDR, TICK_B);
+      const afterCap = (await store.get(FAKE_ADDR))!;
+      expect(afterCap.running).toBe(false);
+      expect(afterCap.tickCount).toBe(2);
+      const capStartedAt = afterCap.startedAt;
+
+      // Cross a millisecond boundary so the refreshed `startedAt` cannot
+      // collide with `capStartedAt`. `new Date().toISOString()` is ms-
+      // granular; synchronous awaits can resolve inside the same ms.
+      await new Promise((resolve) => setTimeout(resolve, 2));
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 5_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 2,
+      });
+
+      expect(restarted).toBe(true);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.tickCount).toBe(0);
+      expect(snapshot.successCount).toBe(0);
+      expect(snapshot.errorCount).toBe(0);
+      expect(snapshot.skippedCount).toBe(0);
+      expect(snapshot.lastTickId).toBeNull();
+      expect(snapshot.maxTicks).toBe(2);
+      // startedAt should refresh to the restart moment (not the original
+      // first-run moment) so "session age" in the UI tracks the active run.
+      expect(snapshot.startedAt).not.toBe(capStartedAt);
+    });
+
+    it('stopped (explicit stop) + same intervalMs + same maxTicks → reset counters, refresh startedAt, restarted=true', async () => {
+      await seedRunningWith(store, 5_000, 7, [TICK_A, TICK_B]);
+      const final = await store.stop(FAKE_ADDR);
+      expect(final!.running).toBe(false);
+      const stoppedStartedAt = final!.startedAt;
+
+      // Cross a millisecond boundary so the refreshed `startedAt` is
+      // provably different (see sibling test comment).
+      await new Promise((resolve) => setTimeout(resolve, 2));
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 5_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 7,
+      });
+
+      expect(restarted).toBe(true);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.tickCount).toBe(0);
+      expect(snapshot.successCount).toBe(0);
+      expect(snapshot.errorCount).toBe(0);
+      expect(snapshot.maxTicks).toBe(7);
+      expect(snapshot.startedAt).not.toBe(stoppedStartedAt);
+    });
+
+    it('stopped + new intervalMs + new higher maxTicks → reset counters, new cap, restarted=true', async () => {
+      await seedRunningWith(store, 5_000, 3, [TICK_A]);
+      await store.stop(FAKE_ADDR);
+
+      const { snapshot, restarted } = await store.start({
+        tokenAddr: FAKE_ADDR,
+        intervalMs: 15_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 10,
+      });
+
+      expect(restarted).toBe(true);
+      expect(snapshot.running).toBe(true);
+      expect(snapshot.intervalMs).toBe(15_000);
+      expect(snapshot.tickCount).toBe(0);
+      expect(snapshot.successCount).toBe(0);
+      expect(snapshot.maxTicks).toBe(10);
+    });
+  });
 });
 
 if (hasDatabaseUrl) {

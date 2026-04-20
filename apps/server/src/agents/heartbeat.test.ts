@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import { logEventSchema, type LogEvent } from '@hack-fourmeme/shared';
 import { ToolRegistry } from '../tools/registry.js';
-import { HeartbeatAgent } from './heartbeat.js';
+import {
+  HeartbeatAgent,
+  parseHeartbeatTickDecision,
+  type HeartbeatTickDecision,
+} from './heartbeat.js';
 import type { AgentLoopResult, runAgentLoop } from './runtime.js';
 
 /**
@@ -291,5 +295,94 @@ describe('HeartbeatAgent', () => {
 
     expect(agent.state.successCount).toBe(1);
     expect(agent.state.lastDecision).toBeNull();
+  });
+});
+
+// ─── parseTickDecision corpus ───────────────────────────────────────────────
+//
+// Corpus of realistic LLM final-text variants + the expected parser output.
+// Documents the behavioural contract of `parseHeartbeatTickDecision` against
+// model drift: adding a row for each observed failure mode is cheaper than
+// chasing a production regression. Each case runs through a single
+// `it.each` so a future reader can scan the table as a spec.
+describe('parseTickDecision corpus', () => {
+  interface Row {
+    readonly name: string;
+    readonly input: string;
+    readonly expected: HeartbeatTickDecision | null;
+  }
+
+  const rows: Row[] = [
+    {
+      name: 'clean JSON with post_to_x maps to post',
+      input: '{"action":"post_to_x","reason":"hype"}',
+      expected: { action: 'post', reason: 'hype' },
+    },
+    {
+      name: 'JSON inside a ```json fenced block',
+      // The parser slices between the first `{` and the last `}`, so the
+      // surrounding fence characters simply get ignored.
+      input: '```json\n{"action":"extend_lore","reason":"..."}\n```',
+      expected: { action: 'extend_lore', reason: '...' },
+    },
+    {
+      name: 'leading prose before the JSON blob',
+      input: 'Thinking about this...\n\n{"action":"idle","reason":"foo"}',
+      expected: { action: 'idle', reason: 'foo' },
+    },
+    {
+      name: 'trailing prose after the JSON blob',
+      input: '{"action":"post_to_x","reason":"bar"} (end of tick)',
+      expected: { action: 'post', reason: 'bar' },
+    },
+    {
+      name: 'action="idle" maps to idle verbatim',
+      input: '{"action":"idle","reason":"quiet"}',
+      expected: { action: 'idle', reason: 'quiet' },
+    },
+    {
+      name: 'action="skip" (legacy) maps to idle',
+      input: '{"action":"skip","reason":"legacy wire spelling"}',
+      expected: { action: 'idle', reason: 'legacy wire spelling' },
+    },
+    {
+      name: 'empty-string action maps to idle',
+      input: '{"action":"","reason":"no choice made"}',
+      expected: { action: 'idle', reason: 'no choice made' },
+    },
+    {
+      name: 'action="post" (no _to_x suffix) maps to post',
+      input: '{"action":"post","reason":"compact wire form"}',
+      expected: { action: 'post', reason: 'compact wire form' },
+    },
+    {
+      name: 'missing reason field yields the "no reason provided" sentinel',
+      input: '{"action":"post_to_x"}',
+      expected: { action: 'post', reason: 'no reason provided' },
+    },
+    {
+      name: 'whitespace-only reason collapses to the sentinel',
+      input: '{"action":"idle","reason":"   "}',
+      expected: { action: 'idle', reason: 'no reason provided' },
+    },
+    {
+      name: 'unknown action value returns null (persona never guesses)',
+      input: '{"action":"buy","reason":"speculation"}',
+      expected: null,
+    },
+    {
+      name: 'no JSON at all returns null',
+      input: 'the model forgot to emit a JSON blob',
+      expected: null,
+    },
+    {
+      name: 'malformed JSON returns null',
+      input: '{"action":"idle" reason":"x"}',
+      expected: null,
+    },
+  ];
+
+  it.each(rows)('$name', ({ input, expected }) => {
+    expect(parseHeartbeatTickDecision(input)).toEqual(expected);
   });
 });
