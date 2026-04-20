@@ -30,9 +30,11 @@
  */
 import { useEffect, useRef, type ReactElement } from 'react';
 import type { RunState } from '@/hooks/useRun-state';
+import { useBrainChatActivity, useRunState } from '@/hooks/useRunStateContext';
 import { PixelHumanGlyph, type ShillingMood } from '@/components/pixel-human-glyph';
 import { BrainChat } from '@/components/brain-chat';
 import { deriveBrainStatus, deriveActivePersonaLabel } from '@/components/brain-status-bar-utils';
+import { deriveGlyphMood } from '@/components/brain-indicator';
 
 export interface BrainPanelProps {
   readonly open: boolean;
@@ -54,9 +56,17 @@ export function BrainPanel({
   runState,
   initialDraft,
 }: BrainPanelProps): ReactElement {
-  const status = deriveBrainStatus(runState);
-  const persona = deriveActivePersonaLabel(runState);
-  const glyphMood: ShillingMood = status === 'online' ? 'think' : 'idle';
+  // The `runState` prop carries the useRun-sourced snapshot for status /
+  // persona derivation. MEMORY counts intentionally read from the merged
+  // context so BrainChat SSE activity (mirror-pushed logs + artifacts)
+  // shows up in the meta row even when the prop is idle. See the
+  // `useRunStateContext` docblock for the mirror contract.
+  const mergedRunState = useRunState();
+  const activity = useBrainChatActivity();
+  const status = deriveBrainStatus(runState, activity);
+  const persona = deriveActivePersonaLabel(runState, activity);
+  const glyphMood: ShillingMood =
+    status === 'online' ? deriveGlyphMood(runState, activity) : 'idle';
   const asideRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -145,10 +155,21 @@ export function BrainPanel({
     };
   }, []);
 
-  // Memory meta row: logs.length + artifacts.length both live on RunState
-  // regardless of phase, so the empty / idle case falls out naturally.
-  const logsCount = runState.logs.length;
-  const artifactsCount = runState.artifacts.length;
+  // Memory meta row reads the MERGED context so brain-chat mirror events
+  // count toward the pill, not just the page-level useRun prop. Falls back
+  // gracefully outside a provider (useRunState returns IDLE_STATE).
+  const logsCount = mergedRunState.logs.length;
+  const artifactsCount = mergedRunState.artifacts.length;
+
+  // TICK meta row: while the chat is actually streaming we surface a live
+  // event counter so the user can see the stream ticking in real time.
+  // Idle / error / other states collapse to a plain `idle` label — the
+  // prior hard-coded "60s · autonomous" misrepresented the panel (there
+  // is no 60s autonomous loop tied to this surface today).
+  const tickLabel =
+    activity.status === 'sending' || activity.status === 'streaming'
+      ? `${activity.eventCount.toString()} events · live`
+      : 'idle';
 
   return (
     <aside
@@ -177,7 +198,7 @@ export function BrainPanel({
       <section className="brain-panel-meta" aria-label="Brain meta">
         <MetaRow label="status" value={status} />
         <MetaRow label="persona" value={persona ?? '—'} />
-        <MetaRow label="tick" value="60s · autonomous" />
+        <MetaRow label="tick" value={tickLabel} />
         <MetaRow
           label="memory"
           value={`${logsCount.toString()} logs · ${artifactsCount.toString()} artifacts`}

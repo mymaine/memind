@@ -21,7 +21,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement, ReactNode } from 'react';
 import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import { IDLE_STATE, type RunState } from '@/hooks/useRun-state.js';
-import { RunStateContext, mergeRunState } from '@/hooks/useRunStateContext.js';
+import {
+  EMPTY_BRAIN_CHAT_ACTIVITY,
+  RunStateContext,
+  mergeRunState,
+} from '@/hooks/useRunStateContext.js';
 import { LogsDrawer } from '@/components/logs-drawer.js';
 
 function makeLog(message: string, agent: LogEvent['agent'] = 'brain'): LogEvent {
@@ -56,6 +60,10 @@ function withContext(runState: RunState, children: ReactNode): ReactElement {
       /* noop */
     },
     resetMirror: () => {
+      /* noop */
+    },
+    brainChatActivity: EMPTY_BRAIN_CHAT_ACTIVITY,
+    setBrainChatActivity: () => {
       /* noop */
     },
   } as const;

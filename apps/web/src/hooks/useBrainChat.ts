@@ -51,7 +51,11 @@ import {
   type BrainChatStatus,
   type BrainChatTurn,
 } from './useBrainChat-state';
-import { useRunStateMirror } from './useRunStateContext';
+import {
+  EMPTY_BRAIN_CHAT_ACTIVITY,
+  useRunStateMirror,
+  type BrainChatActivity,
+} from './useRunStateContext';
 
 // Same SSE origin rule as useRun: the Next.js dev rewrite proxy buffers SSE,
 // so EventSource hits the server origin directly. POST goes through the
@@ -126,6 +130,18 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
   // Rebuilt every run (the server-side run is a fresh toolUseId namespace).
   const toolAgentByIdRef = useRef<Map<string, AgentId>>(new Map());
   const sendingRef = useRef(false);
+  // Latest BrainChat activity snapshot. We keep it in a ref so per-event
+  // mutations (incrementing eventCount on every SSE event) do not churn
+  // React state or re-render the transcript rows — the activity only
+  // needs to reach the context subscribers (BrainIndicator / BrainPanel).
+  const activityRef = useRef<BrainChatActivity>(EMPTY_BRAIN_CHAT_ACTIVITY);
+  const publishActivity = useCallback(
+    (next: BrainChatActivity): void => {
+      activityRef.current = next;
+      mirror.setBrainChatActivity(next);
+    },
+    [mirror],
+  );
 
   // Mirror `state.turns` into a ref so `send()` can read the latest committed
   // transcript synchronously. React 18 batches state updates and does NOT
@@ -141,15 +157,22 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
     turnsRef.current = state.turns;
   }, [state.turns]);
 
-  // Close any live EventSource on unmount — same leak guard as useRun.
+  // Close any live EventSource on unmount — same leak guard as useRun. We
+  // also reset the published activity so the indicator drops back to IDLE
+  // when the BrainPanel host tree is torn down mid-stream.
   useEffect(() => {
     return () => {
       if (esRef.current) {
         esRef.current.close();
         esRef.current = null;
       }
+      activityRef.current = EMPTY_BRAIN_CHAT_ACTIVITY;
+      mirror.setBrainChatActivity(EMPTY_BRAIN_CHAT_ACTIVITY);
     };
-  }, []);
+    // `mirror` is memoised at provider-level; including it in deps keeps
+    // the cleanup fresh if the provider re-renders, but the subscription
+    // is still effectively once per mount.
+  }, [mirror]);
 
   /**
    * Mutate the currently-active assistant turn via a reducer fn. Identified by
@@ -178,7 +201,11 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
     // stale transcript.
     turnsRef.current = EMPTY_BRAIN_CHAT_STATE.turns;
     setState(EMPTY_BRAIN_CHAT_STATE);
-  }, []);
+    // Drop the published activity so the indicator / panel meta rows
+    // collapse back to IDLE + `idle` TICK immediately on reset.
+    activityRef.current = EMPTY_BRAIN_CHAT_ACTIVITY;
+    mirror.setBrainChatActivity(EMPTY_BRAIN_CHAT_ACTIVITY);
+  }, [mirror]);
 
   const send = useCallback(
     async (content: string): Promise<void> => {
@@ -196,6 +223,13 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
       const assistantTurn = buildAssistantTurn(makeTurnId());
       activeAssistantIdRef.current = assistantTurn.id;
       toolAgentByIdRef.current = new Map();
+
+      // Reset activity to `sending` on every new turn. currentAgent
+      // defaults to null — we pick it up from the first `tool_use:start`
+      // or `assistant:delta` event coming off the stream. eventCount
+      // restarts at zero so the TICK row tracks per-send rhythm, not
+      // a cumulative lifetime count.
+      publishActivity({ status: 'sending', currentAgent: null, eventCount: 0 });
 
       // Snapshot the prior transcript from the ref BEFORE scheduling the
       // state update. The ref reflects the latest committed `state.turns`
@@ -253,14 +287,42 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
         if (!runId) throw new Error('server returned empty runId');
 
         setState((prev) => ({ ...prev, status: 'streaming' }));
+        // Flip activity to streaming the moment POST resolves. The SSE
+        // stream may not have delivered its first event yet, but the
+        // EventSource is open and we want the indicator to reflect "wire
+        // is live". We intentionally preserve the (still zero) eventCount
+        // instead of incrementing — events themselves bump the counter.
+        publishActivity({
+          status: 'streaming',
+          currentAgent: activityRef.current.currentAgent,
+          eventCount: activityRef.current.eventCount,
+        });
 
         const es = new EventSource(`${SSE_ORIGIN}/api/runs/${runId}/events`);
         esRef.current = es;
+
+        // Per-event activity bookkeeping. Bumps eventCount by 1 and, when
+        // the event carries an agent id, rotates currentAgent to that
+        // persona so the indicator + BrainPanel meta row stay in sync
+        // with whoever the run is routing through. Artifact envelopes
+        // (no agent) pass `null` and the previous currentAgent sticks.
+        const bumpActivity = (agent: AgentId | null): void => {
+          const prev = activityRef.current;
+          // Guard against late-arriving events after `status:done` /
+          // `status:error` — never reopen the ONLINE pill.
+          if (prev.status !== 'sending' && prev.status !== 'streaming') return;
+          publishActivity({
+            status: 'streaming',
+            currentAgent: agent ?? prev.currentAgent,
+            eventCount: prev.eventCount + 1,
+          });
+        };
 
         es.addEventListener('assistant:delta', (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data as string) as AssistantDeltaEventPayload;
             updateActiveTurn((turn) => applyAssistantDelta(turn, data));
+            bumpActivity(data.agent);
           } catch {
             // Malformed payload — ignore; schema guarantees server well-formed.
           }
@@ -271,6 +333,7 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
             const data = JSON.parse(e.data as string) as ToolUseStartEventPayload;
             toolAgentByIdRef.current.set(data.toolUseId, data.agent);
             updateActiveTurn((turn) => applyToolUseStart(turn, data));
+            bumpActivity(data.agent);
           } catch {
             // Ignore malformed tool_use:start payloads.
           }
@@ -281,6 +344,7 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
             const data = JSON.parse(e.data as string) as ToolUseEndEventPayload;
             toolAgentByIdRef.current.set(data.toolUseId, data.agent);
             updateActiveTurn((turn) => applyToolUseEnd(turn, data));
+            bumpActivity(data.agent);
           } catch {
             // Ignore malformed tool_use:end payloads.
           }
@@ -298,8 +362,10 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
             // transcript. Brain-own logs are opaque (its own thinking
             // output) and we prefer the user sees tool_use pills +
             // assistant:delta content instead of duplicating the reply.
-            if (data.agent === 'brain') return;
-            updateActiveTurn((turn) => applyPersonaLog(turn, data));
+            if (data.agent !== 'brain') {
+              updateActiveTurn((turn) => applyPersonaLog(turn, data));
+            }
+            bumpActivity(data.agent);
           } catch {
             // Ignore malformed log payloads.
           }
@@ -319,6 +385,9 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
             const lastAgent =
               Array.from(toolAgentByIdRef.current.values()).pop() ?? ('brain' as const);
             updateActiveTurn((turn) => applyPersonaArtifact(turn, data, lastAgent));
+            // Artifact envelopes carry no agent id, so we carry forward the
+            // last known currentAgent (same semantics as the turn renderer).
+            bumpActivity(null);
           } catch {
             // Ignore malformed artifact payloads.
           }
@@ -332,12 +401,24 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
               es.close();
               esRef.current = null;
               activeAssistantIdRef.current = null;
+              // Reset activity so the indicator / TICK row drops back to
+              // IDLE once the run wraps.
+              publishActivity(EMPTY_BRAIN_CHAT_ACTIVITY);
             } else if (data.status === 'error') {
               const message = data.errorMessage ?? 'run failed';
               setState((prev) => ({ ...prev, status: 'error', errorMessage: message }));
               es.close();
               esRef.current = null;
               activeAssistantIdRef.current = null;
+              // Surface the error to the status bar but keep the last
+              // eventCount so the user can see the cadence at the
+              // moment of failure. currentAgent drops to null because
+              // the run is no longer routing through any persona.
+              publishActivity({
+                status: 'error',
+                currentAgent: null,
+                eventCount: activityRef.current.eventCount,
+              });
             }
           } catch {
             // Ignore malformed status payloads.
@@ -354,11 +435,18 @@ export function useBrainChat(scope: BrainChatScope): UseBrainChatResult {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setState((prev) => ({ ...prev, status: 'error', errorMessage: message }));
+        // Surface the failure to the indicator so it doesn't stay pinned
+        // at ONLINE after a POST / open-handshake failure.
+        publishActivity({
+          status: 'error',
+          currentAgent: null,
+          eventCount: activityRef.current.eventCount,
+        });
       } finally {
         sendingRef.current = false;
       }
     },
-    [updateActiveTurn, mirror],
+    [updateActiveTurn, mirror, publishActivity],
   );
 
   const appendLocalAssistant = useCallback((content: string): void => {

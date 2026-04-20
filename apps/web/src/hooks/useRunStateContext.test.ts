@@ -26,9 +26,18 @@
  *      even though IDLE_STATE's literal types insist they're `[]`
  */
 import { describe, it, expect } from 'vitest';
+import { createElement, type ReactElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
 import { IDLE_STATE, type RunState } from './useRun-state.js';
-import { dedupeArtifacts, mergeRunState } from './useRunStateContext.js';
+import {
+  dedupeArtifacts,
+  EMPTY_BRAIN_CHAT_ACTIVITY,
+  mergeRunState,
+  RunStateContext,
+  useBrainChatActivity,
+  type BrainChatActivity,
+} from './useRunStateContext.js';
 
 function makeLog(msg: string): LogEvent {
   return {
@@ -214,6 +223,96 @@ describe('dedupeArtifacts (helper)', () => {
       decisions: ['x'],
     };
     expect(dedupeArtifacts([tick, tick, tick])).toHaveLength(3);
+  });
+});
+
+describe('EMPTY_BRAIN_CHAT_ACTIVITY', () => {
+  it('matches the idle baseline with null currentAgent and zero eventCount', () => {
+    expect(EMPTY_BRAIN_CHAT_ACTIVITY).toEqual({
+      status: 'idle',
+      currentAgent: null,
+      eventCount: 0,
+    });
+  });
+
+  it('is a stable reference (hookable into useMemo deps without churn)', () => {
+    // Re-import via dynamic reference would break this — relying on module
+    // identity instead. Two literal reads of the export return the same
+    // object because the module-level singleton is only constructed once.
+    const ref1 = EMPTY_BRAIN_CHAT_ACTIVITY;
+    const ref2 = EMPTY_BRAIN_CHAT_ACTIVITY;
+    expect(ref1).toBe(ref2);
+  });
+
+  it('allows constructing BrainChatActivity variants via structural spread', () => {
+    // Pure shape assertion — the type annotation at the call site is the
+    // canary. If the structural contract drifts this file stops compiling.
+    const streaming: BrainChatActivity = {
+      ...EMPTY_BRAIN_CHAT_ACTIVITY,
+      status: 'streaming',
+      currentAgent: 'creator',
+      eventCount: 3,
+    };
+    expect(streaming.status).toBe('streaming');
+    expect(streaming.currentAgent).toBe('creator');
+    expect(streaming.eventCount).toBe(3);
+  });
+});
+
+describe('useBrainChatActivity — context wiring', () => {
+  function ActivityProbe(): ReactElement {
+    const activity = useBrainChatActivity();
+    return createElement('span', {
+      'data-status': activity.status,
+      'data-agent': activity.currentAgent ?? 'null',
+      'data-count': activity.eventCount.toString(),
+    });
+  }
+
+  function buildValue(activity: BrainChatActivity) {
+    return {
+      runState: IDLE_STATE,
+      publish: () => {
+        /* noop */
+      },
+      pushLog: () => {
+        /* noop */
+      },
+      pushArtifact: () => {
+        /* noop */
+      },
+      resetMirror: () => {
+        /* noop */
+      },
+      brainChatActivity: activity,
+      setBrainChatActivity: () => {
+        /* noop */
+      },
+    } as const;
+  }
+
+  it('returns EMPTY_BRAIN_CHAT_ACTIVITY outside a provider', () => {
+    const out = renderToStaticMarkup(createElement(ActivityProbe));
+    expect(out).toMatch(/data-status="idle"/);
+    expect(out).toMatch(/data-agent="null"/);
+    expect(out).toMatch(/data-count="0"/);
+  });
+
+  it('reads the provider value when wrapped', () => {
+    const streaming: BrainChatActivity = {
+      status: 'streaming',
+      currentAgent: 'creator',
+      eventCount: 4,
+    };
+    const tree = createElement(
+      RunStateContext.Provider,
+      { value: buildValue(streaming) },
+      createElement(ActivityProbe),
+    );
+    const out = renderToStaticMarkup(tree);
+    expect(out).toMatch(/data-status="streaming"/);
+    expect(out).toMatch(/data-agent="creator"/);
+    expect(out).toMatch(/data-count="4"/);
   });
 });
 

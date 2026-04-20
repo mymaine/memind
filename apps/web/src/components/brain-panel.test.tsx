@@ -22,11 +22,45 @@
  *  11. TOKEN BRAIN header text + PixelHumanGlyph mascot render unconditionally when open
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { LogEvent, Artifact } from '@hack-fourmeme/shared';
 import type { RunState } from '@/hooks/useRun-state';
 import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS, IDLE_STATE } from '@/hooks/useRun-state';
+import {
+  EMPTY_BRAIN_CHAT_ACTIVITY,
+  RunStateContext,
+  mergeRunState,
+  type BrainChatActivity,
+} from '@/hooks/useRunStateContext';
 import { BrainPanel } from './brain-panel.js';
+
+function withContext(
+  mergedRunState: RunState,
+  activity: BrainChatActivity,
+  children: ReactNode,
+): ReactElement {
+  const value = {
+    runState: mergedRunState,
+    publish: () => {
+      /* noop */
+    },
+    pushLog: () => {
+      /* noop */
+    },
+    pushArtifact: () => {
+      /* noop */
+    },
+    resetMirror: () => {
+      /* noop */
+    },
+    brainChatActivity: activity,
+    setBrainChatActivity: () => {
+      /* noop */
+    },
+  } as const;
+  return createElement(RunStateContext.Provider, { value }, children);
+}
 
 const NO_OP = () => {};
 
@@ -119,10 +153,14 @@ describe('<BrainPanel /> — meta rows', () => {
     expect(out).toContain('Creator');
   });
 
-  it('memory row reflects logs + artifacts counts from runState', () => {
-    const state = runningState({
-      logs: [log('creator', 'a'), log('narrator', 'b')],
-      artifacts: [
+  it('memory row reflects merged-context counts (covers BrainChat mirror pushes)', () => {
+    // MEMORY reads the merged RunStateContext, not the prop, so BrainChat
+    // SSE activity mirrored into context surfaces even when the prop is
+    // idle. Build a merged snapshot via the same kernel the provider uses.
+    const merged = mergeRunState(
+      IDLE_STATE,
+      [log('brain', 'thinking'), log('creator', 'deploying')],
+      [
         {
           kind: 'lore-cid',
           cid: 'QmAbc',
@@ -130,10 +168,106 @@ describe('<BrainPanel /> — meta rows', () => {
           author: 'creator',
         } as Artifact,
       ],
-    });
-    const out = renderToStaticMarkup(<BrainPanel open={true} onClose={NO_OP} runState={state} />);
+    );
+    const out = renderToStaticMarkup(
+      withContext(
+        merged,
+        EMPTY_BRAIN_CHAT_ACTIVITY,
+        <BrainPanel open={true} onClose={NO_OP} runState={IDLE_STATE} />,
+      ),
+    );
     expect(out).toContain('2 logs');
     expect(out).toContain('1 artifacts');
+  });
+
+  it('memory row falls back to 0s outside a provider (no context)', () => {
+    // Guard: without a provider `useRunState()` returns IDLE_STATE so the
+    // counts collapse to 0 / 0. This prevents a future regression where
+    // someone reintroduces the "prop wins" shortcut and silently breaks
+    // the mirror bridge.
+    const out = renderToStaticMarkup(
+      <BrainPanel open={true} onClose={NO_OP} runState={IDLE_STATE} />,
+    );
+    expect(out).toContain('0 logs');
+    expect(out).toContain('0 artifacts');
+  });
+});
+
+describe('<BrainPanel /> — TICK meta row', () => {
+  it('reads "idle" when brain-chat activity is idle', () => {
+    const out = renderToStaticMarkup(
+      <BrainPanel open={true} onClose={NO_OP} runState={IDLE_STATE} />,
+    );
+    // The TICK label lives in its own meta row; we assert the value text
+    // without leaking into other rows by anchoring on the row structure.
+    expect(out).toMatch(/>tick<[\s\S]*?>idle</);
+  });
+
+  it('reads "<N> events · live" while streaming', () => {
+    const streaming: BrainChatActivity = {
+      status: 'streaming',
+      currentAgent: 'creator',
+      eventCount: 7,
+    };
+    const out = renderToStaticMarkup(
+      withContext(
+        IDLE_STATE,
+        streaming,
+        <BrainPanel open={true} onClose={NO_OP} runState={IDLE_STATE} />,
+      ),
+    );
+    expect(out).toMatch(/>tick<[\s\S]*?>7 events · live</);
+  });
+
+  it('reads "0 events · live" during the sending transition (POST pending)', () => {
+    const sending: BrainChatActivity = {
+      status: 'sending',
+      currentAgent: null,
+      eventCount: 0,
+    };
+    const out = renderToStaticMarkup(
+      withContext(
+        IDLE_STATE,
+        sending,
+        <BrainPanel open={true} onClose={NO_OP} runState={IDLE_STATE} />,
+      ),
+    );
+    expect(out).toMatch(/>tick<[\s\S]*?>0 events · live</);
+  });
+
+  it('reverts to "idle" on activity.status=error (last-eventCount is not shown in TICK)', () => {
+    const errored: BrainChatActivity = {
+      status: 'error',
+      currentAgent: null,
+      eventCount: 5,
+    };
+    const out = renderToStaticMarkup(
+      withContext(
+        IDLE_STATE,
+        errored,
+        <BrainPanel open={true} onClose={NO_OP} runState={IDLE_STATE} />,
+      ),
+    );
+    expect(out).toMatch(/>tick<[\s\S]*?>idle</);
+  });
+});
+
+describe('<BrainPanel /> — activity-driven status', () => {
+  it('flips status to online when brain-chat is streaming even with idle run prop', () => {
+    const streaming: BrainChatActivity = {
+      status: 'streaming',
+      currentAgent: 'creator',
+      eventCount: 2,
+    };
+    const out = renderToStaticMarkup(
+      withContext(
+        IDLE_STATE,
+        streaming,
+        <BrainPanel open={true} onClose={NO_OP} runState={IDLE_STATE} />,
+      ),
+    );
+    expect(out).toMatch(/>status<[\s\S]*?>online</);
+    expect(out).toContain('Creator');
   });
 });
 

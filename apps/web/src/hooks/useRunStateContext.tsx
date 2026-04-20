@@ -42,9 +42,35 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import type { Artifact, LogEvent } from '@hack-fourmeme/shared';
+import type { AgentId, Artifact, LogEvent } from '@hack-fourmeme/shared';
 import { deriveNaturalKey } from '@hack-fourmeme/shared';
 import { IDLE_STATE, type RunState } from './useRun-state';
+
+/**
+ * Live activity signal emitted by `useBrainChat`. BrainChat owns a run that
+ * `useRun` never sees, so the TopBar <BrainIndicator /> and the right-side
+ * <BrainPanel /> meta rows used to stay frozen at IDLE while the chat was
+ * actively streaming. This shape lets the hook publish just enough signal
+ * (status + current persona + event count) for the status bar / TICK row
+ * to light up without re-plumbing every SSE payload into RunState.
+ */
+export type BrainChatActivityStatus = 'idle' | 'sending' | 'streaming' | 'error';
+export interface BrainChatActivity {
+  readonly status: BrainChatActivityStatus;
+  readonly currentAgent: AgentId | null;
+  /**
+   * Running count of SSE events for the in-flight `send()`. Reset to 0 on
+   * every new send, frozen at the last value on terminal `error`, and
+   * cleared on terminal `done` / `reset()` via the `idle` transition.
+   */
+  readonly eventCount: number;
+}
+
+export const EMPTY_BRAIN_CHAT_ACTIVITY: BrainChatActivity = {
+  status: 'idle',
+  currentAgent: null,
+  eventCount: 0,
+};
 
 interface RunStateContextValue {
   readonly runState: RunState;
@@ -52,6 +78,8 @@ interface RunStateContextValue {
   readonly pushLog: (log: LogEvent) => void;
   readonly pushArtifact: (artifact: Artifact) => void;
   readonly resetMirror: () => void;
+  readonly brainChatActivity: BrainChatActivity;
+  readonly setBrainChatActivity: (activity: BrainChatActivity) => void;
 }
 
 /**
@@ -141,6 +169,8 @@ export function RunStateProvider({ children }: { children: ReactNode }): ReactEl
   const [published, setPublished] = useState<RunState>(IDLE_STATE);
   const [extraLogs, setExtraLogs] = useState<LogEvent[]>([]);
   const [extraArtifacts, setExtraArtifacts] = useState<Artifact[]>([]);
+  const [brainChatActivity, setBrainChatActivityState] =
+    useState<BrainChatActivity>(EMPTY_BRAIN_CHAT_ACTIVITY);
 
   const publish = useCallback((state: RunState) => setPublished(state), []);
   const pushLog = useCallback((log: LogEvent) => {
@@ -153,6 +183,9 @@ export function RunStateProvider({ children }: { children: ReactNode }): ReactEl
     setExtraLogs([]);
     setExtraArtifacts([]);
   }, []);
+  const setBrainChatActivity = useCallback((next: BrainChatActivity) => {
+    setBrainChatActivityState(next);
+  }, []);
 
   const runState = useMemo(
     () => mergeRunState(published, extraLogs, extraArtifacts),
@@ -160,8 +193,24 @@ export function RunStateProvider({ children }: { children: ReactNode }): ReactEl
   );
 
   const value = useMemo<RunStateContextValue>(
-    () => ({ runState, publish, pushLog, pushArtifact, resetMirror }),
-    [runState, publish, pushLog, pushArtifact, resetMirror],
+    () => ({
+      runState,
+      publish,
+      pushLog,
+      pushArtifact,
+      resetMirror,
+      brainChatActivity,
+      setBrainChatActivity,
+    }),
+    [
+      runState,
+      publish,
+      pushLog,
+      pushArtifact,
+      resetMirror,
+      brainChatActivity,
+      setBrainChatActivity,
+    ],
   );
 
   return <RunStateContext.Provider value={value}>{children}</RunStateContext.Provider>;
@@ -206,6 +255,12 @@ export interface RunStateMirror {
   readonly pushLog: (log: LogEvent) => void;
   readonly pushArtifact: (artifact: Artifact) => void;
   readonly resetMirror: () => void;
+  /**
+   * Publish the latest BrainChat activity snapshot (status + persona +
+   * event count). No-op outside a provider so the hook does not need to
+   * guard call sites. See `BrainChatActivity` for the contract.
+   */
+  readonly setBrainChatActivity: (activity: BrainChatActivity) => void;
 }
 
 const NO_OP_MIRROR: RunStateMirror = {
@@ -216,6 +271,9 @@ const NO_OP_MIRROR: RunStateMirror = {
     /* no-op outside provider */
   },
   resetMirror: () => {
+    /* no-op outside provider */
+  },
+  setBrainChatActivity: () => {
     /* no-op outside provider */
   },
 };
@@ -231,6 +289,18 @@ export function useRunStateMirror(): RunStateMirror {
       pushLog: ctx.pushLog,
       pushArtifact: ctx.pushArtifact,
       resetMirror: ctx.resetMirror,
+      setBrainChatActivity: ctx.setBrainChatActivity,
     };
   }, [ctx]);
+}
+
+/**
+ * Read the latest BrainChat activity snapshot. Outside a provider returns
+ * `EMPTY_BRAIN_CHAT_ACTIVITY` so consumers (BrainIndicator / BrainPanel)
+ * still render the idle pill without special-casing the unwrapped test /
+ * SSR path.
+ */
+export function useBrainChatActivity(): BrainChatActivity {
+  const ctx = useContext(RunStateContext);
+  return ctx?.brainChatActivity ?? EMPTY_BRAIN_CHAT_ACTIVITY;
 }

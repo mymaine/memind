@@ -19,6 +19,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { LogEvent } from '@hack-fourmeme/shared';
 import type { RunState } from '@/hooks/useRun-state';
 import { EMPTY_ASSISTANT_TEXT, EMPTY_TOOL_CALLS, IDLE_STATE } from '@/hooks/useRun-state';
+import { EMPTY_BRAIN_CHAT_ACTIVITY, type BrainChatActivity } from '@/hooks/useRunStateContext';
 import { BrainIndicatorView, deriveGlyphMood } from './brain-indicator.js';
 
 function runningState(logs: LogEvent[]): RunState {
@@ -111,5 +112,76 @@ describe('deriveGlyphMood', () => {
 
   it('falls back to `work` for a running run with no logs yet', () => {
     expect(deriveGlyphMood(runningState([]))).toBe('work');
+  });
+
+  it('keeps `idle` when activity is also idle', () => {
+    expect(deriveGlyphMood(IDLE_STATE, EMPTY_BRAIN_CHAT_ACTIVITY)).toBe('idle');
+  });
+
+  it('picks the activity.currentAgent mood while streaming even with idle run', () => {
+    const streaming: BrainChatActivity = {
+      status: 'streaming',
+      currentAgent: 'creator',
+      eventCount: 1,
+    };
+    expect(deriveGlyphMood(IDLE_STATE, streaming)).toBe('type-keyboard');
+  });
+
+  it('prefers activity persona over useRun log when both present', () => {
+    const streaming: BrainChatActivity = {
+      status: 'streaming',
+      currentAgent: 'heartbeat',
+      eventCount: 2,
+    };
+    expect(deriveGlyphMood(runningState([log('creator', 'x')]), streaming)).toBe('walk-right');
+  });
+
+  it('falls back to `work` when streaming but agent is null and no logs', () => {
+    const streaming: BrainChatActivity = {
+      status: 'streaming',
+      currentAgent: null,
+      eventCount: 1,
+    };
+    expect(deriveGlyphMood(runningState([]), streaming)).toBe('work');
+  });
+});
+
+describe('<BrainIndicatorView /> — activity-driven', () => {
+  it('flips to ONLINE when activity is streaming even while runState is idle', () => {
+    const streaming: BrainChatActivity = {
+      status: 'streaming',
+      currentAgent: 'creator',
+      eventCount: 1,
+    };
+    const out = renderToStaticMarkup(
+      <BrainIndicatorView runState={IDLE_STATE} activity={streaming} onClick={() => {}} />,
+    );
+    expect(out).toContain('ONLINE');
+    // Mood should follow the activity persona.
+    expect(out).toMatch(/data-testid="brain-indicator-mascot"[^]*?data-mood="type-keyboard"/);
+  });
+
+  it('flips to ONLINE when activity is sending (POST in flight before SSE opens)', () => {
+    const sending: BrainChatActivity = {
+      status: 'sending',
+      currentAgent: null,
+      eventCount: 0,
+    };
+    const out = renderToStaticMarkup(
+      <BrainIndicatorView runState={IDLE_STATE} activity={sending} onClick={() => {}} />,
+    );
+    expect(out).toContain('ONLINE');
+  });
+
+  it('stays IDLE when activity.status is error', () => {
+    const errored: BrainChatActivity = {
+      status: 'error',
+      currentAgent: null,
+      eventCount: 2,
+    };
+    const out = renderToStaticMarkup(
+      <BrainIndicatorView runState={IDLE_STATE} activity={errored} onClick={() => {}} />,
+    );
+    expect(out).toContain('IDLE');
   });
 });

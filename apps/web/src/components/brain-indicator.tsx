@@ -20,7 +20,11 @@
 import type { ReactElement } from 'react';
 import type { AgentId } from '@hack-fourmeme/shared';
 import type { RunState } from '@/hooks/useRun-state';
-import { useRunState } from '@/hooks/useRunStateContext';
+import {
+  useBrainChatActivity,
+  useRunState,
+  type BrainChatActivity,
+} from '@/hooks/useRunStateContext';
 import { deriveBrainStatus, type BrainStatus } from './brain-status-bar-utils';
 import { PixelHumanGlyph, type ShillingMood } from './pixel-human-glyph';
 
@@ -38,12 +42,27 @@ const AGENT_MOOD: Partial<Record<AgentId, ShillingMood>> = {
 };
 
 /**
- * Derive the glyph mood from the runState. Idle runs always show `idle`.
- * When running, use the latest log's agent to pick a persona-flavoured mood
- * so the indicator reads as "the brain is doing X right now".
+ * Derive the glyph mood from the runState + optional BrainChat activity.
+ *
+ * Priority order:
+ *   1. If nothing is live (run idle + activity idle/error) → `idle`.
+ *   2. If BrainChat is streaming/sending and carries a currentAgent, map
+ *      it to that agent's mood. This keeps the TopBar glyph in sync with
+ *      the persona the chat is actively routing through even when useRun
+ *      never fired.
+ *   3. Otherwise fall back to the last useRun log agent.
+ *   4. Running with no logs and no activity persona → `work` as a safe
+ *      generic "busy" mood.
  */
-export function deriveGlyphMood(runState: RunState): ShillingMood {
-  if (deriveBrainStatus(runState) === 'idle') return 'idle';
+export function deriveGlyphMood(runState: RunState, activity?: BrainChatActivity): ShillingMood {
+  if (deriveBrainStatus(runState, activity) === 'idle') return 'idle';
+  if (
+    activity &&
+    (activity.status === 'sending' || activity.status === 'streaming') &&
+    activity.currentAgent !== null
+  ) {
+    return AGENT_MOOD[activity.currentAgent] ?? 'work';
+  }
   const { logs } = runState;
   const latest = logs[logs.length - 1];
   if (!latest) return 'work';
@@ -53,6 +72,11 @@ export function deriveGlyphMood(runState: RunState): ShillingMood {
 export interface BrainIndicatorViewProps {
   readonly runState: RunState;
   readonly onClick: () => void;
+  /**
+   * Optional BrainChat live activity signal. When present (and live) it
+   * drives the ONLINE pill + glyph mood even if `runState` is idle.
+   */
+  readonly activity?: BrainChatActivity;
 }
 
 /**
@@ -60,9 +84,9 @@ export interface BrainIndicatorViewProps {
  * label + status dot. No hooks, no browser APIs; tests render directly.
  */
 export function BrainIndicatorView(props: BrainIndicatorViewProps): ReactElement {
-  const { runState, onClick } = props;
-  const status: BrainStatus = deriveBrainStatus(runState);
-  const mood: ShillingMood = deriveGlyphMood(runState);
+  const { runState, onClick, activity } = props;
+  const status: BrainStatus = deriveBrainStatus(runState, activity);
+  const mood: ShillingMood = deriveGlyphMood(runState, activity);
   const statusLabel = status === 'online' ? 'ONLINE' : 'IDLE';
   const statusColor = status === 'online' ? 'var(--accent)' : 'var(--fg-tertiary)';
 
@@ -96,11 +120,14 @@ export interface BrainIndicatorProps {
 /**
  * Client shell - subscribes to RunStateContext if the caller does not pass
  * a runState. The parent (TopBar) owns the BrainPanel open state so this
- * component just forwards the click.
+ * component just forwards the click. We always read the BrainChat activity
+ * from context so the indicator lights up during brain-chat runs even when
+ * the caller passes a stale useRun-sourced `runState` prop (page.tsx does).
  */
 export function BrainIndicator(props: BrainIndicatorProps): ReactElement {
   const contextRunState = useRunState();
+  const activity = useBrainChatActivity();
   const runState = props.runState ?? contextRunState;
   const onClick = props.onClick ?? ((): void => {});
-  return <BrainIndicatorView runState={runState} onClick={onClick} />;
+  return <BrainIndicatorView runState={runState} onClick={onClick} activity={activity} />;
 }
