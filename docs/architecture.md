@@ -267,19 +267,63 @@ Server SSE handler
 
 ### Flow 6 — Heartbeat autonomous tick
 
+The heartbeat surface has three trigger paths with overlapping primitives. The
+CLI / `kind:'heartbeat'` run drives a finite `tickCount` loop; brain-chat
+slash commands drive a long-lived `HeartbeatSessionStore` session.
+
 ```
-HeartbeatAgent (triggered by pnpm demo:heartbeat or
-                POST /api/runs {kind:'heartbeat', tokenAddress})
-  every HEARTBEAT_INTERVAL_MS milliseconds (production default 60s;
-  dashboard run default 10s):
-  → isTickRunning lock (overlapping ticks are skipped, skippedCount++)
-  → runAgentLoop (agentId='heartbeat', maxTurns=4)
-     → check_token_status
-     → autonomous decision: post_to_x / extend_lore / idle
-     → emit artifacts: heartbeat-tick, heartbeat-decision, tweet-url (if posted)
-     → (optional) --dry-run replaces real posting with a stub
-  → error isolation (tick-level try/catch never escapes to the interval)
-  → SIGINT/SIGTERM triggers graceful shutdown
+(a) CLI / POST /api/runs {kind:'heartbeat', tokenAddress}
+    HeartbeatAgent + runHeartbeatDemo
+    → isTickRunning lock (overlapping ticks are skipped, skippedCount++)
+    → runAgentLoop (agentId='heartbeat', maxTurns=4)
+       → check_token_status
+       → autonomous decision: post_to_x / extend_lore / idle
+       → emit artifacts: heartbeat-tick, heartbeat-decision, tweet-url
+    → error isolation (tick-level try/catch never escapes to the interval)
+    → SIGINT/SIGTERM triggers graceful shutdown
+
+(b) BrainChat  /heartbeat <addr>
+    (no intervalMs)  →  invoke_heartbeat_tick runs ONE tick and returns the
+                        current HeartbeatSessionStore snapshot (or the fresh
+                        tick's state when no session exists)
+
+(c) BrainChat  /heartbeat <addr> <ms> [maxTicks]
+    → invoke_heartbeat_tick starts / restarts a long-lived session:
+       HeartbeatSessionStore.start({ tokenAddr, intervalMs, maxTicks, runTick })
+         → setInterval fires runTick every <ms> ms (real timer, unref'd)
+         → runTick = one `heartbeatPersona` invocation (LLM + tool calls)
+         → tick-scoped artifacts (tweet-url / lore-cid) captured by a
+           local onArtifact wrapper and folded into the session's
+           HeartbeatTickDelta
+         → auto-stops when tickCount >= maxTicks (default DEFAULT_HEARTBEAT_MAX_TICKS=5;
+           every fire counts — success + error + overlap-skip — so the cap is
+           absolute, not just "successful ticks")
+       → also runs ONE immediate tick synchronously so the user sees a result
+         before the first interval elapses
+       → session counters + running flag persist through a shared pg pool;
+         timers NEVER auto-resume on restart (ensureSchema forces
+         running=false on every row at boot) so the UI shows reality, not
+         phantom loops — users must reissue /heartbeat to resume
+
+    Counter semantics on restart:
+       - same intervalMs, session still running → idempotent refresh,
+         counters preserved
+       - intervalMs changed, session still running → restart, counters
+         preserved (user is tweaking cadence of the SAME run)
+       - session was stopped (explicit /heartbeat-stop OR hit cap) →
+         fresh run: tickCount / successCount / errorCount / skippedCount
+         reset, startedAt refreshed
+
+(d) Live tick SSE push  —  GET /api/heartbeats/:tokenAddr/events
+    HeartbeatSessionStore owns an `onAfterTick` hook fired AFTER applyDelta
+    + maybeAutoStop on every fire (success / error / overlap-skip) and every
+    external recordTick. The hook publishes to HeartbeatEventBus
+    (per-token pub/sub, listener-error isolated). The SSE route subscribes
+    per connection and emits three named events:
+       initial        — current snapshot (or null) at connect time
+       tick           — { snapshot, delta, artifacts?, emittedAt } on each fire
+       session-ended  — final snapshot + res.end() once snapshot.running=false
+    Keepalive `: ping\n\n` every 20s; teardown on req.close.
 ```
 
 ### Flow 7 — Brain conversational chat (BrainPanel → persona dispatch)
@@ -288,27 +332,41 @@ HeartbeatAgent (triggered by pnpm demo:heartbeat or
 Browser (BrainPanel open via TopBar click, memind:open-brain CustomEvent,
          or Ch5/Ch6 inline chat entry)
   → slash command resolved client-side via useSlashPalette:
-       /launch <theme>          → routes to creator persona
-       /order <tokenAddr>       → routes to market-maker persona
-       /lore <tokenAddr>        → routes to narrator persona
-       /heartbeat <tokenAddr>   → routes to heartbeat persona
-       /heartbeat <addr> <ms>   → starts a long-lived background tick loop
-                                  (HeartbeatSessionStore) via setInterval
-       /heartbeat-stop <addr>   → stops that background loop
-       /status                  → queries current RunState
-       /help | /reset           → client-only
+       /launch <theme>                         → routes to creator persona
+       /order <tokenAddr> [brief]              → routes to market-maker persona
+       /lore <tokenAddr>                       → routes to narrator persona
+       /heartbeat <tokenAddr>                  → one-shot tick OR snapshot
+                                                 read if a session exists
+       /heartbeat <addr> <ms> [maxTicks]       → starts / restarts a long-lived
+                                                 background tick loop
+                                                 (HeartbeatSessionStore) via
+                                                 setInterval; default cap = 5
+       /heartbeat-stop <addr>                  → stops that background loop
+       /heartbeat-list                         → lists every currently running
+                                                 background loop (survives
+                                                 browser refresh / /clear)
+       /status                                 → queries current RunState
+       /help | /reset | /clear                 → client-only
   → POST /api/runs { kind:'brain-chat', messages:[{role, content}, …] }
   → EventSource /api/runs/:runId/events
 Server
   → runBrainChat (runs/brain-chat.ts)
      → runAgentLoop with BRAIN_SYSTEM_PROMPT + invoke_* tool factories
      → Brain picks invoke_creator | invoke_narrator | invoke_shiller |
-         invoke_heartbeat_tick → runs the target persona inline
+         invoke_heartbeat_tick | stop_heartbeat | list_heartbeats
+         → runs the target persona inline (or reads session store state for
+           stop / list)
      → every persona tool emits its own LogEvents + artifacts onto the run
   → runStore.setStatus → terminal
 Client
   → useBrainChat accumulates assistant:delta into streaming chat bubbles
   → useRunStateContext mirrors artifacts into LogsDrawer
+  → after a background-mode invoke_heartbeat_tick lands, BrainChat extracts
+    the tokenAddr and opens useHeartbeatStream(tokenAddr). Each incoming
+    tick event becomes a new `role: 'heartbeat'` turn via buildHeartbeatTurn
+    (distinct bubble, markdown-rendered content with tweet / IPFS links).
+    turnToApiMessage maps heartbeat turns → `[heartbeat] …` assistant
+    context on the next POST so the LLM sees tick history on follow-ups.
 ```
 
 ## Module Boundaries
