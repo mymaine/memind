@@ -662,6 +662,7 @@ describe('createInvokeHeartbeatTickTool', () => {
       errorCount: 0,
       skippedCount: 0,
       lastError: null,
+      lastDecision: null,
     }));
     const tool = createInvokeHeartbeatTickTool({
       persona,
@@ -695,6 +696,7 @@ describe('createInvokeHeartbeatTickTool', () => {
         errorCount: 0,
         skippedCount: 0,
         lastError: null,
+        lastDecision: null,
       }),
     );
     const persona = makeHeartbeatPersona(run);
@@ -736,6 +738,7 @@ describe('createInvokeHeartbeatTickTool', () => {
         errorCount: 0,
         skippedCount: 0,
         lastError: null,
+        lastDecision: null,
       }),
     );
     const persona = makeHeartbeatPersona(run);
@@ -782,6 +785,7 @@ describe('createInvokeHeartbeatTickTool', () => {
         errorCount: 0,
         skippedCount: 0,
         lastError: null,
+        lastDecision: null,
       }),
     );
     const persona = makeHeartbeatPersona(run);
@@ -838,6 +842,7 @@ describe('createInvokeHeartbeatTickTool', () => {
         errorCount: 0,
         skippedCount: 0,
         lastError: null,
+        lastDecision: null,
       }),
     );
     const persona = makeHeartbeatPersona(run);
@@ -891,6 +896,7 @@ describe('createInvokeHeartbeatTickTool', () => {
         errorCount: 0,
         skippedCount: 0,
         lastError: null,
+        lastDecision: null,
       }),
     );
     const persona = makeHeartbeatPersona(run);
@@ -992,6 +998,7 @@ describe('createInvokeHeartbeatTickTool', () => {
           errorCount: 0,
           skippedCount: 0,
           lastError: null,
+          lastDecision: null,
         };
       },
     );

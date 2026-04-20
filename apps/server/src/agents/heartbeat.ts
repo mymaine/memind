@@ -23,6 +23,19 @@ export interface HeartbeatAgentConfig {
 }
 
 /**
+ * Structured decision the heartbeat LLM returns at the end of every tick
+ * (see SYSTEM_PROMPT — the model is required to emit a
+ * `{"action": "post_to_x"|"extend_lore"|"idle", "reason": "..."}` JSON
+ * blob). We capture it here so the persona's caller (Brain invoke layer,
+ * SSE chat bubble) can explain WHY the agent did what it did without
+ * re-parsing the final text themselves.
+ */
+export interface HeartbeatTickDecision {
+  readonly action: 'post' | 'extend_lore' | 'idle';
+  readonly reason: string;
+}
+
+/**
  * Observable snapshot of heartbeat state. All fields are read-only copies so
  * consumers (e.g. dashboard SSE feed) cannot mutate internal counters.
  */
@@ -33,9 +46,55 @@ export interface HeartbeatState {
   readonly errorCount: number;
   readonly skippedCount: number;
   readonly lastError: string | null;
+  /**
+   * Most recent parsed decision (null before the first successful tick or
+   * when the LLM's final text was unparseable). Consumers should treat a
+   * `null` decision as "the tick ran but produced no interpretable
+   * action" — we never fabricate a decision, the field stays null.
+   */
+  readonly lastDecision: HeartbeatTickDecision | null;
 }
 
 const DEFAULT_MAX_TURNS_PER_TICK = 5;
+
+/**
+ * Extract the `{action, reason}` JSON the heartbeat system prompt
+ * contractually requires from the LLM's final message. Tolerant of
+ * surrounding whitespace, markdown fences, or trailing prose; maps the
+ * prompt's `post_to_x` wire spelling to our UI-facing `post` enum AND
+ * collapses the three "do nothing" spellings (`skip`, `idle`, empty) to
+ * `idle` so downstream consumers get a clean three-valued enum.
+ * Returns `null` when no parseable JSON exists — the caller writes that
+ * through verbatim rather than fabricating a decision.
+ *
+ * Duplicates the behavioural contract of `heartbeat-runner.parseTickDecision`
+ * intentionally: that helper collapses `idle` → `skip` for the runner's
+ * artifact schema, which is backward-incompatible with the persona /
+ * chat-bubble surface. Keeping a dedicated parser here sidesteps a
+ * circular import (heartbeat-runner already imports HeartbeatAgent).
+ */
+function parseTickDecision(finalText: string): HeartbeatTickDecision | null {
+  const firstBrace = finalText.indexOf('{');
+  const lastBrace = finalText.lastIndexOf('}');
+  if (firstBrace < 0 || lastBrace <= firstBrace) return null;
+  const candidate = finalText.slice(firstBrace, lastBrace + 1);
+  let parsed: { action?: unknown; reason?: unknown };
+  try {
+    parsed = JSON.parse(candidate) as { action?: unknown; reason?: unknown };
+  } catch {
+    return null;
+  }
+  const rawAction = typeof parsed.action === 'string' ? parsed.action : '';
+  const reason =
+    typeof parsed.reason === 'string' && parsed.reason.trim() !== ''
+      ? parsed.reason.trim()
+      : 'no reason provided';
+  if (rawAction === 'post' || rawAction === 'post_to_x') return { action: 'post', reason };
+  if (rawAction === 'extend_lore') return { action: 'extend_lore', reason };
+  if (rawAction === 'idle' || rawAction === 'skip' || rawAction === '')
+    return { action: 'idle', reason };
+  return null;
+}
 
 /**
  * Periodic tick driver that wraps `runAgentLoop`. One HeartbeatAgent owns one
@@ -61,6 +120,7 @@ export class HeartbeatAgent {
   private _errorCount = 0;
   private _skippedCount = 0;
   private _lastError: string | null = null;
+  private _lastDecision: HeartbeatTickDecision | null = null;
 
   constructor(config: HeartbeatAgentConfig) {
     this.config = config;
@@ -75,6 +135,7 @@ export class HeartbeatAgent {
       errorCount: this._errorCount,
       skippedCount: this._skippedCount,
       lastError: this._lastError,
+      lastDecision: this._lastDecision,
     };
   }
 
@@ -161,7 +222,7 @@ export class HeartbeatAgent {
     this.emitLog('info', 'tick start', { tickId, tickAt });
 
     try {
-      await this.runLoop({
+      const loop = await this.runLoop({
         client: this.config.client,
         model: this.config.model,
         registry: this.config.registry,
@@ -172,6 +233,12 @@ export class HeartbeatAgent {
         agentId: 'heartbeat',
       });
       this._successCount += 1;
+      // Parse the LLM's final decision JSON so downstream consumers (Brain
+      // invoke layer, SSE chat bubble) can show WHY this tick did what it
+      // did. We rely on the system prompt's hard contract that the final
+      // text is a `{action, reason}` JSON object; anything unparseable
+      // leaves _lastDecision at null (honest — do not guess).
+      this._lastDecision = parseTickDecision(loop.finalText);
       this.emitLog('info', 'tick complete', { tickId });
     } catch (err) {
       const message = this.toMessage(err);
@@ -250,6 +317,14 @@ export const heartbeatPersonaOutputSchema = z.object({
   errorCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
   lastError: z.string().nullable(),
+  // Parsed LLM decision for the just-finished tick (null if the tick
+  // errored or the final text was unparseable). See `HeartbeatTickDecision`.
+  lastDecision: z
+    .object({
+      action: z.enum(['post', 'extend_lore', 'idle']),
+      reason: z.string(),
+    })
+    .nullable(),
 });
 export type HeartbeatPersonaOutput = z.infer<typeof heartbeatPersonaOutputSchema>;
 
@@ -285,6 +360,7 @@ export const heartbeatPersona: Persona<HeartbeatPersonaInput, HeartbeatPersonaOu
       errorCount: snapshot.errorCount,
       skippedCount: snapshot.skippedCount,
       lastError: snapshot.lastError,
+      lastDecision: snapshot.lastDecision,
     };
   },
 };

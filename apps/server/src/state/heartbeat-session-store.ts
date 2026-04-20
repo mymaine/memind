@@ -64,6 +64,12 @@ export interface HeartbeatTickDelta {
   readonly tickAt: string;
   readonly success: boolean;
   readonly action?: HeartbeatSessionAction;
+  /**
+   * Human-readable rationale the persona returned for its chosen action.
+   * Threaded onto the tick-event bus so heartbeat chat bubbles can show
+   * "idle — waiting for marketcap to move" instead of a bare "idle".
+   */
+  readonly reason?: string;
   readonly error?: string;
   /**
    * Optional tick-scoped artifacts captured by the caller (e.g. the

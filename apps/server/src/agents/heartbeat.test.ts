@@ -232,4 +232,64 @@ describe('HeartbeatAgent', () => {
     // At least one tick-lifecycle log should mention "tick".
     expect(logs.some((e) => e.message.includes('tick'))).toBe(true);
   });
+
+  // ─── lastDecision parsing ─────────────────────────────────────────────────
+
+  it('captures the LLM decision JSON from finalText as state.lastDecision', async () => {
+    const runAgentLoopImpl = vi.fn(
+      async (): Promise<AgentLoopResult> => ({
+        finalText:
+          'Some preamble prose the model emits before the decision.\n\n' +
+          '{"action": "post_to_x", "reason": "hype cycle momentum"}',
+        toolCalls: [],
+        trace: [],
+        stopReason: 'end_turn',
+      }),
+    );
+    const agent = makeAgent({ runAgentLoopImpl });
+
+    await agent.tick();
+
+    expect(agent.state.successCount).toBe(1);
+    expect(agent.state.lastDecision).toEqual({
+      action: 'post',
+      reason: 'hype cycle momentum',
+    });
+  });
+
+  it('maps the "idle" wire action to the three-value enum and keeps the reason', async () => {
+    const runAgentLoopImpl = vi.fn(
+      async (): Promise<AgentLoopResult> => ({
+        finalText: '{"action": "idle", "reason": "waiting for marketcap to move"}',
+        toolCalls: [],
+        trace: [],
+        stopReason: 'end_turn',
+      }),
+    );
+    const agent = makeAgent({ runAgentLoopImpl });
+
+    await agent.tick();
+
+    expect(agent.state.lastDecision).toEqual({
+      action: 'idle',
+      reason: 'waiting for marketcap to move',
+    });
+  });
+
+  it('leaves lastDecision null when the final text is unparseable (no fabrication)', async () => {
+    const runAgentLoopImpl = vi.fn(
+      async (): Promise<AgentLoopResult> => ({
+        finalText: 'the model forgot to emit a JSON blob',
+        toolCalls: [],
+        trace: [],
+        stopReason: 'end_turn',
+      }),
+    );
+    const agent = makeAgent({ runAgentLoopImpl });
+
+    await agent.tick();
+
+    expect(agent.state.successCount).toBe(1);
+    expect(agent.state.lastDecision).toBeNull();
+  });
 });

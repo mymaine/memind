@@ -477,6 +477,13 @@ export const heartbeatTickDeltaSchema = z.object({
   tickAt: z.string().datetime(),
   success: z.boolean(),
   action: heartbeatSessionActionSchema.optional(),
+  /**
+   * Human-readable rationale the persona returned for its chosen action
+   * (the `reason` field of the LLM's final JSON decision). Surfaces live
+   * in the heartbeat chat bubble so "idle" ticks are informative instead
+   * of looking like no-ops.
+   */
+  reason: z.string().optional(),
   error: z.string().optional(),
   /**
    * Optional tick-scoped artifacts the persona emitted during this tick

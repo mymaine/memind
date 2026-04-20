@@ -696,22 +696,15 @@ async function executeHeartbeatPersonaRun(
 }
 
 /**
- * Infer a coarse-grained action label from the parsed persona output. The
- * heartbeat persona's final JSON is not captured structurally by the adapter
- * (it returns the scheduler snapshot instead), so we approximate by looking
- * at what changed relative to the prior snapshot. Best-effort — callers
- * treat `null` as "unknown".
+ * Read the parsed `{action, reason}` decision off a heartbeat persona
+ * result. Null when the tick errored OR the LLM's final text was
+ * unparseable — downstream consumers (chat bubble) should render a neutral
+ * status in that case rather than a fabricated action.
  */
-function inferActionFromSnapshotDelta(
-  _prior: HeartbeatPersonaOutput | null,
-  _next: HeartbeatPersonaOutput,
-): HeartbeatSessionAction | null {
-  // The persona adapter does not currently surface the LLM's `action` field
-  // to the invoke layer; artifact emissions carry that info at a different
-  // layer. Returning null keeps the contract honest — callers render "idle"
-  // or "n/a" in the UI instead of guessing. A future change can swap this
-  // for a real mapping if the adapter starts returning the decision.
-  return null;
+function decisionFromPersonaResult(
+  result: HeartbeatPersonaOutput,
+): { action: HeartbeatSessionAction; reason: string } | null {
+  return result.lastDecision ?? null;
 }
 
 function snapshotToOutput(
@@ -759,7 +752,10 @@ function personaOutputToOneShotOutput(
     skippedCount: result.skippedCount,
     lastTickAt: result.lastTickAt,
     lastTickId: result.lastTickId,
-    lastAction: null,
+    // Surface the parsed LLM decision (may be null when the tick errored
+    // or the final text was unparseable). The chat bubble reads this to
+    // label the one-shot tick's action.
+    lastAction: result.lastDecision?.action ?? null,
     lastError: result.lastError,
   };
 }
@@ -842,14 +838,13 @@ export function createInvokeHeartbeatTickTool(
         try {
           const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(deps, intervalMs);
           const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
+          const decision = decisionFromPersonaResult(result);
           return {
             tickId,
             tickAt: result.lastTickAt ?? tickAt,
             success: result.lastError === null,
             ...(result.lastError !== null ? { error: result.lastError } : {}),
-            ...(inferActionFromSnapshotDelta(null, result) !== null
-              ? { action: inferActionFromSnapshotDelta(null, result) as HeartbeatSessionAction }
-              : {}),
+            ...(decision !== null ? { action: decision.action, reason: decision.reason } : {}),
             ...(capturedArtifacts.length > 0 ? { artifacts: capturedArtifacts } : {}),
           };
         } catch (err) {
@@ -889,13 +884,13 @@ export function createInvokeHeartbeatTickTool(
         const { result, capturedArtifacts } = await executeHeartbeatPersonaRun(deps, intervalMs);
         const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
         const tickAt = result.lastTickAt ?? new Date().toISOString();
-        const action = inferActionFromSnapshotDelta(null, result);
+        const decision = decisionFromPersonaResult(result);
         await sessionStore.recordTick(tokenAddr, {
           tickId,
           tickAt,
           success: result.lastError === null,
           ...(result.lastError !== null ? { error: result.lastError } : {}),
-          ...(action !== null ? { action } : {}),
+          ...(decision !== null ? { action: decision.action, reason: decision.reason } : {}),
           ...(capturedArtifacts.length > 0 ? { artifacts: capturedArtifacts } : {}),
         });
         const durationMs = Date.now() - startedAt;

@@ -255,34 +255,42 @@ export function buildHeartbeatTurn(id: string, payload: HeartbeatTickEvent): Bra
   const tickNumber = snapshot.tickCount;
   const maxTicks = snapshot.maxTicks;
   const action = delta.action ?? null;
+  // LLM-authored rationale for this tick's decision. Empty / missing on
+  // unparseable final text; treat that as "no reason" and skip the
+  // em-dash suffix so the bubble stays clean.
+  const rawReason = typeof delta.reason === 'string' ? delta.reason.trim() : '';
+  const reason = rawReason !== '' && rawReason !== 'no reason provided' ? rawReason : null;
+  const reasonSuffix = reason !== null ? ` — ${reason}` : '';
+  const header = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}`;
 
   let body: string;
   if (!delta.success) {
-    const reason = delta.error ?? snapshot.lastError ?? 'unknown error';
-    body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()} failed: ${reason}`;
+    const message = delta.error ?? snapshot.lastError ?? 'unknown error';
+    body = `${header} failed: ${message}`;
   } else if (action === 'post') {
     const tweet = combinedArtifacts.find((a) => a.kind === 'tweet-url');
     if (tweet && tweet.kind === 'tweet-url') {
-      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: posted tweet [link](${tweet.url})`;
+      body = `${header}: posted tweet [link](${tweet.url})${reasonSuffix}`;
     } else {
-      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: posted tweet`;
+      body = `${header}: posted tweet${reasonSuffix}`;
     }
   } else if (action === 'extend_lore') {
     const lore = combinedArtifacts.find((a) => a.kind === 'lore-cid');
     if (lore && lore.kind === 'lore-cid') {
       const chapter = lore.chapterNumber ?? null;
       const label = chapter !== null ? `Chapter ${chapter.toString()}` : 'new chapter';
-      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: wrote ${label} ([ipfs://${lore.cid}](${lore.gatewayUrl}))`;
+      body = `${header}: wrote ${label} ([ipfs://${lore.cid}](${lore.gatewayUrl}))${reasonSuffix}`;
     } else {
-      body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: wrote new lore chapter`;
+      body = `${header}: wrote new lore chapter${reasonSuffix}`;
     }
   } else if (action === 'idle') {
-    body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: idle`;
+    body = `${header}: idle${reasonSuffix}`;
   } else {
-    // Defensive fallback: the server contract says action is one of the three
-    // above, but `action` is optional on `heartbeatTickDeltaSchema` so a
-    // success without an action tag is technically legal.
-    body = `Heartbeat tick ${tickNumber.toString()}/${maxTicks.toString()}: ok`;
+    // Defensive fallback: the server contract says action is one of the
+    // three above, but `action` is optional on `heartbeatTickDeltaSchema`
+    // so a success without an action tag is technically legal (e.g. the
+    // LLM's final text was unparseable).
+    body = `${header}: ok${reasonSuffix}`;
   }
 
   if (snapshot.running === false) {

@@ -386,6 +386,59 @@ describe('buildHeartbeatTurn — four action variants + auto-stop (scenario 5)',
     expect(turn.content).toBe('Heartbeat tick 5/5: idle — loop auto-stopped at cap');
     expect(turn.heartbeat?.running).toBe(false);
   });
+
+  // Reason-suffix behaviour (scenario 6). The persona now returns a
+  // `{action, reason}` JSON blob per tick; the chat bubble folds the
+  // reason into an em-dash suffix so even "idle" ticks are informative.
+  it('idle + reason → " — <reason>" suffix so the bubble explains the no-op', () => {
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'tick-3',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        success: true,
+        action: 'idle',
+        reason: 'waiting for marketcap to move',
+      },
+    });
+    const turn = buildHeartbeatTurn('hb-r1', event);
+    expect(turn.content).toBe('Heartbeat tick 3/5: idle — waiting for marketcap to move');
+  });
+
+  it('post + tweet-url + reason → reason appended after the tweet link', () => {
+    const tweet: Artifact = {
+      kind: 'tweet-url',
+      url: 'https://x.com/memind/status/123',
+      tweetId: '123',
+    };
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'tick-3',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        success: true,
+        action: 'post',
+        reason: 'hype cycle momentum',
+      },
+      artifacts: [tweet],
+    });
+    const turn = buildHeartbeatTurn('hb-r2', event);
+    expect(turn.content).toBe(
+      'Heartbeat tick 3/5: posted tweet [link](https://x.com/memind/status/123) — hype cycle momentum',
+    );
+  });
+
+  it('sentinel "no reason provided" collapses to no suffix (treated as absent)', () => {
+    const event = makeTickEvent({
+      delta: {
+        tickId: 'tick-3',
+        tickAt: '2026-04-20T00:01:30.000Z',
+        success: true,
+        action: 'idle',
+        reason: 'no reason provided',
+      },
+    });
+    const turn = buildHeartbeatTurn('hb-r3', event);
+    expect(turn.content).toBe('Heartbeat tick 3/5: idle');
+  });
 });
 
 describe('turnToApiMessage — heartbeat turns map to assistant with prefix', () => {
