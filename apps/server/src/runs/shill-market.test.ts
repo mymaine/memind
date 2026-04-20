@@ -99,6 +99,8 @@ describe('runShillMarketDemo', () => {
       chapterText: LORE_TEXT,
       ipfsHash: 'bafkreiLOREHAPPY',
       ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkreiLOREHAPPY',
+      tokenName: 'HBNB2026-Bat',
+      tokenSymbol: 'HBNB2026-BAT',
       publishedAt: '2026-04-18T10:00:00.000Z',
     });
 
@@ -176,6 +178,8 @@ describe('runShillMarketDemo', () => {
       chapterText: 'The cavern stayed silent.',
       ipfsHash: 'bafkreiLORESKIP',
       ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkreiLORESKIP',
+      tokenName: 'HBNB2026-Bat',
+      tokenSymbol: 'HBNB2026-BAT',
       publishedAt: '2026-04-18T10:00:00.000Z',
     });
 
@@ -316,6 +320,8 @@ describe('runShillMarketDemo', () => {
       chapterText: 'lore body',
       ipfsHash: 'bafkreiLOREURL',
       ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkreiLOREURL',
+      tokenName: 'HBNB2026-Bat',
+      tokenSymbol: 'HBNB2026-BAT',
       publishedAt: '2026-04-18T10:00:00.000Z',
     });
 
@@ -365,6 +371,8 @@ describe('runShillMarketDemo', () => {
       chapterText: 'lore body',
       ipfsHash: 'bafkreiLORENOFLAG',
       ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkreiLORENOFLAG',
+      tokenName: 'HBNB2026-Bat',
+      tokenSymbol: 'HBNB2026-BAT',
       publishedAt: '2026-04-18T10:00:00.000Z',
     });
 

@@ -26,14 +26,17 @@ function findCommand(name: string): SlashCommand {
 }
 
 describe('SLASH_COMMANDS registry', () => {
-  it('exposes all eight documented commands with correct kind mapping', () => {
+  it('exposes all documented commands with correct kind mapping', () => {
     // `/clear` is a client-side alias of `/reset` added in UAT 2026-04-20
     // so ChatGPT muscle-memory users can wipe the transcript with their
     // expected verb. The dispatcher routes both to the same handler.
+    // `/heartbeat-stop` stops the background loop started by
+    // `/heartbeat <addr> <intervalMs>`.
     const names = SLASH_COMMANDS.map((c) => c.name).sort();
     expect(names).toEqual([
       'clear',
       'heartbeat',
+      'heartbeat-stop',
       'help',
       'launch',
       'lore',
@@ -45,7 +48,7 @@ describe('SLASH_COMMANDS registry', () => {
     const serverCmds = SLASH_COMMANDS.filter((c) => c.kind === 'server')
       .map((c) => c.name)
       .sort();
-    expect(serverCmds).toEqual(['heartbeat', 'launch', 'lore', 'order']);
+    expect(serverCmds).toEqual(['heartbeat', 'heartbeat-stop', 'launch', 'lore', 'order']);
 
     const clientCmds = SLASH_COMMANDS.filter((c) => c.kind === 'client')
       .map((c) => c.name)
@@ -120,5 +123,24 @@ describe('validateSlashArgs', () => {
         intervalMs: 30000,
       });
     }
+  });
+
+  // Case 8 — /heartbeat-stop parses tokenAddr only
+  it('parses /heartbeat-stop with a tokenAddr', () => {
+    const cmd = findCommand('heartbeat-stop');
+    const res = validateSlashArgs(cmd, '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444');
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.args).toEqual({
+        tokenAddr: '0x4E39d254c716D88Ae52D9cA136F0a029c5F74444',
+      });
+    }
+  });
+
+  // Case 9 — /heartbeat-stop rejects missing or malformed tokenAddr
+  it('rejects /heartbeat-stop without a tokenAddr', () => {
+    const cmd = findCommand('heartbeat-stop');
+    const res = validateSlashArgs(cmd, '');
+    expect(res.ok).toBe(false);
   });
 });

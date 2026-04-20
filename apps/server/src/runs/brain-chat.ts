@@ -52,12 +52,14 @@ import { z } from 'zod';
 import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { ShillOrderStore } from '../state/shill-order-store.js';
+import type { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
 import { ToolRegistry } from '../tools/registry.js';
 import {
   createInvokeCreatorTool,
   createInvokeHeartbeatTickTool,
   createInvokeNarratorTool,
   createInvokeShillerTool,
+  createStopHeartbeatTool,
   type NarratorTokenMeta,
   type ShillerOrderContext,
 } from '../tools/invoke-persona.js';
@@ -296,6 +298,15 @@ export interface RunBrainChatDeps {
   loreStore: LoreStore;
   shillOrderStore: ShillOrderStore;
   /**
+   * Process-wide registry of live background heartbeat loops. Required so
+   * `/heartbeat <addr> <intervalMs>` starts a real timer that survives the
+   * brain-chat run's lifecycle (the run finishes after one LLM turn; the
+   * background loop keeps ticking). Same instance must be passed to every
+   * brain-chat run so `/heartbeat-stop` on a later run finds the session
+   * started on an earlier run.
+   */
+  heartbeatSessionStore: HeartbeatSessionStore;
+  /**
    * Test seam — defaults to the real `runBrainAgent`. Tests supply a stub
    * that short-circuits the LLM call and optionally invokes the forwarded
    * event callbacks so AC-BRAIN-2 bubbling is verifiable without Anthropic.
@@ -320,7 +331,16 @@ export interface RunBrainChatDeps {
  * other caller has reason to manage.
  */
 export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
-  const { config, anthropic, store, runId, messages, loreStore, shillOrderStore } = deps;
+  const {
+    config,
+    anthropic,
+    store,
+    runId,
+    messages,
+    loreStore,
+    shillOrderStore,
+    heartbeatSessionStore,
+  } = deps;
 
   // Validate the messages array up-front. An invalid shape is a caller bug
   // (HTTP layer already runs this same schema, but CLI / tests can reach the
@@ -335,21 +355,6 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   const buildHeartbeatReg = deps.buildHeartbeatSubRegistryImpl ?? buildHeartbeatSubRegistry;
 
   store.setStatus(runId, 'running');
-
-  // ─── Run-local state caches ────────────────────────────────────────────────
-  //
-  // The Brain systemPrompt only passes `tokenAddr` to `invoke_narrator` and
-  // `invoke_shiller`; the personas need richer inputs (tokenName / tokenSymbol
-  // for the narrator, orderId / loreSnippet for the shiller). We cache those
-  // here keyed by lower-cased tokenAddr. Ephemeral: cleared when this function
-  // returns. Spec permits because "single server instance demo scope".
-  //
-  // Seed from whatever state the prior run kinds left in shared stores:
-  //   - LoreStore already holds `{tokenName, tokenSymbol, chapters}` per token
-  //     from the a2a / creator runs, so we can populate tokenMeta lookups.
-  //   - ShillOrderStore surfaces already-enqueued orders so a Brain-driven
-  //     `/order` call can pick up the pending queue entry.
-  const tokenMetaByAddr = new Map<string, NarratorTokenMeta>();
 
   // ─── Registry isolation ──────────────────────────────────────────────────
   //
@@ -395,32 +400,40 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
       store.addAssistantDelta(runId, event),
   };
 
-  // Tools that depend only on client + registry (creator).
+  // Tools that depend only on client + registry (creator). The shared
+  // LoreStore is threaded in so the creator persona can upsert Chapter 1
+  // after `lore_writer` completes — that is what makes a later `/lore` call
+  // produce a real Chapter 2 continuation instead of rewriting Chapter 1.
   const invokeCreatorTool = createInvokeCreatorTool({
     persona: creatorPersona,
     client: anthropic,
     registry: creatorSubRegistry,
+    store: loreStore,
     ...eventForwarders,
   });
 
-  // Narrator tool needs the LoreStore + a tokenMeta resolver. We read the
-  // latest lore entry for the token if present; otherwise we return
-  // placeholders so the persona can still run (the narrator will overwrite
-  // them once the Creator deposits real metadata).
+  // Narrator tool needs the LoreStore + a tokenMeta resolver. LoreStore is
+  // the single source of truth for per-token metadata: the creator persona
+  // deposits Chapter 1 with `{tokenName, tokenSymbol}` on `/launch`, and the
+  // narrator persona overwrites/extends the chain on each subsequent call.
+  // When no chapter has been deposited yet (e.g. user calls `/lore` before
+  // `/launch`), fall back to placeholder names — the narrator persona
+  // tolerates them and will produce Chapter 1.
   const resolveTokenMeta = (tokenAddr: string): NarratorTokenMeta => {
-    const key = tokenAddr.toLowerCase();
-    const cached = tokenMetaByAddr.get(key);
-    if (cached !== undefined) {
-      return cached;
+    const chapters = loreStore.getAllChapters(tokenAddr);
+    if (chapters.length === 0) {
+      return {
+        tokenName: 'HBNB2026-Unknown',
+        tokenSymbol: 'HBNB2026-UNK',
+      };
     }
-    // Fallback: placeholder names. The narrator persona tolerates this — it
-    // will use whatever we pass. A real Creator run would have prefilled
-    // the cache via its CreatorResult.metadata before the narrator is invoked.
-    const fallback: NarratorTokenMeta = {
-      tokenName: 'HBNB2026-Unknown',
-      tokenSymbol: 'HBNB2026-UNK',
+    const latest = chapters[chapters.length - 1]!;
+    return {
+      tokenName: latest.tokenName,
+      tokenSymbol: latest.tokenSymbol,
+      previousChapters: chapters.map((c) => c.chapterText),
+      targetChapterNumber: chapters.length + 1,
     };
-    return fallback;
   };
 
   const invokeNarratorTool = createInvokeNarratorTool({
@@ -450,7 +463,10 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     const key = tokenAddr.toLowerCase();
     const lore = loreStore.getLatest(key);
     const loreSnippet = lore?.chapterText ?? fallbackLoreSnippet(key);
-    const tokenSymbol = tokenMetaByAddr.get(key)?.tokenSymbol;
+    // Token symbol travels on the lore entry itself (creator/narrator both
+    // write it on upsert), so LoreStore is the single source of truth here
+    // too — no parallel metadata cache needed.
+    const tokenSymbol = lore?.tokenSymbol;
     // Prefer an existing queued ShillOrderStore entry (from a prior creator
     // payment) so Brain-driven shills correlate to a real paid order when
     // possible. Fallback to a synthetic UUID when no pending order exists —
@@ -484,7 +500,11 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     ...eventForwarders,
   });
 
-  // Heartbeat tool needs a systemPrompt + buildUserInput. Single tick per call.
+  // Heartbeat tool is dual-mode now: `{tokenAddr}` → one-shot tick OR
+  // snapshot-read if a session exists; `{tokenAddr, intervalMs}` → start or
+  // restart a real background loop in `heartbeatSessionStore`. The session
+  // store comes from the server boot layer so /heartbeat-stop on a later
+  // run finds the session started by an earlier run.
   const invokeHeartbeatTickTool = createInvokeHeartbeatTickTool({
     persona: heartbeatPersona,
     client: anthropic,
@@ -493,6 +513,12 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     systemPrompt: HEARTBEAT_SYSTEM_PROMPT,
     buildUserInput: ({ tickId, tickAt }) =>
       `Tick ${tickId} at ${tickAt}. Pick exactly ONE action and respond with the required JSON object.`,
+    sessionStore: heartbeatSessionStore,
+    ...eventForwarders,
+  });
+
+  const stopHeartbeatTool = createStopHeartbeatTool({
+    sessionStore: heartbeatSessionStore,
     ...eventForwarders,
   });
 
@@ -501,6 +527,7 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     invokeNarratorTool as unknown as AgentTool<unknown, unknown>,
     invokeShillerTool as unknown as AgentTool<unknown, unknown>,
     invokeHeartbeatTickTool as unknown as AgentTool<unknown, unknown>,
+    stopHeartbeatTool as unknown as AgentTool<unknown, unknown>,
   ];
 
   // Drive the Brain agent. Every persona-side event surfaces through the

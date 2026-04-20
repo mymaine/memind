@@ -72,6 +72,10 @@ const heartbeatArgsSchema = z.object({
   intervalMs: z.coerce.number().int().positive().optional(),
 });
 
+const heartbeatStopArgsSchema = z.object({
+  tokenAddr: z.string().regex(EVM_ADDRESS_REGEX),
+});
+
 const emptyArgsSchema = z.object({});
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
@@ -101,11 +105,19 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: 'heartbeat',
-    description: 'Run one Heartbeat tick, optionally setting the interval',
+    description: 'Run one Heartbeat tick, or start a background loop if intervalMs is set',
     usage: '/heartbeat <tokenAddr> [intervalMs]',
     kind: 'server',
     scopes: ['heartbeat', 'global'],
     argsSchema: heartbeatArgsSchema,
+  },
+  {
+    name: 'heartbeat-stop',
+    description: 'Stop the background Heartbeat loop for a token',
+    usage: '/heartbeat-stop <tokenAddr>',
+    kind: 'server',
+    scopes: ['heartbeat', 'global'],
+    argsSchema: heartbeatStopArgsSchema,
   },
   {
     name: 'status',
@@ -231,6 +243,10 @@ function parseArgsForCommand(cmd: SlashCommand, rawArgs: string): ArgBag {
         bag.intervalMs = rest;
       }
       return bag;
+    }
+    case 'heartbeat-stop': {
+      const { head } = splitFirstToken(rawArgs);
+      return { tokenAddr: head };
     }
     case 'status':
     case 'help':

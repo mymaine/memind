@@ -20,6 +20,7 @@ import type { AppConfig } from '../config.js';
 import type { LoreStore } from '../state/lore-store.js';
 import type { AnchorLedger } from '../state/anchor-ledger.js';
 import { ShillOrderStore } from '../state/shill-order-store.js';
+import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
 import type { RunStore, RunEvent } from './store.js';
 import { runA2ADemo, type RunA2ADemoArgs } from './a2a.js';
 import { runHeartbeatDemo } from './heartbeat-runner.js';
@@ -87,6 +88,14 @@ export interface RegisterRunRoutesDeps {
    * `heartbeat` modes keep compiling without wiring a queue they don't need.
    */
   shillOrderStore?: ShillOrderStore;
+  /**
+   * Shared HeartbeatSessionStore (BRAIN-P9). Required when the caller wants
+   * `/heartbeat <addr> <intervalMs>` via brain-chat to start a real
+   * long-lived background loop — without it the route falls back to a fresh
+   * store per run and `/heartbeat-stop` on a later run cannot find the
+   * session started earlier. Optional so legacy CLI boot paths still work.
+   */
+  heartbeatSessionStore?: HeartbeatSessionStore;
   /**
    * Test hook — overrides the real `runA2ADemo` pure function. Production
    * callers leave this undefined.
@@ -325,6 +334,12 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
       // did not wire a shared store — matches the spec's "single server
       // instance demo" rail without coupling the route to a real queue.
       const brainShillOrderStore = deps.shillOrderStore ?? new ShillOrderStore();
+      // heartbeatSessionStore is also optional at boot but required by the
+      // Brain orchestrator. Fall back to a fresh per-request store so the
+      // tool factory has something to write to; this means `/heartbeat-stop`
+      // on a later run only works when the server boot wired a shared
+      // instance (production does — see apps/server/src/index.ts).
+      const brainHeartbeatSessionStore = deps.heartbeatSessionStore ?? new HeartbeatSessionStore();
 
       void brainChatImpl({
         config,
@@ -334,6 +349,7 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
         messages,
         loreStore,
         shillOrderStore: brainShillOrderStore,
+        heartbeatSessionStore: brainHeartbeatSessionStore,
       })
         .then(() => {
           runStore.setStatus(created.runId, 'done');

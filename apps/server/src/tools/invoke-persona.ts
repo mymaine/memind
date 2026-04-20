@@ -18,6 +18,12 @@ import type { ShillerPersonaInput, ShillerPersonaOutput } from '../agents/market
 import type { HeartbeatPersonaInput, HeartbeatPersonaOutput } from '../agents/heartbeat.js';
 import type { PostShillForInput, PostShillForOutput } from './post-shill-for.js';
 import type { LoreStore } from '../state/lore-store.js';
+import type {
+  HeartbeatSessionAction,
+  HeartbeatSessionState,
+  HeartbeatSessionStore,
+  HeartbeatTickDelta,
+} from '../state/heartbeat-session-store.js';
 import type { runAgentLoop } from '../agents/runtime.js';
 
 /**
@@ -78,6 +84,7 @@ export const INVOKE_CREATOR_TOOL_NAME = 'invoke_creator';
 export const INVOKE_NARRATOR_TOOL_NAME = 'invoke_narrator';
 export const INVOKE_SHILLER_TOOL_NAME = 'invoke_shiller';
 export const INVOKE_HEARTBEAT_TICK_TOOL_NAME = 'invoke_heartbeat_tick';
+export const STOP_HEARTBEAT_TOOL_NAME = 'stop_heartbeat';
 
 // ─── Shared LLM-facing input schemas ────────────────────────────────────────
 //
@@ -109,12 +116,76 @@ export const invokeHeartbeatTickInputSchema = z.object({
 });
 export type InvokeHeartbeatTickInput = z.infer<typeof invokeHeartbeatTickInputSchema>;
 
+export const stopHeartbeatInputSchema = z.object({
+  tokenAddr: z.string().regex(evmAddressRegex),
+});
+export type StopHeartbeatInput = z.infer<typeof stopHeartbeatInputSchema>;
+
+/**
+ * Discriminator the Brain LLM reads back to phrase its reply after an
+ * `invoke_heartbeat_tick` call:
+ *   - `one-shot`                 — no intervalMs provided, no existing session, a single tick ran.
+ *   - `background-started`       — intervalMs provided, a fresh session started.
+ *   - `background-restarted`     — intervalMs provided, an existing session was rescheduled at a new interval.
+ *   - `background-already-running` — no intervalMs provided but a session already existed; nothing changed.
+ */
+export type InvokeHeartbeatTickMode =
+  | 'one-shot'
+  | 'background-started'
+  | 'background-restarted'
+  | 'background-already-running';
+
+export interface InvokeHeartbeatTickOutput {
+  tokenAddr: string;
+  mode: InvokeHeartbeatTickMode;
+  running: boolean;
+  intervalMs: number;
+  startedAt: string | null;
+  tickCount: number;
+  successCount: number;
+  errorCount: number;
+  skippedCount: number;
+  lastTickAt: string | null;
+  lastTickId: string | null;
+  lastAction: HeartbeatSessionAction | null;
+  lastError: string | null;
+}
+
+export interface StopHeartbeatFinalSnapshot {
+  tokenAddr: string;
+  intervalMs: number;
+  startedAt: string;
+  running: boolean;
+  tickCount: number;
+  successCount: number;
+  errorCount: number;
+  skippedCount: number;
+  lastTickAt: string | null;
+  lastTickId: string | null;
+  lastAction: HeartbeatSessionAction | null;
+  lastError: string | null;
+}
+
+export interface StopHeartbeatOutput {
+  tokenAddr: string;
+  wasRunning: boolean;
+  finalSnapshot: StopHeartbeatFinalSnapshot | null;
+}
+
 // ─── invoke_creator ─────────────────────────────────────────────────────────
 
 export interface CreateInvokeCreatorToolDeps extends PersonaInvokeEventCallbacks {
   persona: Persona<CreatorPersonaInput, CreatorResult>;
   client: Anthropic;
   registry: ToolRegistry;
+  /**
+   * Optional LoreStore the creator persona upserts Chapter 1 into after the
+   * `lore_writer` tool returns. Threaded through `PersonaRunContext.store` —
+   * the creator adapter reads it off the ctx escape-hatch. When omitted
+   * (non-Brain callers like standalone CLI demos or unit tests) the persona
+   * still returns its CreatorResult but the LoreStore hand-off is skipped.
+   */
+  store?: LoreStore;
 }
 
 export function createInvokeCreatorTool(
@@ -124,6 +195,7 @@ export function createInvokeCreatorTool(
     persona,
     client,
     registry,
+    store,
     onLog,
     onArtifact,
     onToolUseStart,
@@ -152,10 +224,13 @@ export function createInvokeCreatorTool(
       });
       // Thread every event callback onto the ctx so the persona adapter can
       // forward them into its runAgentLoop call. Keys are the same strings
-      // the adapter narrows via `ctx.onLog` / `ctx.onArtifact` etc.
+      // the adapter narrows via `ctx.onLog` / `ctx.onArtifact` etc. `store`
+      // is forwarded so the creator adapter can upsert Chapter 1 into the
+      // Brain orchestrator's shared LoreStore.
       const ctx: PersonaRunContext = {
         client,
         registry,
+        ...(store !== undefined ? { store } : {}),
         ...(onLog !== undefined ? { onLog } : {}),
         ...(onArtifact !== undefined ? { onArtifact } : {}),
         ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
@@ -470,6 +545,17 @@ export function createInvokeShillerTool(
 }
 
 // ─── invoke_heartbeat_tick ──────────────────────────────────────────────────
+//
+// Dual-mode:
+//   1. `{ tokenAddr }`               — one-shot tick if no session exists,
+//                                     otherwise return the current snapshot
+//                                     without running an extra tick.
+//   2. `{ tokenAddr, intervalMs }`   — start or restart a real background
+//                                     loop in `HeartbeatSessionStore`, then
+//                                     synchronously run ONE immediate tick so
+//                                     the user gets feedback without waiting
+//                                     for the first interval.
+// ----------------------------------------------------------------------------
 
 export interface CreateInvokeHeartbeatTickToolDeps extends PersonaInvokeEventCallbacks {
   persona: Persona<HeartbeatPersonaInput, HeartbeatPersonaOutput>;
@@ -481,17 +567,30 @@ export interface CreateInvokeHeartbeatTickToolDeps extends PersonaInvokeEventCal
   systemPrompt: string;
   /** Builds the user input for each tick from tick identity. */
   buildUserInput: (ctx: { tickId: string; tickAt: string }) => string;
-  /** Default intervalMs when the Brain does not override per-call. */
+  /** Default intervalMs used when the Brain does not override per-call. */
   defaultIntervalMs?: number;
+  /**
+   * Session store the tool consults / mutates. Always required now: the dual
+   * mode depends on the store as the single source of truth for running
+   * loops.
+   */
+  sessionStore: HeartbeatSessionStore;
   /** Optional test seam — pass through to the persona adapter. */
   runAgentLoopImpl?: typeof runAgentLoop;
 }
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 
-export function createInvokeHeartbeatTickTool(
+/**
+ * Execute one heartbeat persona tick and return the parsed snapshot. Exported
+ * so the background scheduler can call the same code path as the foreground
+ * invocation — keeps the behaviour identical regardless of who triggered the
+ * tick.
+ */
+async function executeHeartbeatPersonaRun(
   deps: CreateInvokeHeartbeatTickToolDeps,
-): AgentTool<InvokeHeartbeatTickInput, HeartbeatPersonaOutput> {
+  intervalMs: number,
+): Promise<HeartbeatPersonaOutput> {
   const {
     persona,
     client,
@@ -499,7 +598,6 @@ export function createInvokeHeartbeatTickTool(
     model,
     systemPrompt,
     buildUserInput,
-    defaultIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
     onLog,
     onArtifact,
     onToolUseStart,
@@ -507,51 +605,224 @@ export function createInvokeHeartbeatTickTool(
     onAssistantDelta,
     runAgentLoopImpl,
   } = deps;
+  const personaInput: HeartbeatPersonaInput = {
+    model,
+    systemPrompt,
+    buildUserInput,
+    intervalMs,
+    ...(onLog !== undefined ? { onLog } : {}),
+    ...(runAgentLoopImpl !== undefined ? { runAgentLoopImpl } : {}),
+  };
+  const ctx: PersonaRunContext = {
+    client,
+    registry,
+    ...(onLog !== undefined ? { onLog } : {}),
+    ...(onArtifact !== undefined ? { onArtifact } : {}),
+    ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
+    ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
+    ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
+  };
+  return persona.run(personaInput, ctx);
+}
+
+/**
+ * Infer a coarse-grained action label from the parsed persona output. The
+ * heartbeat persona's final JSON is not captured structurally by the adapter
+ * (it returns the scheduler snapshot instead), so we approximate by looking
+ * at what changed relative to the prior snapshot. Best-effort — callers
+ * treat `null` as "unknown".
+ */
+function inferActionFromSnapshotDelta(
+  _prior: HeartbeatPersonaOutput | null,
+  _next: HeartbeatPersonaOutput,
+): HeartbeatSessionAction | null {
+  // The persona adapter does not currently surface the LLM's `action` field
+  // to the invoke layer; artifact emissions carry that info at a different
+  // layer. Returning null keeps the contract honest — callers render "idle"
+  // or "n/a" in the UI instead of guessing. A future change can swap this
+  // for a real mapping if the adapter starts returning the decision.
+  return null;
+}
+
+function snapshotToOutput(
+  tokenAddr: string,
+  mode: InvokeHeartbeatTickMode,
+  snap: HeartbeatSessionState,
+): InvokeHeartbeatTickOutput {
+  return {
+    tokenAddr,
+    mode,
+    running: snap.running,
+    intervalMs: snap.intervalMs,
+    startedAt: snap.startedAt,
+    tickCount: snap.tickCount,
+    successCount: snap.successCount,
+    errorCount: snap.errorCount,
+    skippedCount: snap.skippedCount,
+    lastTickAt: snap.lastTickAt,
+    lastTickId: snap.lastTickId,
+    lastAction: snap.lastAction,
+    lastError: snap.lastError,
+  };
+}
+
+function personaOutputToOneShotOutput(
+  tokenAddr: string,
+  intervalMs: number,
+  result: HeartbeatPersonaOutput,
+): InvokeHeartbeatTickOutput {
+  return {
+    tokenAddr,
+    mode: 'one-shot',
+    running: false,
+    intervalMs,
+    startedAt: null,
+    tickCount: result.successCount + result.errorCount + result.skippedCount,
+    successCount: result.successCount,
+    errorCount: result.errorCount,
+    skippedCount: result.skippedCount,
+    lastTickAt: result.lastTickAt,
+    lastTickId: result.lastTickId,
+    lastAction: null,
+    lastError: result.lastError,
+  };
+}
+
+export function createInvokeHeartbeatTickTool(
+  deps: CreateInvokeHeartbeatTickToolDeps,
+): AgentTool<InvokeHeartbeatTickInput, InvokeHeartbeatTickOutput> {
+  const { defaultIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS, sessionStore, onLog } = deps;
   return {
     name: INVOKE_HEARTBEAT_TICK_TOOL_NAME,
     description:
-      'Run exactly ONE autonomous Heartbeat tick for a token, optionally adjusting the interval. Input: { tokenAddr, intervalMs? }. Returns { lastTickAt, lastTickId, successCount, errorCount, skippedCount, lastError }.',
+      'Run ONE Heartbeat tick, OR start/restart a background loop when intervalMs is provided. ' +
+      'With intervalMs: a real setInterval runs ticks until stop_heartbeat is called (one immediate tick also runs so the user sees a result instantly). ' +
+      'Without intervalMs: if a session already exists, return its current snapshot without running an extra tick; otherwise run exactly ONE manual tick. ' +
+      'Input: { tokenAddr, intervalMs? }. Returns a snapshot object with `mode` ∈ { one-shot | background-started | background-restarted | background-already-running } plus running/intervalMs/startedAt/tickCount/successCount/errorCount/skippedCount/lastTickAt/lastTickId/lastAction/lastError.',
     inputSchema: invokeHeartbeatTickInputSchema,
-    outputSchema: z.any() as unknown as z.ZodType<HeartbeatPersonaOutput>,
-    async execute(input): Promise<HeartbeatPersonaOutput> {
+    outputSchema: z.any() as unknown as z.ZodType<InvokeHeartbeatTickOutput>,
+    async execute(input): Promise<InvokeHeartbeatTickOutput> {
       const parsed = invokeHeartbeatTickInputSchema.parse(input);
-      const personaInput: HeartbeatPersonaInput = {
-        model,
-        systemPrompt,
-        buildUserInput,
-        intervalMs: parsed.intervalMs ?? defaultIntervalMs,
-        ...(onLog !== undefined ? { onLog } : {}),
-        ...(runAgentLoopImpl !== undefined ? { runAgentLoopImpl } : {}),
+      const tokenAddr = parsed.tokenAddr;
+      const existing = sessionStore.get(tokenAddr);
+
+      // ─── Branch 1: no intervalMs, session exists → snapshot-only ────────
+      if (parsed.intervalMs === undefined && existing !== undefined) {
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'heartbeat',
+          tool: 'invoke_heartbeat_tick',
+          level: 'info',
+          message: `heartbeat snapshot requested for ${tokenAddr} (background loop already running)`,
+        });
+        return snapshotToOutput(tokenAddr, 'background-already-running', existing);
+      }
+
+      // ─── Branch 2: no intervalMs, no session → one-shot tick ────────────
+      if (parsed.intervalMs === undefined) {
+        const startedAt = Date.now();
+        onLog?.({
+          ts: new Date(startedAt).toISOString(),
+          agent: 'heartbeat',
+          tool: 'invoke_heartbeat_tick',
+          level: 'info',
+          message: `heartbeat tick starting (token: ${tokenAddr}, one-shot)`,
+        });
+        try {
+          const result = await executeHeartbeatPersonaRun(deps, defaultIntervalMs);
+          const durationMs = Date.now() - startedAt;
+          onLog?.({
+            ts: new Date().toISOString(),
+            agent: 'heartbeat',
+            tool: 'invoke_heartbeat_tick',
+            level: 'info',
+            message: `heartbeat tick finished (${durationMs.toString()}ms, success=${result.successCount.toString()}, error=${result.errorCount.toString()})`,
+            meta: { durationMs, mode: 'one-shot' },
+          });
+          return personaOutputToOneShotOutput(tokenAddr, defaultIntervalMs, result);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          onLog?.({
+            ts: new Date().toISOString(),
+            agent: 'heartbeat',
+            tool: 'invoke_heartbeat_tick',
+            level: 'error',
+            message: `heartbeat tick failed: ${message}`,
+          });
+          throw err;
+        }
+      }
+
+      // ─── Branch 3: intervalMs provided → start / restart background loop ─
+      const intervalMs = parsed.intervalMs;
+      // The background runTick re-invokes the same persona adapter every
+      // fire. It parses the persona's output and returns a tick delta for
+      // the session store. Any error rethrows up to the store's fire()
+      // which converts it into an error delta.
+      const runTick = async (prior: HeartbeatSessionState): Promise<HeartbeatTickDelta> => {
+        void prior;
+        const tickAt = new Date().toISOString();
+        try {
+          const result = await executeHeartbeatPersonaRun(deps, intervalMs);
+          const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
+          return {
+            tickId,
+            tickAt: result.lastTickAt ?? tickAt,
+            success: result.lastError === null,
+            ...(result.lastError !== null ? { error: result.lastError } : {}),
+            ...(inferActionFromSnapshotDelta(null, result) !== null
+              ? { action: inferActionFromSnapshotDelta(null, result) as HeartbeatSessionAction }
+              : {}),
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return {
+            tickId: `tick_err_${Date.now().toString(36)}`,
+            tickAt,
+            success: false,
+            error: message,
+          };
+        }
       };
+
+      const wasExisting = existing !== undefined;
+      const { restarted } = sessionStore.start({ tokenAddr, intervalMs, runTick });
+
+      // Run one immediate tick synchronously so the user does not wait a
+      // full interval for the first result. We do it here (not via the
+      // scheduler) so counters update before we hand back the snapshot.
       const startedAt = Date.now();
       onLog?.({
         ts: new Date(startedAt).toISOString(),
         agent: 'heartbeat',
         tool: 'invoke_heartbeat_tick',
         level: 'info',
-        message: `heartbeat tick starting (token: ${parsed.tokenAddr})`,
+        message:
+          wasExisting && restarted
+            ? `heartbeat background loop restarted (token: ${tokenAddr}, intervalMs=${intervalMs.toString()})`
+            : `heartbeat background loop started (token: ${tokenAddr}, intervalMs=${intervalMs.toString()})`,
       });
-      const ctx: PersonaRunContext = {
-        client,
-        registry,
-        ...(onLog !== undefined ? { onLog } : {}),
-        ...(onArtifact !== undefined ? { onArtifact } : {}),
-        ...(onToolUseStart !== undefined ? { onToolUseStart } : {}),
-        ...(onToolUseEnd !== undefined ? { onToolUseEnd } : {}),
-        ...(onAssistantDelta !== undefined ? { onAssistantDelta } : {}),
-      };
       try {
-        const result = await persona.run(personaInput, ctx);
+        const result = await executeHeartbeatPersonaRun(deps, intervalMs);
+        const tickId = result.lastTickId ?? `tick_${Date.now().toString(36)}`;
+        const tickAt = result.lastTickAt ?? new Date().toISOString();
+        const action = inferActionFromSnapshotDelta(null, result);
+        sessionStore.recordTick(tokenAddr, {
+          tickId,
+          tickAt,
+          success: result.lastError === null,
+          ...(result.lastError !== null ? { error: result.lastError } : {}),
+          ...(action !== null ? { action } : {}),
+        });
         const durationMs = Date.now() - startedAt;
         onLog?.({
           ts: new Date().toISOString(),
           agent: 'heartbeat',
           tool: 'invoke_heartbeat_tick',
           level: 'info',
-          message: `heartbeat tick finished (${durationMs.toString()}ms, success=${result.successCount.toString()}, error=${result.errorCount.toString()})`,
+          message: `heartbeat immediate tick finished (${durationMs.toString()}ms)`,
           meta: { durationMs },
         });
-        return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         onLog?.({
@@ -559,10 +830,112 @@ export function createInvokeHeartbeatTickTool(
           agent: 'heartbeat',
           tool: 'invoke_heartbeat_tick',
           level: 'error',
-          message: `heartbeat tick failed: ${message}`,
+          message: `heartbeat immediate tick failed: ${message}`,
         });
-        throw err;
+        sessionStore.recordTick(tokenAddr, {
+          tickId: `tick_err_${Date.now().toString(36)}`,
+          tickAt: new Date().toISOString(),
+          success: false,
+          error: message,
+        });
       }
+
+      const snap = sessionStore.get(tokenAddr);
+      if (snap === undefined) {
+        // Unreachable: start(...) always creates the session. Fall back to
+        // a synthetic output so the tool always returns something well-typed.
+        return {
+          tokenAddr,
+          mode: wasExisting && restarted ? 'background-restarted' : 'background-started',
+          running: true,
+          intervalMs,
+          startedAt: new Date().toISOString(),
+          tickCount: 0,
+          successCount: 0,
+          errorCount: 0,
+          skippedCount: 0,
+          lastTickAt: null,
+          lastTickId: null,
+          lastAction: null,
+          lastError: null,
+        };
+      }
+      return snapshotToOutput(
+        tokenAddr,
+        wasExisting && restarted ? 'background-restarted' : 'background-started',
+        snap,
+      );
+    },
+  };
+}
+
+// ─── stop_heartbeat ─────────────────────────────────────────────────────────
+
+export interface CreateStopHeartbeatToolDeps extends PersonaInvokeEventCallbacks {
+  sessionStore: HeartbeatSessionStore;
+}
+
+export function createStopHeartbeatTool(
+  deps: CreateStopHeartbeatToolDeps,
+): AgentTool<StopHeartbeatInput, StopHeartbeatOutput> {
+  const { sessionStore, onLog } = deps;
+  return {
+    name: STOP_HEARTBEAT_TOOL_NAME,
+    description:
+      'Stop the background Heartbeat loop for a token. Call this when the user asks to stop the heartbeat, kill the loop, or sends `/heartbeat-stop`. ' +
+      'Input: { tokenAddr }. Returns { tokenAddr, wasRunning, finalSnapshot }. If no session exists, returns wasRunning=false and finalSnapshot=null.',
+    inputSchema: stopHeartbeatInputSchema,
+    outputSchema: z.any() as unknown as z.ZodType<StopHeartbeatOutput>,
+    async execute(input): Promise<StopHeartbeatOutput> {
+      const parsed = stopHeartbeatInputSchema.parse(input);
+      const tokenAddr = parsed.tokenAddr;
+      onLog?.({
+        ts: new Date().toISOString(),
+        agent: 'heartbeat',
+        tool: 'stop_heartbeat',
+        level: 'info',
+        message: `stop_heartbeat requested (token: ${tokenAddr})`,
+      });
+      const final = sessionStore.stop(tokenAddr);
+      if (final === undefined) {
+        onLog?.({
+          ts: new Date().toISOString(),
+          agent: 'heartbeat',
+          tool: 'stop_heartbeat',
+          level: 'warn',
+          message: `stop_heartbeat: no session for ${tokenAddr}`,
+        });
+        return {
+          tokenAddr,
+          wasRunning: false,
+          finalSnapshot: null,
+        };
+      }
+      onLog?.({
+        ts: new Date().toISOString(),
+        agent: 'heartbeat',
+        tool: 'stop_heartbeat',
+        level: 'info',
+        message: `stop_heartbeat: session stopped (ticks=${final.tickCount.toString()})`,
+      });
+      return {
+        tokenAddr,
+        wasRunning: true,
+        finalSnapshot: {
+          tokenAddr: final.tokenAddr,
+          intervalMs: final.intervalMs,
+          startedAt: final.startedAt,
+          running: final.running,
+          tickCount: final.tickCount,
+          successCount: final.successCount,
+          errorCount: final.errorCount,
+          skippedCount: final.skippedCount,
+          lastTickAt: final.lastTickAt,
+          lastTickId: final.lastTickId,
+          lastAction: final.lastAction,
+          lastError: final.lastError,
+        },
+      };
     },
   };
 }

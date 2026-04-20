@@ -226,6 +226,12 @@ export async function runNarratorAgent(
     chapterText: result.chapterText,
     ipfsHash: result.ipfsHash,
     ipfsUri: result.ipfsUri,
+    // Persist the caller-supplied name/symbol on every chapter so the Brain
+    // orchestrator's `resolveTokenMeta` lookup can recover them from the
+    // lore chain on later `/lore` / `/order` calls without a parallel
+    // metadata store.
+    tokenName,
+    tokenSymbol,
     publishedAt: new Date().toISOString(),
   });
 

@@ -15,11 +15,14 @@ import {
   createInvokeNarratorTool,
   createInvokeShillerTool,
   createInvokeHeartbeatTickTool,
+  createStopHeartbeatTool,
   INVOKE_CREATOR_TOOL_NAME,
   INVOKE_NARRATOR_TOOL_NAME,
   INVOKE_SHILLER_TOOL_NAME,
   INVOKE_HEARTBEAT_TICK_TOOL_NAME,
+  STOP_HEARTBEAT_TOOL_NAME,
 } from './invoke-persona.js';
+import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
 import type { CreatorPersonaInput } from '../agents/creator.js';
 import type { NarratorPersonaInput, NarratorPersonaOutput } from '../agents/narrator.js';
 import type { ShillerPersonaInput, ShillerPersonaOutput } from '../agents/market-maker.js';
@@ -662,6 +665,7 @@ describe('createInvokeHeartbeatTickTool', () => {
       model: 'test-model',
       systemPrompt: 'heartbeat system prompt',
       buildUserInput: ({ tickId }) => `tick ${tickId}`,
+      sessionStore: new HeartbeatSessionStore(),
     });
 
     expect(tool.name).toBe(INVOKE_HEARTBEAT_TICK_TOOL_NAME);
@@ -674,7 +678,7 @@ describe('createInvokeHeartbeatTickTool', () => {
     expect(() => tool.inputSchema.parse({ tokenAddr: 'nope' })).toThrow();
   });
 
-  it('constructs persona input from tool config and returns the tick snapshot', async () => {
+  it('one-shot mode: no session + no intervalMs → runs exactly one tick and returns mode=one-shot', async () => {
     const run = vi.fn(
       async (
         _input: HeartbeatPersonaInput,
@@ -692,6 +696,7 @@ describe('createInvokeHeartbeatTickTool', () => {
     const client = fakeClient();
     const registry = fakeRegistry();
     const buildUserInput = vi.fn(({ tickId }: { tickId: string }) => `tick ${tickId}`);
+    const sessionStore = new HeartbeatSessionStore();
 
     const tool = createInvokeHeartbeatTickTool({
       persona,
@@ -700,23 +705,176 @@ describe('createInvokeHeartbeatTickTool', () => {
       model: 'test-model',
       systemPrompt: 'HB system prompt',
       buildUserInput,
+      sessionStore,
+    });
+
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(output.mode).toBe('one-shot');
+    expect(output.running).toBe(false);
+    expect(output.successCount).toBe(1);
+    expect(output.lastTickId).toBe('tick_abc');
+    // No session created.
+    expect(sessionStore.get(FAKE_TOKEN_ADDR)).toBeUndefined();
+  });
+
+  it('background-started mode: no session + intervalMs → start session and run one immediate tick', async () => {
+    const run = vi.fn(
+      async (
+        _input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => ({
+        lastTickAt: '2026-04-19T00:00:00.000Z',
+        lastTickId: 'tick_started',
+        successCount: 1,
+        errorCount: 0,
+        skippedCount: 0,
+        lastError: null,
+      }),
+    );
+    const persona = makeHeartbeatPersona(run);
+    const sessionStore = new HeartbeatSessionStore();
+    const startSpy = vi.spyOn(sessionStore, 'start');
+
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'test-model',
+      systemPrompt: 'HB system prompt',
+      buildUserInput: ({ tickId }) => `tick ${tickId}`,
+      sessionStore,
     });
 
     const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, intervalMs: 10_000 });
 
-    expect(run).toHaveBeenCalledTimes(1);
-    const [input, ctx] = run.mock.calls[0]!;
-    expect(input.model).toBe('test-model');
-    expect(input.systemPrompt).toBe('HB system prompt');
-    expect(input.buildUserInput).toBe(buildUserInput);
-    expect(input.intervalMs).toBe(10_000);
-    expect(ctx.client).toBe(client);
-    expect(ctx.registry).toBe(registry);
-    expect(output.successCount).toBe(1);
-    expect(output.lastTickId).toBe('tick_abc');
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    expect(output.mode).toBe('background-started');
+    expect(output.running).toBe(true);
+    expect(output.intervalMs).toBe(10_000);
+    // The immediate synchronous tick landed through recordTick.
+    expect(output.tickCount).toBeGreaterThanOrEqual(1);
+    expect(output.successCount).toBeGreaterThanOrEqual(1);
+    // Session exists in the store after execute.
+    const snap = sessionStore.get(FAKE_TOKEN_ADDR);
+    expect(snap).toBeDefined();
+    expect(snap!.running).toBe(true);
+
+    // Cleanup to avoid timer leaks across tests.
+    sessionStore.clear();
   });
 
-  it('emits entry/exit logs and threads all event callbacks through ctx', async () => {
+  it('background-already-running mode: session exists + no intervalMs → return snapshot, no extra tick', async () => {
+    const run = vi.fn(
+      async (
+        _input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => ({
+        lastTickAt: '2026-04-19T00:00:00.000Z',
+        lastTickId: 'tick_preexisting',
+        successCount: 3,
+        errorCount: 0,
+        skippedCount: 0,
+        lastError: null,
+      }),
+    );
+    const persona = makeHeartbeatPersona(run);
+    const sessionStore = new HeartbeatSessionStore();
+    // Pre-seed a running session.
+    sessionStore.start({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      intervalMs: 30_000,
+      runTick: async () => ({
+        tickId: 'preseed',
+        tickAt: '2026-04-19T00:00:00.000Z',
+        success: true,
+      }),
+    });
+    sessionStore.recordTick(FAKE_TOKEN_ADDR, {
+      tickId: 'seed_tick',
+      tickAt: '2026-04-19T00:00:05.000Z',
+      success: true,
+      action: 'post',
+    });
+
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'm',
+      systemPrompt: 'p',
+      buildUserInput: () => 'tick',
+      sessionStore,
+    });
+
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+
+    // Persona was NOT run — snapshot-only branch.
+    expect(run).not.toHaveBeenCalled();
+    expect(output.mode).toBe('background-already-running');
+    expect(output.running).toBe(true);
+    expect(output.intervalMs).toBe(30_000);
+    expect(output.tickCount).toBe(1);
+    expect(output.lastTickId).toBe('seed_tick');
+
+    sessionStore.clear();
+  });
+
+  it('background-restarted mode: session exists + new intervalMs → restart and run an immediate tick', async () => {
+    const run = vi.fn(
+      async (
+        _input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => ({
+        lastTickAt: '2026-04-19T01:00:00.000Z',
+        lastTickId: 'tick_after_restart',
+        successCount: 1,
+        errorCount: 0,
+        skippedCount: 0,
+        lastError: null,
+      }),
+    );
+    const persona = makeHeartbeatPersona(run);
+    const sessionStore = new HeartbeatSessionStore();
+    sessionStore.start({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      intervalMs: 5_000,
+      runTick: async () => ({
+        tickId: 'preseed',
+        tickAt: '2026-04-19T00:00:00.000Z',
+        success: true,
+      }),
+    });
+    sessionStore.recordTick(FAKE_TOKEN_ADDR, {
+      tickId: 'seed_tick',
+      tickAt: '2026-04-19T00:00:05.000Z',
+      success: true,
+    });
+
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'm',
+      systemPrompt: 'p',
+      buildUserInput: () => 'tick',
+      sessionStore,
+    });
+
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, intervalMs: 20_000 });
+
+    expect(output.mode).toBe('background-restarted');
+    expect(output.intervalMs).toBe(20_000);
+    expect(output.running).toBe(true);
+    // Counters preserved + immediate tick added one more.
+    expect(output.tickCount).toBeGreaterThanOrEqual(2);
+    expect(run).toHaveBeenCalledTimes(1);
+
+    sessionStore.clear();
+  });
+
+  it('emits entry/exit logs in one-shot mode and threads all event callbacks through ctx', async () => {
     const run = vi.fn(
       async (
         _input: HeartbeatPersonaInput,
@@ -744,6 +902,7 @@ describe('createInvokeHeartbeatTickTool', () => {
       model: 'm',
       systemPrompt: 'p',
       buildUserInput: () => 'tick',
+      sessionStore: new HeartbeatSessionStore(),
       onLog,
       onArtifact,
       onToolUseStart,
@@ -764,5 +923,60 @@ describe('createInvokeHeartbeatTickTool', () => {
     expect(ctx.onToolUseStart).toBe(onToolUseStart);
     expect(ctx.onToolUseEnd).toBe(onToolUseEnd);
     expect(ctx.onAssistantDelta).toBe(onAssistantDelta);
+  });
+});
+
+// ─── stop_heartbeat ─────────────────────────────────────────────────────────
+
+describe('createStopHeartbeatTool', () => {
+  it('stops a running session and returns the final snapshot', async () => {
+    const sessionStore = new HeartbeatSessionStore();
+    sessionStore.start({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      intervalMs: 60_000,
+      runTick: async () => ({
+        tickId: 't',
+        tickAt: '2026-04-19T00:00:00.000Z',
+        success: true,
+      }),
+    });
+    sessionStore.recordTick(FAKE_TOKEN_ADDR, {
+      tickId: 't1',
+      tickAt: '2026-04-19T00:00:05.000Z',
+      success: true,
+      action: 'post',
+    });
+
+    const tool = createStopHeartbeatTool({ sessionStore });
+    expect(tool.name).toBe(STOP_HEARTBEAT_TOOL_NAME);
+
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    expect(output.tokenAddr).toBe(FAKE_TOKEN_ADDR);
+    expect(output.wasRunning).toBe(true);
+    expect(output.finalSnapshot).not.toBeNull();
+    expect(output.finalSnapshot!.running).toBe(false);
+    expect(output.finalSnapshot!.tickCount).toBe(1);
+    expect(output.finalSnapshot!.lastAction).toBe('post');
+
+    // Session really stopped.
+    expect(sessionStore.get(FAKE_TOKEN_ADDR)?.running).toBe(false);
+
+    sessionStore.clear();
+  });
+
+  it('returns wasRunning=false + finalSnapshot=null when no session exists', async () => {
+    const sessionStore = new HeartbeatSessionStore();
+    const tool = createStopHeartbeatTool({ sessionStore });
+
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    expect(output.wasRunning).toBe(false);
+    expect(output.finalSnapshot).toBeNull();
+  });
+
+  it('validates tokenAddr shape', () => {
+    const tool = createStopHeartbeatTool({ sessionStore: new HeartbeatSessionStore() });
+    expect(() => tool.inputSchema.parse({ tokenAddr: FAKE_TOKEN_ADDR })).not.toThrow();
+    expect(() => tool.inputSchema.parse({ tokenAddr: 'bad' })).toThrow();
+    expect(() => tool.inputSchema.parse({})).toThrow();
   });
 });

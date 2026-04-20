@@ -185,9 +185,16 @@ User input (one-line theme, typed into BrainPanel or Ch5 LaunchPanel)
   → Creator.tool[meme_image_creator]             [image model]
   → Creator.tool[onchain_deployer]               [shell-exec four-meme-ai → BSC mainnet]
   → Creator.tool[lore_writer]                    [LLM → Pinata]
+  → LoreStore.upsert({ tokenAddr, chapterNumber: 1, chapterText, ipfsHash,
+                        tokenName, tokenSymbol, … })  [Brain-driven invoke_creator only]
   → emit artifacts: bsc-token, token-deploy-tx, meme-image, lore-cid
   → return { tokenAddr, ipfsHash, loreUri }
 ```
+
+LoreStore is a per-token chapter chain (chronological, chapter 1 first). Each
+entry carries `{tokenName, tokenSymbol}` so the Narrator's previous-chapter
+resolver can recover both metadata and history from a single source of truth
+on later `/lore` calls — no parallel tokenMeta cache.
 
 ### Flow 2 — Narrator publishes → LoreStore → x402 /lore serves paid reads
 
@@ -281,6 +288,9 @@ Browser (BrainPanel open via TopBar click, memind:open-brain CustomEvent,
        /order <tokenAddr>       → routes to market-maker persona
        /lore <tokenAddr>        → routes to narrator persona
        /heartbeat <tokenAddr>   → routes to heartbeat persona
+       /heartbeat <addr> <ms>   → starts a long-lived background tick loop
+                                  (HeartbeatSessionStore) via setInterval
+       /heartbeat-stop <addr>   → stops that background loop
        /status                  → queries current RunState
        /help | /reset           → client-only
   → POST /api/runs { kind:'brain-chat', messages:[{role, content}, …] }
@@ -304,7 +314,7 @@ Client
 | `apps/web`            | 12-chapter sticky-stage scrollytelling (`Ch1Hero` → `Ch12Evidence`, with `Ch7Saga` covering the Narrator persona's think→write→pin cycle) hosted by `<StickyStage>`; shared sticky `<Header>` with progress + BrainIndicator; `<SectionToc>` left nav; `<Watermark>` chapter stamp; `<LogsDrawer>` 3-tab dev drawer (logs / artifacts / console) bound to RunStateContext; `<BrainPanel>` right-side slide-in conversational surface; `/market` kept as 307 redirect to `#order-shill` | Agent logic, on-chain calls, server state |
 | `apps/server/agents/` | Creator / Narrator / Market-maker (dual persona: a2a lore buyer or Shiller persona) / Heartbeat / **Brain (meta-agent)** plan/execute logic; shared `_json.ts` fence-tolerant JSON parser; `_stream-map.ts` streaming-event mapper; `persona-adapters.ts` `Persona<T,T>` wrappers                                                                                                                                                                                                      | HTTP routing, direct shell calls          |
 | `apps/server/tools/`  | Ten+ tools: narrative / image / deployer / lore / lore-extend / token-status / x-post / post-shill-for / x-fetch-lore + four `invoke_*` persona tool factories (Brain meta-agent); `registry.ts` collects them                                                                                                                                                                                                                                                                         | Agent decision logic                      |
-| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key) + AnchorLedger (keccak256 commitment log, upsert by anchorId) + ShillOrderStore (paid-shill queue shared between `/shill/:tokenAddr` producer and Shiller persona consumer)                                                                                                                                                                                                                                   | Persistence, multi-instance sync          |
+| `apps/server/state/`  | In-memory LoreStore (latest chapter per token, lowercase-normalized key) + AnchorLedger (keccak256 commitment log, upsert by anchorId) + ShillOrderStore (paid-shill queue shared between `/shill/:tokenAddr` producer and Shiller persona consumer) + HeartbeatSessionStore (process-wide `setInterval` registry keyed by tokenAddr; drives `/heartbeat <addr> <ms>` background loops and `/heartbeat-stop` teardown)                                                                 | Persistence, multi-instance sync          |
 | `apps/server/x402/`   | `paymentMiddleware` (Base Sepolia USDC) + four paid-endpoint handlers mounted at startup. `/lore/:addr` is store-backed (falls back to a mock payload when the store is empty). `/alpha/:addr` and `/metadata/:addr` return mock payloads today; paths + prices live in `x402/config.ts`. `/shill/:tokenAddr` is creator-paid and enqueues a ShillOrderStore entry for the Shiller persona to consume.                                                                                 | Agent runtime, wallet signing             |
 | `apps/server/chain/`  | viem client and the TokenManager2 partial ABI (both proxy and implementation are unverified on-chain, so the subset is hand-authored); `anchor-tx.ts` builds the zero-value self-tx memo for the optional on-chain anchor layer                                                                                                                                                                                                                                                        | Agent business logic                      |
 | `apps/server/runs/`   | `RunStore` (Map + per-run EventEmitter + replay); `runA2ADemo` / `runBrainChat` / `runHeartbeatDemo` / `runShillMarketDemo` / `runCreatorPhase` pure orchestrators; POST/GET/SSE route handlers; CLI and HTTP share the same orchestration code path                                                                                                                                                                                                                                   | Agent business logic, persistence         |

@@ -17,6 +17,7 @@ import { registerX402Routes } from './x402/index.js';
 import { LoreStore } from './state/lore-store.js';
 import { AnchorLedger } from './state/anchor-ledger.js';
 import { ShillOrderStore } from './state/shill-order-store.js';
+import { HeartbeatSessionStore } from './state/heartbeat-session-store.js';
 import { RunStore } from './runs/store.js';
 import { registerRunRoutes } from './runs/routes.js';
 import { createRealCreatorPaymentPhase } from './runs/shill-market.js';
@@ -46,6 +47,10 @@ const anchorLedger = new AnchorLedger();
 // runs must see the same instance so POST /api/runs { kind: 'shill-market' }
 // does not 500 out at the routes guard.
 const shillOrderStore = new ShillOrderStore();
+// Long-lived heartbeat session registry — one instance for the process so
+// `/heartbeat <addr> <intervalMs>` on one brain-chat run and
+// `/heartbeat-stop <addr>` on a later run hit the same map of timers.
+const heartbeatSessionStore = new HeartbeatSessionStore();
 
 // Anthropic client. Uses the same key resolution the demos use so POST
 // /api/runs fails fast if neither key is configured.
@@ -76,6 +81,7 @@ registerRunRoutes(app, {
   loreStore,
   anchorLedger,
   shillOrderStore,
+  heartbeatSessionStore,
   ...(shillCreatorPaymentImpl !== undefined ? { shillCreatorPaymentImpl } : {}),
 });
 

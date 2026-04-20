@@ -12,6 +12,7 @@ import {
   type ToolUseStartEventPayload,
 } from '@hack-fourmeme/shared';
 import type { ToolRegistry } from '../tools/registry.js';
+import type { LoreStore } from '../state/lore-store.js';
 import {
   runAgentLoop,
   type AgentLoopResult,
@@ -153,6 +154,35 @@ function asMemeImageToolOutput(output: unknown): MemeImageToolOutput | undefined
 }
 
 /**
+ * Shape of a `lore_writer` tool call's output. Mirrors the LoreOutput schema
+ * in `apps/server/src/tools/lore.ts`. Declared locally so this module does
+ * not have to import the tool implementation to narrow a tool-trace payload.
+ */
+interface LoreWriterToolOutput {
+  loreText: string;
+  ipfsCid: string;
+  gatewayUrl: string;
+}
+
+/**
+ * Narrow an arbitrary tool-trace `output` value to the `lore_writer` output
+ * subset. Returns undefined when the shape does not match, which lets the
+ * caller skip the LoreStore upsert without crashing the run.
+ */
+function asLoreWriterOutput(output: unknown): LoreWriterToolOutput | undefined {
+  if (typeof output !== 'object' || output === null) return undefined;
+  const o = output as Record<string, unknown>;
+  if (
+    typeof o.loreText !== 'string' ||
+    typeof o.ipfsCid !== 'string' ||
+    typeof o.gatewayUrl !== 'string'
+  ) {
+    return undefined;
+  }
+  return { loreText: o.loreText, ipfsCid: o.ipfsCid, gatewayUrl: o.gatewayUrl };
+}
+
+/**
  * Translate a `meme_image_creator` tool-trace into a `meme-image` artifact.
  * Matches the emission logic already used by `runs/creator-phase.ts` so the
  * Brain-driven persona path produces the same artifact shape as the direct
@@ -228,6 +258,33 @@ export const creatorPersona: Persona<CreatorPersonaInput, CreatorResult> = {
         if (out === undefined) break;
         const artifact = memeImageArtifactFromToolOutput(out);
         if (artifact !== undefined) onArtifact(artifact);
+        break;
+      }
+    }
+    // Upsert Chapter 1 into the LoreStore so downstream personas (Narrator
+    // on `/lore`, Shiller on `/order`, Heartbeat ticks) can find the opening
+    // chapter and stitch continuations from it. The LoreStore is threaded
+    // through `ctx.store` by the Brain orchestrator; non-Brain callers
+    // (direct `persona.run(...)` usage in tests) may omit it and we silently
+    // skip the upsert — the persona's primary contract is to return the
+    // CreatorResult, the LoreStore hand-off is an adjunct for continuity.
+    const loreStore = ctx.store as LoreStore | undefined;
+    if (loreStore !== undefined) {
+      for (let i = loop.toolCalls.length - 1; i >= 0; i -= 1) {
+        const call = loop.toolCalls[i];
+        if (!call || call.name !== 'lore_writer' || call.isError) continue;
+        const out = asLoreWriterOutput(call.output);
+        if (out === undefined) break;
+        loreStore.upsert({
+          tokenAddr: result.tokenAddr,
+          chapterNumber: 1,
+          chapterText: out.loreText,
+          ipfsHash: out.ipfsCid,
+          ipfsUri: out.gatewayUrl,
+          tokenName: result.metadata.name,
+          tokenSymbol: result.metadata.symbol,
+          publishedAt: new Date().toISOString(),
+        });
         break;
       }
     }

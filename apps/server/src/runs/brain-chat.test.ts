@@ -4,6 +4,7 @@ import type { ChatMessage, LogEvent } from '@hack-fourmeme/shared';
 import type { AppConfig } from '../config.js';
 import { LoreStore } from '../state/lore-store.js';
 import { ShillOrderStore } from '../state/shill-order-store.js';
+import { HeartbeatSessionStore } from '../state/heartbeat-session-store.js';
 import { RunStore } from './store.js';
 import { runBrainChat, type RunBrainChatDeps } from './brain-chat.js';
 import type { AgentLoopResult } from '../agents/runtime.js';
@@ -14,6 +15,7 @@ import {
   INVOKE_HEARTBEAT_TICK_TOOL_NAME,
   INVOKE_NARRATOR_TOOL_NAME,
   INVOKE_SHILLER_TOOL_NAME,
+  STOP_HEARTBEAT_TOOL_NAME,
 } from '../tools/invoke-persona.js';
 
 /**
@@ -60,18 +62,21 @@ describe('runBrainChat', () => {
   let runStore: RunStore;
   let loreStore: LoreStore;
   let shillOrderStore: ShillOrderStore;
+  let heartbeatSessionStore: HeartbeatSessionStore;
   const anthropic = {} as Anthropic;
 
   beforeEach(() => {
     runStore = new RunStore();
     loreStore = new LoreStore();
     shillOrderStore = new ShillOrderStore();
+    heartbeatSessionStore = new HeartbeatSessionStore();
   });
 
   afterEach(() => {
     runStore.clear();
     loreStore.clear();
     shillOrderStore.clear();
+    heartbeatSessionStore.clear();
   });
 
   /**
@@ -106,6 +111,7 @@ describe('runBrainChat', () => {
       messages,
       loreStore,
       shillOrderStore,
+      heartbeatSessionStore,
       runBrainAgentImpl,
       ...fakeSubRegistryBuilders,
       ...overrides,
@@ -123,19 +129,21 @@ describe('runBrainChat', () => {
     await runBrainChat(buildDeps(record.runId, messages, spy));
 
     // runBrainAgent called exactly once with the same messages + the Brain
-    // systemPrompt defaults + the four persona-invoke tools.
+    // systemPrompt defaults + the five persona-invoke tools (the four
+    // invoke_* plus stop_heartbeat).
     expect(spy).toHaveBeenCalledTimes(1);
     const call = spy.mock.calls[0]?.[0];
     expect(call).toBeDefined();
     expect(call!.messages).toEqual(messages);
-    // All four persona-invoke tools wired through.
-    expect(call!.tools.length).toBe(4);
+    // All five Brain tools wired through.
+    expect(call!.tools.length).toBe(5);
     const toolNames = call!.tools.map((t) => t.name).sort();
     expect(toolNames).toEqual([
       'invoke_creator',
       'invoke_heartbeat_tick',
       'invoke_narrator',
       'invoke_shiller',
+      'stop_heartbeat',
     ]);
 
     // Terminal status reported to RunStore.
@@ -364,6 +372,7 @@ describe('runBrainChat', () => {
           INVOKE_HEARTBEAT_TICK_TOOL_NAME,
           INVOKE_NARRATOR_TOOL_NAME,
           INVOKE_SHILLER_TOOL_NAME,
+          STOP_HEARTBEAT_TOOL_NAME,
         ].sort(),
       );
     });

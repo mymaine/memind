@@ -221,6 +221,8 @@ describe('createLoreHandler', () => {
       chapterText: 'real narrator chapter three',
       ipfsHash: 'bafkrei-ch3',
       ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-ch3',
+      tokenName: 'HBNB2026-Fixture',
+      tokenSymbol: 'HBNB2026-FIX',
       publishedAt: '2026-04-20T12:00:00.000Z',
     });
 

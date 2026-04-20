@@ -66,7 +66,7 @@ function UserBubble({ turn }: { turn: BrainChatTurn }): ReactElement {
       <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.5px] text-fg-tertiary">
         you
       </span>
-      <p className="whitespace-pre-wrap break-words font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.5] text-fg-primary">
+      <p className="[overflow-wrap:anywhere] whitespace-pre-wrap break-all font-[family-name:var(--font-sans-body)] text-[13px] leading-[1.5] text-fg-primary">
         {turn.content}
       </p>
     </div>
