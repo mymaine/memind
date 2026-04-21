@@ -12,7 +12,7 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
 
 <sub>📖 Readme: **English** · [中文](README.zh-CN.md)</sub>
 
-[![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1238%20green-emerald)](#evidence)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1238%20green-emerald)](#evidence) [![Four.meme](https://img.shields.io/badge/Four.meme-BNB%20Chain-F0B90B?logo=binance&logoColor=white)](https://four.meme) [![x402 protocol](https://img.shields.io/badge/x402-coinbase%2Fx402-0052FF?logo=coinbase&logoColor=white)](https://github.com/coinbase/x402) [![Architecture](https://img.shields.io/badge/docs-architecture.md-6e56cf)](./docs/architecture.md)
 
 <p align="center">
   <a href="https://youtu.be/UaOFSktNi50"><img src="https://img.youtube.com/vi/UaOFSktNi50/maxresdefault.jpg" width="48%" alt="Trailer"></a>
@@ -24,12 +24,6 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
   &nbsp;
   <a href="https://youtu.be/sFVbfZnrBUE"><img src="https://img.shields.io/badge/▶_Full_Demo-282828?style=for-the-badge&logo=youtube&logoColor=white" alt="Full Demo"></a>
 </p>
-
-## Links
-
-- Four.meme: https://four.meme
-- x402 protocol: https://github.com/coinbase/x402
-- Architecture: [`docs/architecture.md`](./docs/architecture.md)
 
 ## TL;DR
 
