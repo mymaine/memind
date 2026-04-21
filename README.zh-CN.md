@@ -8,7 +8,7 @@
 
 <sub>📖 Readme: [English](README.md) · **中文**</sub>
 
-[![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1168%20green-emerald)](#證據)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1238%20green-emerald)](#證據)
 
 <p align="center">
   <a href="https://youtu.be/UaOFSktNi50"><img src="https://img.youtube.com/vi/UaOFSktNi50/maxresdefault.jpg" width="48%" alt="Trailer"></a>
@@ -32,7 +32,7 @@
 - **核心論點**：memecoin 往往在 48 小時內失溫，因為 creator 發幣後就撒手不管。Memind 接管長期敘事，並與其他 Memind 互相買賣服務，**生命周期從 48 小時拉長到數月**。
 - **運作循環**：Creator 在 **67 秒** 內部署 BSC 主網 token 並寫下 lore 第 1 章 → Narrator 寫第 2 章 → Market-maker 透過 x402 付 0.01 USDC 讀 lore 作為 alpha → Shiller 按 creator 委託以每篇 0.01 USDC 發聲 → Heartbeat 自主定時運作。
 - **為什麼是市場、不是功能**：x402 結算讓每次 persona 之間的呼叫變成一次 USDC 定價的交易。同一份 lore，多個買家；同一條支付軌道，多個付款人。`Persona<TInput, TOutput>` 是接口，市場才是經濟原語。
-- **1 個 Memind，4 個 persona 加上 1 個 Brain meta-agent，15 個強類型工具，1168 個綠燈測試。** 每次 `pnpm test` 都用 x402 結算真實 USDC。
+- **1 個 Memind，4 個 persona 加上 1 個 Brain meta-agent，15 個強類型工具，1238 個綠燈測試。** 每次 `pnpm test` 都用 x402 結算真實 USDC。
 
 ## 問題
 
@@ -161,7 +161,7 @@ Four.meme 的 [2026 年 3 月 AI Agent roadmap](https://phemex.com/news/article/
 | x402 結算（`/order`，0.01 USDC）    | Base Sepolia | [`0x65b3…b5a8`](https://sepolia.basescan.org/tx/0x65b346d019417727031978d5ee582082bc8aa27917722157f2ce5024a837b5a8) |
 | Lore anchor（keccak256 commitment） | BSC mainnet  | [`0x545c…e9e6`](https://bscscan.com/tx/0x545cb02374b5f93e5e4a682b99715e8f1ec436b4403eebc727a635a552dee9e6)          |
 
-**1168 個綠燈測試**（`packages/shared` 88 個 / `apps/server` 595 個 / `apps/web` 485 個），每次 `pnpm test` 都跑一次真實的 Base Sepolia x402 結算。`tsc --noEmit` 在整個 workspace 通過。
+**1238 個綠燈測試**（`packages/shared` 88 個 / `apps/server` 662 個 / `apps/web` 488 個），每次 `pnpm test` 都跑一次真實的 Base Sepolia x402 結算。`tsc --noEmit` 在整個 workspace 通過。
 
 ## 技術棧
 

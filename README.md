@@ -8,7 +8,7 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
 
 <sub>📖 Readme: **English** · [中文](README.zh-CN.md)</sub>
 
-[![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1168%20green-emerald)](#evidence)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1238%20green-emerald)](#evidence)
 
 <p align="center">
   <a href="https://youtu.be/UaOFSktNi50"><img src="https://img.youtube.com/vi/UaOFSktNi50/maxresdefault.jpg" width="48%" alt="Trailer"></a>
@@ -32,7 +32,7 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
 - **Thesis**: memecoins die in 48 hours because creators abandon them after mint. A Memind takes over the long-term narrative and trades services with other Meminds — **lifecycle extends from 48 hours to months**.
 - **Loop**: Creator deploys a real BSC mainnet token in **67s** + writes lore chapter 1 → Narrator writes chapter 2 → Market-maker pays 0.01 USDC via x402 to read lore as alpha → Shiller posts on-voice tweets creators commission at 0.01 USDC each → Heartbeat ticks on its own.
 - **Why a market, not a feature**: x402 settlement turns every inter-persona call into a USDC-priced trade. Same lore, multiple buyers. Same rail, multiple payers. `Persona<TInput, TOutput>` is the interface; the market is the economic primitive.
-- **1 Memind, 4 personas + Brain meta-agent, 15 typed tools, 1168 green tests.** x402 settles real USDC every `pnpm test`.
+- **1 Memind, 4 personas + Brain meta-agent, 15 typed tools, 1238 green tests.** x402 settles real USDC every `pnpm test`.
 
 ## Problem
 
@@ -161,7 +161,7 @@ Every row links to a real explorer page — all five hashes come from one cohere
 | x402 settlement (`/order`, 0.01 USDC) | Base Sepolia | [`0x65b3…b5a8`](https://sepolia.basescan.org/tx/0x65b346d019417727031978d5ee582082bc8aa27917722157f2ce5024a837b5a8) |
 | Lore anchor (keccak256 commitment)    | BSC mainnet  | [`0x545c…e9e6`](https://bscscan.com/tx/0x545cb02374b5f93e5e4a682b99715e8f1ec436b4403eebc727a635a552dee9e6)          |
 
-**1168 green tests** (`packages/shared` 88 / `apps/server` 595 / `apps/web` 485) with real Base Sepolia x402 settle on every `pnpm test`. `tsc --noEmit` clean across the workspace.
+**1238 green tests** (`packages/shared` 88 / `apps/server` 662 / `apps/web` 488) with real Base Sepolia x402 settle on every `pnpm test`. `tsc --noEmit` clean across the workspace.
 
 ## Tech stack
 
