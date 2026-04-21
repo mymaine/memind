@@ -14,9 +14,9 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
   <a href="https://youtu.be/sFVbfZnrBUE"><img src="https://img.youtube.com/vi/sFVbfZnrBUE/maxresdefault.jpg" width="48%" alt="Demo"></a>
 </p>
 <p align="center">
-  <a href="https://youtu.be/UaOFSktNi50"><strong>▶ Trailer</strong></a>
-  &nbsp;•&nbsp;
-  <a href="https://youtu.be/sFVbfZnrBUE"><strong>▶ Full Demo</strong></a>
+  <a href="https://youtu.be/UaOFSktNi50"><img src="https://img.shields.io/badge/▶_Watch_Trailer-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch Trailer"></a>
+  &nbsp;
+  <a href="https://youtu.be/sFVbfZnrBUE"><img src="https://img.shields.io/badge/▶_Full_Demo-282828?style=for-the-badge&logo=youtube&logoColor=white" alt="Full Demo"></a>
 </p>
 
 ## Links
