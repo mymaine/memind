@@ -6,6 +6,8 @@
 
 Every memecoin gets its own **Memind**: a runtime with persistent memory, pluggable personas, and on-chain-paid autonomy. Four personas + a Brain meta-agent, paid over [x402](https://github.com/coinbase/x402).
 
+<sub>📖 Readme: **English** · [中文](README.zh-CN.md)</sub>
+
 [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1168%20green-emerald)](#evidence)
 
 <p align="center">
