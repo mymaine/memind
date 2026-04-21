@@ -485,6 +485,262 @@ describe('HeartbeatSessionStore (memory backend)', () => {
     });
   });
 
+  // ─── recent tick ring buffer (LLM memory across ticks) ───────────────────
+  //
+  // Per-tick in-memory history so the heartbeat LLM can see what the prior
+  // few ticks did (post / extend_lore / idle / error / skip) and avoid
+  // repeating itself. Pure memory — never persisted — because the only
+  // consumer is the next LLM prompt a few seconds away. Store caps the
+  // history at 5 entries per token and keeps buckets isolated per token
+  // addr.
+  describe('recent tick ring buffer', () => {
+    const ADDR_A = '0x1111111111111111111111111111111111111111';
+    const ADDR_B = '0x2222222222222222222222222222222222222222';
+
+    it('returns an empty array for a brand new session', async () => {
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+      });
+      expect(store.getRecentTicks(ADDR_A)).toEqual([]);
+    });
+
+    it('returns an empty array for a token that was never started', async () => {
+      expect(store.getRecentTicks(ADDR_A)).toEqual([]);
+    });
+
+    it('keeps at most the last 5 entries in arrival order (oldest first)', async () => {
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 20,
+      });
+      for (let i = 1; i <= 7; i += 1) {
+        await store.recordTick(ADDR_A, {
+          tickId: `tick_${i.toString()}`,
+          tickAt: `2026-04-20T00:00:0${i.toString()}.000Z`,
+          success: true,
+          action: 'post',
+          reason: `reason_${i.toString()}`,
+        });
+      }
+      const recent = store.getRecentTicks(ADDR_A);
+      expect(recent).toHaveLength(5);
+      // Oldest (tick 3) first, newest (tick 7) last.
+      expect(recent.map((r) => r.tickAt)).toEqual([
+        '2026-04-20T00:00:03.000Z',
+        '2026-04-20T00:00:04.000Z',
+        '2026-04-20T00:00:05.000Z',
+        '2026-04-20T00:00:06.000Z',
+        '2026-04-20T00:00:07.000Z',
+      ]);
+      for (const entry of recent) {
+        expect(entry.action).toBe('post');
+      }
+    });
+
+    it("records 'error' when the tick failed and 'skip' when success=true without action", async () => {
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 10,
+      });
+      await store.recordTick(ADDR_A, {
+        tickId: 'tick_ok',
+        tickAt: '2026-04-20T00:00:01.000Z',
+        success: true,
+        action: 'extend_lore',
+        reason: 'lore top-up',
+      });
+      await store.recordTick(ADDR_A, {
+        tickId: 'tick_err',
+        tickAt: '2026-04-20T00:00:02.000Z',
+        success: false,
+        error: 'boom',
+      });
+      await store.recordTick(ADDR_A, {
+        tickId: 'tick_noop',
+        tickAt: '2026-04-20T00:00:03.000Z',
+        success: true,
+        // No action — treat as a successful no-op / skip.
+      });
+      const recent = store.getRecentTicks(ADDR_A);
+      expect(recent).toHaveLength(3);
+      expect(recent[0]!.action).toBe('extend_lore');
+      expect(recent[0]!.reason).toBe('lore top-up');
+      expect(recent[1]!.action).toBe('error');
+      expect(recent[2]!.action).toBe('skip');
+    });
+
+    it('keeps separate buckets per tokenAddr', async () => {
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 10,
+      });
+      await store.start({
+        tokenAddr: ADDR_B,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 10,
+      });
+      await store.recordTick(ADDR_A, {
+        tickId: 'tick_a1',
+        tickAt: '2026-04-20T00:00:01.000Z',
+        success: true,
+        action: 'post',
+      });
+      await store.recordTick(ADDR_B, {
+        tickId: 'tick_b1',
+        tickAt: '2026-04-20T00:00:02.000Z',
+        success: true,
+        action: 'idle',
+      });
+      const a = store.getRecentTicks(ADDR_A);
+      const b = store.getRecentTicks(ADDR_B);
+      expect(a).toHaveLength(1);
+      expect(b).toHaveLength(1);
+      expect(a[0]!.action).toBe('post');
+      expect(b[0]!.action).toBe('idle');
+    });
+
+    it('returned entries are read-only — mutating them does not affect the store', async () => {
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+      });
+      await store.recordTick(ADDR_A, {
+        tickId: 'tick_one',
+        tickAt: '2026-04-20T00:00:01.000Z',
+        success: true,
+        action: 'post',
+        reason: 'r1',
+      });
+      const recent = store.getRecentTicks(ADDR_A);
+      // Array itself or its entries must not permit external mutation to
+      // corrupt internal state. Either the array is frozen or the caller
+      // gets a fresh copy — we verify the store is unperturbed after a
+      // best-effort mutation attempt.
+      try {
+        (recent as unknown as { push: (x: unknown) => void }).push({ tickAt: 'x', action: 'post' });
+      } catch {
+        /* frozen array throws in strict mode — that is fine */
+      }
+      const again = store.getRecentTicks(ADDR_A);
+      expect(again).toHaveLength(1);
+      expect(again[0]!.tickAt).toBe('2026-04-20T00:00:01.000Z');
+    });
+
+    it('clear() wipes the recentTicks buckets', async () => {
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+      });
+      await store.recordTick(ADDR_A, {
+        tickId: 'tick_one',
+        tickAt: '2026-04-20T00:00:01.000Z',
+        success: true,
+        action: 'post',
+      });
+      expect(store.getRecentTicks(ADDR_A)).toHaveLength(1);
+      await store.clear();
+      expect(store.getRecentTicks(ADDR_A)).toEqual([]);
+    });
+
+    it('normalises mixed-case addresses so getRecentTicks hits the same bucket', async () => {
+      const mixed = '0xAbCdEf0123456789aBcDeF0123456789AbCdEf01';
+      await store.start({
+        tokenAddr: mixed,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+      });
+      await store.recordTick(mixed.toLowerCase(), {
+        tickId: 'tick_one',
+        tickAt: '2026-04-20T00:00:01.000Z',
+        success: true,
+        action: 'post',
+      });
+      expect(store.getRecentTicks(mixed.toUpperCase())).toHaveLength(1);
+    });
+
+    // Regression for the cross-run contamination bug: explicit `stop()` MUST
+    // wipe the per-token ring buffer so a user who issues `/heartbeat <addr>`
+    // → /stop → /heartbeat <addr>` starts the next run with an empty history.
+    // Without this the first tick of run #2 sees the last 5 decisions of run
+    // #1 and fires Decision Rules 3/4 (post-spam detection / lore-stocked
+    // heuristic) against stale data.
+    it('stop() wipes the recentTicks ring buffer for the stopped token', async () => {
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick: async () => makeDelta(),
+        maxTicks: 10,
+      });
+      for (let i = 1; i <= 3; i += 1) {
+        await store.recordTick(ADDR_A, {
+          tickId: `tick_${i.toString()}`,
+          tickAt: `2026-04-20T00:00:0${i.toString()}.000Z`,
+          success: true,
+          action: 'post',
+          reason: `r${i.toString()}`,
+        });
+      }
+      expect(store.getRecentTicks(ADDR_A)).toHaveLength(3);
+
+      await store.stop(ADDR_A);
+      expect(store.getRecentTicks(ADDR_A)).toEqual([]);
+    });
+
+    // Second leg of the same regression: an auto-stop (tickCount hit maxTicks)
+    // followed by a restart under the `wasStopped` branch of start() must also
+    // hand the new run an empty history. This is belt-and-suspenders with the
+    // stop()-wipe test above because the auto-stop path does NOT go through
+    // the public stop() method — it flips `running=false` inline inside
+    // `maybeAutoStop()` — so we assert the reset lives on the start() side
+    // too, making the invariant robust to either-side-only regressions.
+    it('start() resets recentTicks when the prior session had been stopped (auto-stop + restart)', async () => {
+      const runTick = vi.fn(async () => makeDelta());
+      await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick,
+        maxTicks: 3,
+      });
+      for (let i = 1; i <= 3; i += 1) {
+        await store.recordTick(ADDR_A, {
+          tickId: `tick_${i.toString()}`,
+          tickAt: `2026-04-20T00:00:0${i.toString()}.000Z`,
+          success: true,
+          action: 'post',
+          reason: `r${i.toString()}`,
+        });
+      }
+      // Auto-stop fired on the third recordTick because tickCount >= maxTicks.
+      const afterCap = (await store.get(ADDR_A))!;
+      expect(afterCap.running).toBe(false);
+      expect(store.getRecentTicks(ADDR_A)).toHaveLength(3);
+
+      // Restart under the wasStopped branch. The new run must start with an
+      // empty history so Decision Rule 3/4 cannot fire against stale ticks.
+      const second = await store.start({
+        tokenAddr: ADDR_A,
+        intervalMs: 1_000,
+        runTick,
+        maxTicks: 3,
+      });
+      expect(second.restarted).toBe(true);
+      expect(second.snapshot.running).toBe(true);
+      expect(second.snapshot.tickCount).toBe(0);
+      expect(store.getRecentTicks(ADDR_A)).toEqual([]);
+    });
+  });
+
   // The matrix below is the canonical coverage of `start(...)` semantics
   // when a prior session already exists. The neighbouring "restarting a
   // stopped session resets counters" test (~line 317) overlaps with two

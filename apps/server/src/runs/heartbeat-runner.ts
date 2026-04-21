@@ -87,6 +87,15 @@ export const HEARTBEAT_SYSTEM_PROMPT = [
   '',
   BASE_RULES_NO_URL,
   '',
+  'History actions are recorded as: post, extend_lore, idle, skip, error. "post" means a post_to_x call succeeded.',
+  'Decision rules (apply in order; later rules override earlier when they conflict):',
+  '1. HARD GATE (absolute, overrides ALL later rules): If identity.deployedOnChain is false, the ONLY valid action is idle. Do not extend_lore or post_to_x for a non-deployed token.',
+  '2. If narrative.totalChapters < 3, prefer extend_lore — the token needs narrative depth before shilling.',
+  '3. If the last 2 entries in "Recent tick history" are both post, prefer extend_lore or idle — avoid shill spam.',
+  '4. If the last 2 entries in "Recent tick history" are both extend_lore, prefer post — lore is stocked, time to promote.',
+  '5. If market.curveProgress (when available) >= 70, prefer post_to_x — near graduation, create buzz.',
+  '6. When uncertain, prefer idle over repeating the same action twice in a row.',
+  '',
   'Pick exactly ONE action per tick. Your final response is a single JSON object:',
   '{"action": "post_to_x" | "extend_lore" | "idle", "reason": "..."}.',
   'Do NOT invent addresses — only use the tokenAddr provided by check_token_status.',
@@ -327,6 +336,14 @@ export async function runHeartbeatDemo(deps: RunHeartbeatDemoDeps): Promise<void
     `heartbeat run start (ticks=${tickCount.toString()}, intervalMs=${intervalMs.toString()})`,
   );
 
+  // Local ring buffer of this run's prior tick decisions. Threaded into each
+  // subsequent tick's userInput so the LLM can see what it already did and
+  // avoid "post, post, post". Pure in-memory — this runner never shares
+  // state with the Brain `/heartbeat` path (that one reads from the session
+  // store's recentTicks); each dashboard run starts fresh.
+  const recentTicks: Array<{ tickAt: string; action: string; reason?: string }> = [];
+  const RECENT_LIMIT = 5;
+
   for (let i = 1; i <= tickCount; i += 1) {
     // Emit the tick counter artifact BEFORE the tool-use round so the UI
     // advances `01 / 03 ticks` while the LLM is still thinking. `decisions`
@@ -340,10 +357,28 @@ export async function runHeartbeatDemo(deps: RunHeartbeatDemoDeps): Promise<void
     };
     deps.store.addArtifact(deps.runId, tickArtifact);
 
-    const userInput =
+    let userInput =
       `Tick ${i.toString()} of ${tickCount.toString()} at ${new Date().toISOString()}. ` +
       `Current token under observation: ${deps.tokenAddress}. ` +
       `Decide one action now and respond with the required JSON.`;
+
+    // Append the accumulated recent-tick history (if any) so the LLM sees
+    // what the prior ticks of THIS run did. Defensive try/catch: a bug in
+    // history formatting must never derail the tick itself.
+    try {
+      if (recentTicks.length > 0) {
+        const lines = recentTicks.map(
+          (t) => `- ${t.tickAt}: action=${t.action}, reason=${t.reason ?? 'none'}`,
+        );
+        userInput = `${userInput}\nRecent tick history (most recent last):\n${lines.join('\n')}`;
+      }
+    } catch (err) {
+      console.warn(
+        `[heartbeat-runner] failed to inject recent tick history (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
 
     let loopResult: AgentLoopResult | undefined;
     try {
@@ -370,29 +405,54 @@ export async function runHeartbeatDemo(deps: RunHeartbeatDemoDeps): Promise<void
       );
     }
 
-    if (loopResult !== undefined) {
-      const decision = parseTickDecision(loopResult.finalText);
-      deps.store.addArtifact(deps.runId, {
-        kind: 'heartbeat-decision',
-        tickNumber: i,
-        action: decision.action,
-        reason: decision.reason,
-      });
+    // Record this tick's outcome for the NEXT tick's history block. Build
+    // the entry regardless of success so errors / skips stay visible; the
+    // try/catch guards against unexpected shapes in the parsed decision.
+    try {
+      if (loopResult !== undefined) {
+        const decision = parseTickDecision(loopResult.finalText);
+        deps.store.addArtifact(deps.runId, {
+          kind: 'heartbeat-decision',
+          tickNumber: i,
+          action: decision.action,
+          reason: decision.reason,
+        });
 
-      if (decision.action === 'post') {
-        const postOutput = findToolOutput(loopResult.toolCalls, 'post_to_x') as
-          | XPostOutput
-          | undefined;
-        if (postOutput !== undefined) {
-          const isDryRun = postOutput.tweetId === 'dry-run' || postOutput.url === 'about:blank';
-          deps.store.addArtifact(deps.runId, {
-            kind: 'tweet-url',
-            url: postOutput.url,
-            tweetId: postOutput.tweetId,
-            ...(isDryRun ? { label: 'tweet (dry-run)' } : {}),
-          });
+        if (decision.action === 'post') {
+          const postOutput = findToolOutput(loopResult.toolCalls, 'post_to_x') as
+            | XPostOutput
+            | undefined;
+          if (postOutput !== undefined) {
+            const isDryRun = postOutput.tweetId === 'dry-run' || postOutput.url === 'about:blank';
+            deps.store.addArtifact(deps.runId, {
+              kind: 'tweet-url',
+              url: postOutput.url,
+              tweetId: postOutput.tweetId,
+              ...(isDryRun ? { label: 'tweet (dry-run)' } : {}),
+            });
+          }
         }
+
+        recentTicks.push({
+          tickAt: new Date().toISOString(),
+          action: decision.action,
+          reason: decision.reason,
+        });
+      } else {
+        recentTicks.push({
+          tickAt: new Date().toISOString(),
+          action: 'error',
+        });
       }
+    } catch (err) {
+      console.warn(
+        `[heartbeat-runner] failed to record tick history (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    if (recentTicks.length > RECENT_LIMIT) {
+      recentTicks.splice(0, recentTicks.length - RECENT_LIMIT);
     }
 
     if (i < tickCount) {

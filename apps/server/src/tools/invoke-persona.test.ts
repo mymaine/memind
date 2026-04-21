@@ -1574,6 +1574,147 @@ describe('createInvokeHeartbeatTickTool', () => {
 
     await sessionStore.clear();
   });
+
+  // ─── Recent tick history injection (Brain `/heartbeat` path) ─────────────
+  //
+  // Brain's invoke_heartbeat_tick should consult `sessionStore.getRecentTicks`
+  // and append a "Recent tick history" block to the user prompt so the LLM
+  // can avoid repeating itself. Store errors must NOT derail the prompt —
+  // the tool falls back to the base prompt and logs a warning.
+  it('threads recentTicks from the session store into buildUserInput when present', async () => {
+    let capturedBuildUserInput: ((ctx: { tickId: string; tickAt: string }) => string) | undefined;
+    const run = vi.fn(
+      async (
+        input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => {
+        capturedBuildUserInput = input.buildUserInput as (ctx: {
+          tickId: string;
+          tickAt: string;
+        }) => string;
+        return {
+          lastTickAt: '2026-04-20T00:00:30.000Z',
+          lastTickId: 'tick_next',
+          successCount: 1,
+          errorCount: 0,
+          skippedCount: 0,
+          lastError: null,
+          lastDecision: null,
+        };
+      },
+    );
+    const persona = makeHeartbeatPersona(run);
+    const sessionStore = new HeartbeatSessionStore();
+    // Pre-seed the ring buffer with 3 entries (post, extend_lore, idle).
+    await sessionStore.start({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      intervalMs: 10_000,
+      runTick: async () => ({
+        tickId: 't',
+        tickAt: '2026-04-20T00:00:00.000Z',
+        success: true,
+      }),
+      maxTicks: 20,
+    });
+    await sessionStore.recordTick(FAKE_TOKEN_ADDR, {
+      tickId: 'tick_1',
+      tickAt: '2026-04-20T00:00:01.000Z',
+      success: true,
+      action: 'post',
+      reason: 'first post',
+    });
+    await sessionStore.recordTick(FAKE_TOKEN_ADDR, {
+      tickId: 'tick_2',
+      tickAt: '2026-04-20T00:00:02.000Z',
+      success: true,
+      action: 'extend_lore',
+      reason: 'stock lore',
+    });
+    await sessionStore.recordTick(FAKE_TOKEN_ADDR, {
+      tickId: 'tick_3',
+      tickAt: '2026-04-20T00:00:03.000Z',
+      success: true,
+      action: 'idle',
+      reason: 'wait',
+    });
+
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'm',
+      systemPrompt: 'p',
+      buildUserInput: ({ tickId }) => `tick ${tickId}`,
+      sessionStore,
+    });
+
+    // Drive the background-restarted branch (session already exists) so the
+    // immediate tick executes buildUserInput.
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, intervalMs: 15_000 });
+
+    expect(capturedBuildUserInput).toBeDefined();
+    const built = capturedBuildUserInput!({
+      tickId: 'tick_4',
+      tickAt: '2026-04-20T00:00:04.000Z',
+    });
+    expect(built).toContain('Recent tick history');
+    expect(built).toContain('action=post');
+    expect(built).toContain('action=extend_lore');
+    expect(built).toContain('action=idle');
+
+    await sessionStore.clear();
+  });
+
+  it('falls back silently when getRecentTicks throws', async () => {
+    let capturedBuildUserInput: ((ctx: { tickId: string; tickAt: string }) => string) | undefined;
+    const run = vi.fn(
+      async (
+        input: HeartbeatPersonaInput,
+        _ctx: PersonaRunContext,
+      ): Promise<HeartbeatPersonaOutput> => {
+        capturedBuildUserInput = input.buildUserInput as (ctx: {
+          tickId: string;
+          tickAt: string;
+        }) => string;
+        return {
+          lastTickAt: null,
+          lastTickId: null,
+          successCount: 1,
+          errorCount: 0,
+          skippedCount: 0,
+          lastError: null,
+          lastDecision: null,
+        };
+      },
+    );
+    const persona = makeHeartbeatPersona(run);
+    const sessionStore = new HeartbeatSessionStore();
+    // Force getRecentTicks to throw; the invoke layer must swallow it.
+    vi.spyOn(sessionStore, 'getRecentTicks').mockImplementation(() => {
+      throw new Error('boom');
+    });
+
+    const tool = createInvokeHeartbeatTickTool({
+      persona,
+      client: fakeClient(),
+      registry: fakeRegistry(),
+      model: 'm',
+      systemPrompt: 'p',
+      buildUserInput: ({ tickId }) => `tick ${tickId}`,
+      sessionStore,
+    });
+
+    // Should NOT throw.
+    await expect(tool.execute({ tokenAddr: FAKE_TOKEN_ADDR })).resolves.toBeDefined();
+    expect(capturedBuildUserInput).toBeDefined();
+    const built = capturedBuildUserInput!({
+      tickId: 'tick_1',
+      tickAt: '2026-04-20T00:00:01.000Z',
+    });
+    // Base prompt still there; no history block appended.
+    expect(built).toContain('tick tick_1');
+    expect(built).not.toContain('Recent tick history');
+  });
 });
 
 // ─── stop_heartbeat ─────────────────────────────────────────────────────────

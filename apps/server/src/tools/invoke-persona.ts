@@ -942,9 +942,29 @@ async function executeHeartbeatPersonaRun(
   // random address to feed `check_token_status` each fire — users saw
   // "Token contract not deployed" on a clearly-deployed token because the
   // chain read was against a bogus address (different on each tick).
+  //
+  // The wrapper also appends the last up-to-5 decisions the same token has
+  // made (from the session store's in-memory ring buffer). Without this the
+  // LLM has no cross-tick memory and happily picks the same action several
+  // ticks in a row. Store failures must NEVER derail the prompt — we fall
+  // back to the base prompt and log a warning.
   const buildUserInputWithToken = (ctx: { tickId: string; tickAt: string }): string => {
     const base = buildUserInput(ctx);
-    return `${base}\nCurrent token under observation: ${tokenAddr}. Use this exact address for check_token_status, post_to_x, and extend_lore — do NOT substitute any other address.`;
+    const withToken = `${base}\nCurrent token under observation: ${tokenAddr}. Use this exact address for check_token_status, post_to_x, and extend_lore — do NOT substitute any other address.`;
+    try {
+      const recent = deps.sessionStore.getRecentTicks(tokenAddr);
+      if (recent.length === 0) return withToken;
+      const lines = recent.map(
+        (t) => `- ${t.tickAt}: action=${t.action}, reason=${t.reason ?? 'none'}`,
+      );
+      return `${withToken}\nRecent tick history (most recent last):\n${lines.join('\n')}`;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[heartbeat] failed to read recent ticks for ${tokenAddr} (non-fatal): ${message}`,
+      );
+      return withToken;
+    }
   };
   const personaInput: HeartbeatPersonaInput = {
     model,

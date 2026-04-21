@@ -144,8 +144,30 @@ interface MutableSession {
   runTick: (snapshot: HeartbeatSessionState) => Promise<HeartbeatTickDelta>;
 }
 
+/**
+ * One entry in the per-token recent-tick ring buffer. Kept purely in-memory
+ * so the heartbeat LLM can see what the last few ticks did ("you just posted
+ * twice in a row — consider extend_lore") without paying the DB round-trip
+ * cost on a path that runs every few seconds.
+ *
+ * `action` extends `HeartbeatSessionAction` with two synthetic values:
+ *   - `'error'` for ticks where the persona threw or the LLM errored out
+ *   - `'skip'`  for ticks that completed successfully without choosing an
+ *               action (the delta had `success=true` and `action=undefined`)
+ * These let the prompt render a faithful recent history ("post, error, skip")
+ * instead of silently omitting non-action ticks and misleading the model.
+ */
+export interface HeartbeatRecentTick {
+  readonly tickAt: string;
+  readonly action: HeartbeatSessionAction | 'error' | 'skip';
+  readonly reason?: string;
+}
+
+const RECENT_TICKS_LIMIT = 5;
+
 export class HeartbeatSessionStore {
   private readonly sessions = new Map<string, MutableSession>();
+  private readonly recentTicksByToken = new Map<string, HeartbeatRecentTick[]>();
   private readonly pool: Pool | undefined;
   private readonly setIntervalOverride: typeof setInterval | undefined;
   private readonly clearIntervalOverride: typeof clearInterval | undefined;
@@ -230,6 +252,15 @@ export class HeartbeatSessionStore {
         existing.lastTickId = null;
         existing.lastAction = null;
         existing.lastError = null;
+        // Wipe the per-token recent-tick ring buffer so the first tick of
+        // the new run does not see the prior run's history. Without this,
+        // Decision Rule 3/4 (post-spam / lore-stocked) would fire against
+        // stale ticks from a completed or explicitly stopped prior run.
+        // Defence-in-depth: `stop()` also wipes this bucket, so either path
+        // alone keeps the invariant, but both wipes guarantee the restart
+        // cannot be contaminated regardless of how the prior run ended
+        // (explicit stop vs. auto-stop via maybeAutoStop).
+        this.recentTicksByToken.delete(key);
       }
       existing.timer = this.installTimer(key);
       await this.persist(existing);
@@ -286,6 +317,10 @@ export class HeartbeatSessionStore {
       session.timer = null;
     }
     session.running = false;
+    // Wipe the per-token recent-tick ring buffer on explicit stop so the
+    // next `/heartbeat <addr>` starts with an empty history. Paired with
+    // the same wipe in `start()`'s wasStopped branch for defence-in-depth.
+    this.recentTicksByToken.delete(key);
     await this.persist(session);
     return snapshotOf(session);
   }
@@ -357,6 +392,26 @@ export class HeartbeatSessionStore {
   }
 
   /**
+   * Read the last up-to-5 tick entries for this token, oldest first. Always
+   * returns a fresh frozen copy so callers cannot mutate internal state;
+   * unknown tokens return an empty array. Never throws — the caller's error
+   * path (LLM prompt assembly) must not be derailed by a missing history.
+   */
+  getRecentTicks(tokenAddr: string): ReadonlyArray<HeartbeatRecentTick> {
+    const key = normaliseAddr(tokenAddr);
+    const entries = this.recentTicksByToken.get(key);
+    if (entries === undefined || entries.length === 0) return Object.freeze([]);
+    const copy = entries.map((e) =>
+      Object.freeze({
+        tickAt: e.tickAt,
+        action: e.action,
+        ...(e.reason !== undefined ? { reason: e.reason } : {}),
+      } as HeartbeatRecentTick),
+    );
+    return Object.freeze(copy);
+  }
+
+  /**
    * Stop every timer and forget every session. Test-only.
    */
   async clear(): Promise<void> {
@@ -368,6 +423,7 @@ export class HeartbeatSessionStore {
       session.running = false;
     }
     this.sessions.clear();
+    this.recentTicksByToken.clear();
     if (this.pool !== undefined) {
       await this.pool.query(`TRUNCATE heartbeat_sessions`);
     }
@@ -514,6 +570,30 @@ export class HeartbeatSessionStore {
       session.lastError = delta.error ?? 'unknown error';
     }
     session.lastAction = delta.action ?? null;
+    this.pushRecentTick(session.tokenAddr, delta);
+  }
+
+  /**
+   * Append one entry to the per-token ring buffer. Non-success deltas map to
+   * `'error'`; success deltas without an action map to `'skip'`; success
+   * deltas with an action carry the action verbatim. Keeps at most
+   * `RECENT_TICKS_LIMIT` entries (oldest dropped first).
+   */
+  private pushRecentTick(tokenAddrKey: string, delta: HeartbeatTickDelta): void {
+    const action: HeartbeatRecentTick['action'] = !delta.success
+      ? 'error'
+      : (delta.action ?? 'skip');
+    const entry: HeartbeatRecentTick = {
+      tickAt: delta.tickAt,
+      action,
+      ...(delta.reason !== undefined ? { reason: delta.reason } : {}),
+    };
+    const existing = this.recentTicksByToken.get(tokenAddrKey) ?? [];
+    existing.push(entry);
+    if (existing.length > RECENT_TICKS_LIMIT) {
+      existing.splice(0, existing.length - RECENT_TICKS_LIMIT);
+    }
+    this.recentTicksByToken.set(tokenAddrKey, existing);
   }
 
   /**
