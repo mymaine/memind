@@ -13,6 +13,7 @@ import { loadConfig } from './config.js';
 const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../..');
 loadDotenv({ path: resolve(repoRoot, '.env.local') });
 import { registerHealthRoutes } from './routes/health.js';
+import { apiRunsRateLimiters, shillRateLimiter } from './middleware/rate-limit.js';
 import { registerX402Routes } from './x402/index.js';
 import { LoreStore } from './state/lore-store.js';
 import { AnchorLedger } from './state/anchor-ledger.js';
@@ -45,8 +46,46 @@ async function main(): Promise<void> {
   await logPoolSummary(pool);
 
   const app = express();
+  // Trust the first proxy hop so `req.ip` reflects the forwarded client
+  // address on Railway / Fly / any reverse proxy deployment. Without this
+  // the rate-limit middleware would see the proxy's loopback address for
+  // every request and throttle the entire fleet as a single client.
+  app.set('trust proxy', 1);
   app.use(cors());
   app.use(express.json({ limit: '2mb' }));
+
+  // Rate-limit mounts BEFORE any route / body-parser-sensitive middleware
+  // that hits credentials. `shillRateLimiter` must sit ahead of
+  // `registerX402Routes` so a 429 short-circuits before the x402
+  // `paymentMiddleware` can settle USDC on a request we then reject.
+  // `apiRunsRateLimiters` sit ahead of `registerRunRoutes` for the same
+  // reason (runs burn LLM tokens). Method-gated so only POST is throttled —
+  // GET /api/runs/:id and GET /api/runs/:id/events are cheap and must stay
+  // unlimited for dashboard polling.
+  app.use('/api/runs', (req, res, next) => {
+    if (req.method !== 'POST') return next();
+    let index = 0;
+    const run = (): void => {
+      const limiter = apiRunsRateLimiters[index];
+      if (limiter === undefined) {
+        next();
+        return;
+      }
+      index += 1;
+      limiter(req, res, (err?: unknown) => {
+        if (err !== undefined) {
+          next(err);
+          return;
+        }
+        run();
+      });
+    };
+    run();
+  });
+  app.use('/shill/:tokenAddr', (req, res, next) => {
+    if (req.method !== 'POST') return next();
+    shillRateLimiter(req, res, next);
+  });
 
   // Module-scope state shared between the x402 `/lore/:addr` handler and the
   // Narrator agent (which runs inside `runA2ADemo`). Both sides MUST see the
