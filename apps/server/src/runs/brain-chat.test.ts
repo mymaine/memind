@@ -18,7 +18,12 @@ import {
   LIST_HEARTBEATS_TOOL_NAME,
   STOP_HEARTBEAT_TOOL_NAME,
 } from '../tools/invoke-persona.js';
-import { runShillMarketDemo, type CreatorPaymentPhaseFn } from './shill-market.js';
+import { GET_TOKEN_INFO_TOOL_NAME } from '../tools/get-token-info.js';
+import {
+  runShillMarketDemo,
+  type CreatorPaymentPhaseFn,
+  type RunShillMarketDemoDeps,
+} from './shill-market.js';
 
 /**
  * runBrainChat orchestrator unit tests — exercise the Brain meta-agent driver
@@ -135,16 +140,18 @@ describe('runBrainChat', () => {
     await runBrainChat(buildDeps(record.runId, messages, spy));
 
     // runBrainAgent called exactly once with the same messages + the Brain
-    // systemPrompt defaults + the six Brain tools (four invoke_* plus
-    // stop_heartbeat and list_heartbeats).
+    // systemPrompt defaults + the seven Brain tools (get_token_info, four
+    // invoke_*, plus stop_heartbeat and list_heartbeats). get_token_info
+    // joined the Brain registry 2026-04-21 so conversational token lookups
+    // + pre-dispatch identity checks do not need a persona detour.
     expect(spy).toHaveBeenCalledTimes(1);
     const call = spy.mock.calls[0]?.[0];
     expect(call).toBeDefined();
     expect(call!.messages).toEqual(messages);
-    // All six Brain tools wired through.
-    expect(call!.tools.length).toBe(6);
+    expect(call!.tools.length).toBe(7);
     const toolNames = call!.tools.map((t) => t.name).sort();
     expect(toolNames).toEqual([
+      'get_token_info',
       'invoke_creator',
       'invoke_heartbeat_tick',
       'invoke_narrator',
@@ -375,6 +382,7 @@ describe('runBrainChat', () => {
         .sort();
       expect(names).toEqual(
         [
+          'get_token_info',
           INVOKE_CREATOR_TOOL_NAME,
           INVOKE_HEARTBEAT_TICK_TOOL_NAME,
           INVOKE_NARRATOR_TOOL_NAME,
@@ -561,7 +569,14 @@ describe('runBrainChat', () => {
         expect(call!.toolChoice).toEqual({ type: 'tool', name: INVOKE_CREATOR_TOOL_NAME });
       });
 
-      it('forces invoke_shiller on /order <addr>', async () => {
+      // Forcing get_token_info (NOT invoke_shiller) on /order is deliberate:
+      // invoke_shiller's tokenSymbol is mandatory and must come from
+      // get_token_info's identity.symbol. Forcing invoke_shiller on turn 1
+      // would leave the LLM with no option but to fabricate the symbol —
+      // reopening the ticker-hallucination bug the mandatory field closed.
+      // Turn 2+ runs with tool_choice=auto, so the prompt directs the LLM
+      // into invoke_shiller with the real symbol.
+      it('forces get_token_info on /order <addr> (shiller tokenSymbol must come from a real lookup)', async () => {
         const record = runStore.create('brain-chat');
         const messages: ChatMessage[] = [{ role: 'user', content: `/order ${addr} cool brief` }];
         const spy = vi.fn(
@@ -569,7 +584,10 @@ describe('runBrainChat', () => {
         );
         await runBrainChat(buildDeps(record.runId, messages, spy));
         const call = spy.mock.calls[0]?.[0];
-        expect(call!.toolChoice).toEqual({ type: 'tool', name: INVOKE_SHILLER_TOOL_NAME });
+        expect(call!.toolChoice).toEqual({ type: 'tool', name: GET_TOKEN_INFO_TOOL_NAME });
+        // Paranoia: any future regression that points /order back at
+        // invoke_shiller on turn 1 fails here too.
+        expect(call!.toolChoice).not.toEqual({ type: 'tool', name: INVOKE_SHILLER_TOOL_NAME });
       });
 
       it('forces invoke_heartbeat_tick on /heartbeat', async () => {
@@ -774,7 +792,7 @@ describe('runBrainChat', () => {
       const runBrainAgentImpl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
         const shillerTool = params.tools.find((t) => t.name === INVOKE_SHILLER_TOOL_NAME);
         if (!shillerTool) throw new Error('invoke_shiller tool missing');
-        await shillerTool.execute({ tokenAddr: addr });
+        await shillerTool.execute({ tokenAddr: addr, tokenSymbol: 'HBNB2026-TEST' });
         return {
           finalText: 'order dispatched',
           toolCalls: [],
@@ -824,6 +842,103 @@ describe('runBrainChat', () => {
       expect(snapshot!.status).toBe('done');
     });
 
+    // Anti-hallucination structural guard. On /order the runtime forces
+    // get_token_info (NOT invoke_shiller) as turn 1's tool, and the Brain's
+    // tool list MUST expose get_token_info alongside invoke_shiller so the
+    // LLM can satisfy the mandatory tokenSymbol field in turn 2 from the
+    // forced lookup's result. This test simulates that two-step flow end-to-
+    // end inside the brain-chat orchestrator: fake-brain turn 1 records the
+    // forced tool_choice and that get_token_info is reachable; fake-brain
+    // turn 2 calls invoke_shiller with a symbol string that could ONLY have
+    // come from that first lookup, and we assert the shill-market
+    // orchestrator receives the same symbol verbatim. A regression that
+    // forces invoke_shiller on turn 1 (or drops get_token_info from the
+    // tool set) fails here because the LLM has no legitimate source for
+    // tokenSymbol.
+    it('forces get_token_info on turn 1 and feeds its symbol into invoke_shiller on turn 2', async () => {
+      const record = runStore.create('brain-chat');
+      const messages: ChatMessage[] = [{ role: 'user', content: `/order ${addr}` }];
+
+      const resolvedSymbol = 'HBNB2026-FORCED';
+
+      const creatorPaymentImpl: CreatorPaymentPhaseFn = async (paymentDeps) => {
+        await paymentDeps.shillOrderStore.enqueue({
+          orderId: 'order-two-step',
+          targetTokenAddr: paymentDeps.tokenAddr.toLowerCase(),
+          ...(paymentDeps.creatorBrief !== undefined
+            ? { creatorBrief: paymentDeps.creatorBrief }
+            : {}),
+          paidTxHash: sentinelTxHash,
+          paidAmountUsdc: '0.01',
+          ts: new Date().toISOString(),
+        });
+        return {
+          orderId: 'order-two-step',
+          paidTxHash: sentinelTxHash,
+          paidAmountUsdc: '0.01',
+        };
+      };
+
+      // Spy on the shill-market orchestrator so we can capture the exact
+      // tokenSymbol the invoke_shiller tool forwarded into args. If a future
+      // refactor drops tokenSymbol propagation the assertion below fails.
+      const shillMarketSpy = vi.fn(
+        async (orchestratorDeps: RunShillMarketDemoDeps): Promise<void> => {
+          await runShillMarketDemo({
+            ...orchestratorDeps,
+            creatorPaymentImpl,
+          });
+        },
+      );
+
+      // Fake Brain loop: simulate turn 1 by verifying the forced tool is
+      // get_token_info and that the tool is actually in the tool set; then
+      // simulate turn 2 by invoking invoke_shiller with the symbol the
+      // (real) turn-1 lookup would have produced. We do NOT execute the real
+      // get_token_info tool here — it would hit BSC RPC, which is out of
+      // scope for a unit test. The structural guarantees (forced tool +
+      // tool-set membership) are what the regression targets.
+      const runBrainAgentImpl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
+        // Turn 1 — runtime must be asking the LLM for get_token_info.
+        expect(params.toolChoice).toEqual({
+          type: 'tool',
+          name: GET_TOKEN_INFO_TOOL_NAME,
+        });
+        const getInfoTool = params.tools.find((t) => t.name === GET_TOKEN_INFO_TOOL_NAME);
+        expect(getInfoTool).toBeDefined();
+
+        // Turn 2 — the LLM now calls invoke_shiller with the symbol it just
+        // read off identity.symbol. This is the ONLY legitimate source for
+        // the mandatory tokenSymbol field.
+        const shillerTool = params.tools.find((t) => t.name === INVOKE_SHILLER_TOOL_NAME);
+        if (!shillerTool) throw new Error('invoke_shiller tool missing from Brain tools');
+        await shillerTool.execute({ tokenAddr: addr, tokenSymbol: resolvedSymbol });
+        return {
+          finalText: 'order dispatched with forced lookup symbol',
+          toolCalls: [],
+          trace: [],
+          stopReason: 'end_turn',
+        };
+      };
+
+      await runBrainChat(
+        buildDeps(record.runId, messages, runBrainAgentImpl, {
+          creatorPaymentImpl,
+          invokeShillerRunShillMarketDemoImpl: shillMarketSpy,
+        }),
+      );
+
+      // The shill-market orchestrator must have been called exactly once
+      // with the symbol the forced get_token_info turn produced. Any drift
+      // (dropped tokenSymbol, symbol substitution inside invoke_shiller)
+      // fails here with a precise message.
+      expect(shillMarketSpy).toHaveBeenCalledTimes(1);
+      const orchestratorCall = shillMarketSpy.mock.calls[0]?.[0];
+      expect(orchestratorCall).toBeDefined();
+      expect(orchestratorCall!.args.tokenSymbol).toBe(resolvedSymbol);
+      expect(orchestratorCall!.args.tokenAddr).toBe(addr);
+    });
+
     it('falls back to stubCreatorPaymentPhase (zero-sentinel tx) when no creatorPaymentImpl is wired', async () => {
       // Defensive: when production leaves `creatorPaymentImpl` undefined
       // (CLI demos, unit tests) the orchestrator must fall back to
@@ -843,7 +958,7 @@ describe('runBrainChat', () => {
       const runBrainAgentImpl = async (params: RunBrainAgentParams): Promise<AgentLoopResult> => {
         const shillerTool = params.tools.find((t) => t.name === INVOKE_SHILLER_TOOL_NAME);
         if (!shillerTool) throw new Error('invoke_shiller tool missing');
-        await shillerTool.execute({ tokenAddr: addr });
+        await shillerTool.execute({ tokenAddr: addr, tokenSymbol: 'HBNB2026-TEST' });
         return {
           finalText: 'ok',
           toolCalls: [],
@@ -942,29 +1057,54 @@ describe('brain-chat sub-registry builders', () => {
     expect(reg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
   });
 
-  it('buildNarratorSubRegistry populates extend_lore only', async () => {
+  it('buildNarratorSubRegistry populates extend_lore + get_token_info', async () => {
     const { buildNarratorSubRegistry } = await import('./brain-chat.js');
+    const { LoreStore } = await import('../state/lore-store.js');
+    const { TokenIdentityReader } = await import('../state/token-identity-reader.js');
     const anthropicStub = {} as Anthropic;
-    const reg = buildNarratorSubRegistry(makeConfigWithSecrets(), anthropicStub);
+    const reader = new TokenIdentityReader({
+      rpcUrl: 'https://bsc-dataseed.binance.org',
+    });
+    const reg = buildNarratorSubRegistry(
+      makeConfigWithSecrets(),
+      anthropicStub,
+      new LoreStore(),
+      reader,
+    );
     const names = reg
       .list()
       .map((t) => t.name)
       .sort();
-    expect(names).toEqual(['extend_lore']);
+    // get_token_info joined the set 2026-04-21 so the narrator can fetch
+    // authoritative identity + narrative before writing the next chapter.
+    expect(names).toEqual(['extend_lore', 'get_token_info'].sort());
     expect(reg.has(INVOKE_NARRATOR_TOOL_NAME)).toBe(false);
   });
 
-  it('buildHeartbeatSubRegistry populates check_token_status + post_to_x + extend_lore', async () => {
+  it('buildHeartbeatSubRegistry populates check_token_status + get_token_info + post_to_x + extend_lore', async () => {
     const { buildHeartbeatSubRegistry } = await import('./brain-chat.js');
+    const { LoreStore } = await import('../state/lore-store.js');
+    const { TokenIdentityReader } = await import('../state/token-identity-reader.js');
     const anthropicStub = {} as Anthropic;
-    const reg = buildHeartbeatSubRegistry(makeConfigWithSecrets(), anthropicStub);
+    const reader = new TokenIdentityReader({
+      rpcUrl: 'https://bsc-dataseed.binance.org',
+    });
+    const reg = buildHeartbeatSubRegistry(
+      makeConfigWithSecrets(),
+      anthropicStub,
+      new LoreStore(),
+      reader,
+    );
     const names = reg
       .list()
       .map((t) => t.name)
       .sort();
     // PINATA_JWT is set so extend_lore is included; X creds are missing so
-    // post_to_x registers the dry-run stub. Both contribute a name.
-    expect(names).toEqual(['check_token_status', 'extend_lore', 'post_to_x'].sort());
+    // post_to_x registers the dry-run stub. get_token_info joined the set
+    // 2026-04-21 for the heartbeat's two-step facts-first workflow.
+    expect(names).toEqual(
+      ['check_token_status', 'extend_lore', 'get_token_info', 'post_to_x'].sort(),
+    );
     expect(reg.has(INVOKE_HEARTBEAT_TICK_TOOL_NAME)).toBe(false);
   });
 });

@@ -489,7 +489,7 @@ describe('registerRunRoutes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           kind: 'shill-market',
-          params: { tokenAddr, includeFourMemeUrl: true },
+          params: { tokenAddr, tokenSymbol: 'HBNB2026-BAT', includeFourMemeUrl: true },
         }),
       });
       expect(response.status).toBe(201);
@@ -514,7 +514,7 @@ describe('registerRunRoutes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           kind: 'shill-market',
-          params: { tokenAddr },
+          params: { tokenAddr, tokenSymbol: 'HBNB2026-BAT' },
         }),
       });
       expect(response.status).toBe(201);
@@ -523,6 +523,28 @@ describe('registerRunRoutes', () => {
       // logs / artifacts can distinguish "safe mode by default" from "caller
       // picked safe explicitly". Both map to the same prompt / guard.
       expect(observedFlag).toBe(false);
+    });
+
+    it('returns 400 for kind=shill-market when tokenSymbol is missing (post_shill_for requires it)', async () => {
+      const shillOrderStore = new ShillOrderStore();
+      const fakeShillMarket: RunShillMarketDemoFn = async () => {};
+      const fakeA2A: RunA2ADemoFn = async () => {};
+      harness = await startHarness(fakeA2A, {
+        shillMarketImpl: fakeShillMarket,
+        shillOrderStore,
+      });
+
+      const response = await fetch(`${harness.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'shill-market',
+          params: { tokenAddr },
+        }),
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error?: string };
+      expect(body.error).toMatch(/tokenSymbol/);
     });
 
     it('returns 400 for kind=shill-market with invalid tokenAddr', async () => {

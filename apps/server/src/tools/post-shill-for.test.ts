@@ -122,7 +122,31 @@ describe('postShillForInputSchema', () => {
     const result = postShillForInputSchema.safeParse({
       orderId: 'order_123',
       tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
       loreSnippet: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing tokenSymbol — the authoritative ticker is now mandatory', () => {
+    // Anti-hallucination guard (2026-04-21). The prior optional field allowed
+    // the LLM to derive the ticker from the lore snippet, producing fabricated
+    // tickers (`$BONIN` on an `HBNB2026-HKAT` token). Callers must fetch
+    // the symbol from `get_token_info` before reaching this tool.
+    const result = postShillForInputSchema.safeParse({
+      orderId: 'order_123',
+      tokenAddr: VALID_ADDR,
+      loreSnippet: 'lore',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an empty tokenSymbol', () => {
+    const result = postShillForInputSchema.safeParse({
+      orderId: 'order_123',
+      tokenAddr: VALID_ADDR,
+      tokenSymbol: '',
+      loreSnippet: 'lore',
     });
     expect(result.success).toBe(false);
   });
@@ -141,6 +165,7 @@ describe('postShillForInputSchema', () => {
     const result = postShillForInputSchema.safeParse({
       orderId: 'order_123',
       tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
       loreSnippet: 'some lore',
       includeFourMemeUrl: true,
     });
@@ -151,6 +176,7 @@ describe('postShillForInputSchema', () => {
     const result = postShillForInputSchema.safeParse({
       orderId: 'order_123',
       tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
       loreSnippet: 'some lore',
       includeFourMemeUrl: false,
     });
@@ -331,29 +357,50 @@ describe('createPostShillForTool.execute', () => {
     expect(out.tweetText).toBe(clean);
   });
 
-  it('works without tokenSymbol (falls back to inference from lore)', async () => {
-    const clean = '$MYSTERY the cavern stirs, and the lore drops pay off 👁';
-    const { client, spy } = mockAnthropicSequence([clean]);
+  it('rejects execute() when tokenSymbol is missing (anti-hallucination guard)', async () => {
+    // Prior behaviour: the tool silently fell back to a prompt that told
+    // the LLM to pick the ticker from the lore snippet, producing `$BONIN`
+    // on an `HBNB2026-HKAT` token. Post 2026-04-21 rewrite: tokenSymbol is
+    // mandatory; missing value surfaces as a zod rejection BEFORE any LLM
+    // call is made. The shiller's system prompt tells the LLM to call
+    // `get_token_info` first, so a next-turn retry is expected to succeed.
+    const { client, spy } = mockAnthropicSequence(['unused']);
     const { tool: postToXTool, executeSpy } = stubPostToXTool();
 
     const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
-    const out = await tool.execute({
-      orderId: 'order_no_symbol',
-      tokenAddr: VALID_ADDR,
-      loreSnippet: 'The bats rose, calling themselves MYSTERY.',
-    });
+    await expect(
+      tool.execute({
+        orderId: 'order_no_symbol',
+        tokenAddr: VALID_ADDR,
+        loreSnippet: 'The bats rose, calling themselves MYSTERY.',
+      } as unknown as Parameters<typeof tool.execute>[0]),
+    ).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+    expect(executeSpy).not.toHaveBeenCalled();
+  });
 
-    // User prompt should mention that the symbol is to be inferred from lore
-    // when the caller omits it, so the LLM picks the right $TICKER.
+  it('never emits the legacy "derive-symbol-from-lore" prompt fragment', async () => {
+    // Lock-in test for the Expand-and-Contract cleanup. If a future
+    // refactor reintroduces a fallback that tells the LLM to pick the
+    // ticker from the lore snippet, this regex catches it immediately.
+    const clean = '$HBNB2026-BAT cavern bats at dusk, lore hits 👁';
+    const { client, spy } = mockAnthropicSequence([clean]);
+    const { tool: postToXTool } = stubPostToXTool();
+    const tool = createPostShillForTool({ anthropicClient: client, postToXTool });
+    await tool.execute({
+      orderId: 'order_prompt_lockin',
+      tokenAddr: VALID_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      loreSnippet: 'lore',
+    });
     const firstCallArgs = spy.mock.calls[0]?.[0] as
       | { system?: string; messages?: Array<{ content?: string }> }
       | undefined;
-    const systemPrompt = firstCallArgs?.system ?? '';
-    const userContent = firstCallArgs?.messages?.[0]?.content ?? '';
-    const combined = systemPrompt + '\n' + userContent;
-    expect(combined).toMatch(/symbol from lore|infer/i);
-    expect(executeSpy).toHaveBeenCalledTimes(1);
-    expect(out.tweetText).toBe(clean);
+    const combined =
+      (firstCallArgs?.system ?? '') + '\n' + (firstCallArgs?.messages?.[0]?.content ?? '');
+    // Assembled piecemeal so the literal does not appear in source search.
+    const bannedFragment = ['infer', 'the', 'symbol', 'from', 'lore'].join(' ');
+    expect(combined.toLowerCase()).not.toContain(bannedFragment);
   });
 
   it('propagates errors from the injected post_to_x tool', async () => {

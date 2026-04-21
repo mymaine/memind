@@ -595,18 +595,16 @@ describe('runNarratorAgent', () => {
     expect(anchors).toHaveLength(2);
   });
 
-  // ─── Wrapper injection (2026-04-20) ───────────────────────────────────────
-  // The narrator wraps the registry's `extend_lore` tool so the authoritative
-  // `previousChapters` / `targetChapterNumber` / tokenAddr / tokenName /
-  // tokenSymbol always reach the real execute path regardless of what the LLM
-  // placed in its tool_use input. Prior behaviour trusted the LLM to forward
-  // these values, which broke chapter continuation because the LLM never saw
-  // the chapter bodies and silently sent `[]`.
-  //
-  // These tests pin the contract by inspecting the arguments the UNDERLYING
-  // extend_lore spy received — i.e. post-wrapper, pre-downstream.
+  // ─── Wrapper injection (2026-04-21 rewire) ─────────────────────────────
+  // The narrator wrapper now only force-overrides `tokenAddr` on the
+  // extend_lore input. tokenName / tokenSymbol / previousChapters /
+  // targetChapterNumber are sourced by the LLM from its own get_token_info
+  // call and flow through the wrapper untouched. The tests below pin that
+  // contract by asserting the spy sees the LLM-supplied values for those
+  // four fields (no server override) while `tokenAddr` is always the
+  // runtime-authoritative value.
 
-  it('injects previousChapters from runtime state even when the LLM supplies an empty array', async () => {
+  it('forwards LLM-supplied previousChapters through the wrapper without overriding', async () => {
     const { tool, executeSpy } = makeFakeExtendLoreTool([
       {
         chapterNumber: 2,
@@ -618,9 +616,9 @@ describe('runNarratorAgent', () => {
     const registry = makeRegistry(tool as unknown as AnyAgentTool);
     const store = new LoreStore();
 
-    // LLM fabricates an empty `previousChapters` — the exact failure mode
-    // that caused Chapter 2 to regress to a fresh Chapter 1. The wrapper
-    // must overwrite this with the runtime-supplied chapter text.
+    // The LLM supplies previousChapters harvested from its own
+    // `get_token_info` call — the wrapper MUST forward them untouched.
+    const LLM_CH1 = 'ch1 full text here — LLM-supplied from get_token_info';
     const { client } = fakeClient([
       toolUseResponse('msg_1', [
         {
@@ -628,42 +626,39 @@ describe('runNarratorAgent', () => {
           name: 'extend_lore',
           input: {
             tokenAddr: TOKEN_ADDR,
-            tokenName: 'T',
-            tokenSymbol: 'T',
-            previousChapters: [],
-            targetChapterNumber: 99,
+            tokenName: 'HBNB2026-Alpha',
+            tokenSymbol: 'HBNB2026-ALP',
+            previousChapters: [LLM_CH1],
+            targetChapterNumber: 2,
           },
         },
       ]),
       textOnlyResponse('ok'),
     ]);
 
-    const RUNTIME_CH1 = 'ch1 full text here — runtime-supplied';
     await runNarratorAgent({
       client,
       registry,
       store,
       tokenAddr: TOKEN_ADDR,
-      tokenName: 'HBNB2026-Alpha',
-      tokenSymbol: 'HBNB2026-ALP',
-      previousChapters: [RUNTIME_CH1],
     });
 
-    // Critical assertion: the UNDERLYING extend_lore spy must have received
-    // the runtime's previousChapters, not the LLM's empty array.
     expect(executeSpy).toHaveBeenCalledTimes(1);
     const passedInput = executeSpy.mock.calls[0]?.[0] as ExtendLoreInput | undefined;
     expect(passedInput).toBeDefined();
-    expect(passedInput?.previousChapters).toEqual([RUNTIME_CH1]);
-    // Target chapter number must also be injected (2 = previousChapters.length + 1).
-    expect(passedInput?.targetChapterNumber).toBe(2);
-    // Name / symbol / addr are also forcibly overwritten.
+    // tokenAddr is still forced by the runtime.
     expect(passedInput?.tokenAddr).toBe(TOKEN_ADDR);
+    // Everything else is whatever the LLM passed (from get_token_info).
+    expect(passedInput?.previousChapters).toEqual([LLM_CH1]);
+    expect(passedInput?.targetChapterNumber).toBe(2);
     expect(passedInput?.tokenName).toBe('HBNB2026-Alpha');
     expect(passedInput?.tokenSymbol).toBe('HBNB2026-ALP');
   });
 
-  it('injects the explicit targetChapterNumber over any value the LLM passes', async () => {
+  it('always overwrites tokenAddr with the runtime value even when the LLM passes a wrong address', async () => {
+    // The anti-hallucination rail: lore prose can contain a stray 0x hex
+    // string. The wrapper must still pin the runtime tokenAddr regardless
+    // of what the LLM placed in the tool_use input.
     const { tool, executeSpy } = makeFakeExtendLoreTool([
       {
         chapterNumber: 5,
@@ -675,19 +670,18 @@ describe('runNarratorAgent', () => {
     const registry = makeRegistry(tool as unknown as AnyAgentTool);
     const store = new LoreStore();
 
-    // LLM hallucinates a wildly wrong targetChapterNumber; the wrapper
-    // must overwrite it with the caller's explicit value (5).
+    const WRONG_ADDR = '0xdeaddeaddeaddeaddeaddeaddeaddeaddeaddead';
     const { client } = fakeClient([
       toolUseResponse('msg_1', [
         {
           id: 'tu_1',
           name: 'extend_lore',
           input: {
-            tokenAddr: TOKEN_ADDR,
+            tokenAddr: WRONG_ADDR,
             tokenName: 'T',
             tokenSymbol: 'T',
             previousChapters: ['a', 'b', 'c'],
-            targetChapterNumber: 999,
+            targetChapterNumber: 5,
           },
         },
       ]),
@@ -699,28 +693,22 @@ describe('runNarratorAgent', () => {
       registry,
       store,
       tokenAddr: TOKEN_ADDR,
-      tokenName: 'T',
-      tokenSymbol: 'T',
-      previousChapters: ['runtime-ch1', 'runtime-ch2', 'runtime-ch3', 'runtime-ch4'],
-      targetChapterNumber: 5,
     });
 
     expect(executeSpy).toHaveBeenCalledTimes(1);
     const passedInput = executeSpy.mock.calls[0]?.[0] as ExtendLoreInput | undefined;
+    // tokenAddr got pinned back to the runtime value.
+    expect(passedInput?.tokenAddr).toBe(TOKEN_ADDR);
+    // But the LLM-supplied chapter metadata flows through the wrapper.
     expect(passedInput?.targetChapterNumber).toBe(5);
-    expect(passedInput?.previousChapters).toEqual([
-      'runtime-ch1',
-      'runtime-ch2',
-      'runtime-ch3',
-      'runtime-ch4',
-    ]);
+    expect(passedInput?.previousChapters).toEqual(['a', 'b', 'c']);
   });
 
-  it('injects runtime metadata on every LLM call when the model fires extend_lore twice', async () => {
-    // Some LLMs call the tool multiple times against spec. Regardless of how
-    // many times it fires or what the input looked like, each invocation
-    // must receive the authoritative runtime values. pickExtendLoreCall then
-    // picks the final (successful) call as the canonical result.
+  it('forwards LLM-supplied previousChapters on every call when the model fires extend_lore twice', async () => {
+    // Some LLMs call the tool multiple times against spec. Each call must
+    // still see the runtime-authoritative tokenAddr, but the LLM-supplied
+    // chapter metadata flows through untouched (the model is responsible
+    // for reading them back from `get_token_info`).
     const { tool, executeSpy } = makeFakeExtendLoreTool([
       {
         chapterNumber: 2,
@@ -738,9 +726,106 @@ describe('runNarratorAgent', () => {
     const registry = makeRegistry(tool as unknown as AnyAgentTool);
     const store = new LoreStore();
 
-    const RUNTIME_CH1 = 'prior-chapter-runtime';
     const { client } = fakeClient([
-      // Turn 1: first tool_use with an empty array
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: ['first-call-ch1'],
+            targetChapterNumber: 2,
+          },
+        },
+      ]),
+      toolUseResponse('msg_2', [
+        {
+          id: 'tu_2',
+          name: 'extend_lore',
+          input: {
+            tokenAddr: TOKEN_ADDR,
+            tokenName: 'T',
+            tokenSymbol: 'T',
+            previousChapters: ['second-call-ch1'],
+            targetChapterNumber: 2,
+          },
+        },
+      ]),
+      textOnlyResponse('final ack'),
+    ]);
+
+    const result = await runNarratorAgent({
+      client,
+      registry,
+      store,
+      tokenAddr: TOKEN_ADDR,
+    });
+
+    expect(executeSpy).toHaveBeenCalledTimes(2);
+    // tokenAddr is pinned on every call; the LLM-supplied chapter metadata
+    // passes through the wrapper verbatim.
+    for (const call of executeSpy.mock.calls) {
+      const passed = call[0] as ExtendLoreInput;
+      expect(passed.tokenAddr).toBe(TOKEN_ADDR);
+    }
+    expect(result.ipfsHash).toBe('bafkrei-ch2b');
+  });
+
+  it('falls back to a safe extend_lore input when the LLM supplies a non-object', async () => {
+    // Defensive path: when Anthropic hands us a malformed tool_use input
+    // (null / string / etc.) the preprocess branch injects a minimal
+    // payload carrying just the runtime tokenAddr. The inner schema then
+    // rejects cleanly because tokenName/symbol are missing — we cover that
+    // behaviour here by asserting the tool call lands as an error trace.
+    const { tool } = makeFakeExtendLoreTool([]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+
+    const { client } = fakeClient([
+      toolUseResponse('msg_1', [
+        {
+          id: 'tu_1',
+          name: 'extend_lore',
+          input: null as unknown as Record<string, unknown>,
+        },
+      ]),
+      textOnlyResponse('ok'),
+    ]);
+
+    // The inner extend_lore schema requires tokenName / tokenSymbol, so a
+    // null LLM input (defaulted to just tokenAddr) triggers a rejection
+    // which `pickExtendLoreCall` surfaces as an error — runNarratorAgent
+    // then throws out.
+    await expect(
+      runNarratorAgent({
+        client,
+        registry,
+        store,
+        tokenAddr: TOKEN_ADDR,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('forces first-turn tool_choice to get_token_info (anti-hallucination rail)', async () => {
+    // The narrator now runs a strict two-step flow — get_token_info first,
+    // then extend_lore — enforced at the Anthropic API boundary by
+    // `tool_choice: {type:'tool', name:'get_token_info'}` on turn 0.
+    // Subsequent turns revert to auto so the loop can terminate after
+    // extend_lore returns. We assert the forced choice lands on the first
+    // stream call and disappears on the second.
+    const { tool } = makeFakeExtendLoreTool([
+      {
+        chapterNumber: 1,
+        chapterText: 'body',
+        ipfsHash: 'bafkrei-forced',
+        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-forced',
+      },
+    ]);
+    const registry = makeRegistry(tool as unknown as AnyAgentTool);
+    const store = new LoreStore();
+    const { client, create: streamSpy } = fakeClient([
       toolUseResponse('msg_1', [
         {
           id: 'tu_1',
@@ -754,73 +839,6 @@ describe('runNarratorAgent', () => {
           },
         },
       ]),
-      // Turn 2: model retries with a FAKE previousChapters + wrong number
-      toolUseResponse('msg_2', [
-        {
-          id: 'tu_2',
-          name: 'extend_lore',
-          input: {
-            tokenAddr: TOKEN_ADDR,
-            tokenName: 'T',
-            tokenSymbol: 'T',
-            previousChapters: ['fabricated chapter text'],
-            targetChapterNumber: 42,
-          },
-        },
-      ]),
-      textOnlyResponse('final ack'),
-    ]);
-
-    const result = await runNarratorAgent({
-      client,
-      registry,
-      store,
-      tokenAddr: TOKEN_ADDR,
-      tokenName: 'T',
-      tokenSymbol: 'T',
-      previousChapters: [RUNTIME_CH1],
-    });
-
-    // Both calls landed on the underlying spy…
-    expect(executeSpy).toHaveBeenCalledTimes(2);
-    // …both carry the injected runtime values, NOT the fabricated ones.
-    for (const call of executeSpy.mock.calls) {
-      const passed = call[0] as ExtendLoreInput;
-      expect(passed.previousChapters).toEqual([RUNTIME_CH1]);
-      expect(passed.targetChapterNumber).toBe(2);
-    }
-    // pickExtendLoreCall picks the LAST call — so Chapter 2's stored CID is
-    // the second attempt's output, proving the trace is stable.
-    expect(result.ipfsHash).toBe('bafkrei-ch2b');
-  });
-
-  it('still injects runtime values when the LLM supplies a non-object input (null)', async () => {
-    // Defensive path: `z.preprocess` must recognise non-object input and
-    // substitute a fresh object assembled from the injection, instead of
-    // letting the original ZodObject parse reject a null. If this test ever
-    // fails it signals that the preprocess fallback branch was dropped.
-    const { tool, executeSpy } = makeFakeExtendLoreTool([
-      {
-        chapterNumber: 2,
-        chapterText: 'ch2 from null input',
-        ipfsHash: 'bafkrei-null',
-        ipfsUri: 'https://gateway.pinata.cloud/ipfs/bafkrei-null',
-      },
-    ]);
-    const registry = makeRegistry(tool as unknown as AnyAgentTool);
-    const store = new LoreStore();
-
-    // Craft a tool_use whose `input` is a non-object — Anthropic's JSON
-    // serialisation normally enforces object, but a malformed model response
-    // (or a fake stream for a defensive test) can still land here.
-    const { client } = fakeClient([
-      toolUseResponse('msg_1', [
-        {
-          id: 'tu_1',
-          name: 'extend_lore',
-          input: null as unknown as Record<string, unknown>,
-        },
-      ]),
       textOnlyResponse('ok'),
     ]);
 
@@ -829,16 +847,13 @@ describe('runNarratorAgent', () => {
       registry,
       store,
       tokenAddr: TOKEN_ADDR,
-      tokenName: 'T',
-      tokenSymbol: 'T',
-      previousChapters: ['runtime-ch1'],
     });
 
-    expect(executeSpy).toHaveBeenCalledTimes(1);
-    const passed = executeSpy.mock.calls[0]?.[0] as ExtendLoreInput | undefined;
-    expect(passed?.tokenAddr).toBe(TOKEN_ADDR);
-    expect(passed?.previousChapters).toEqual(['runtime-ch1']);
-    expect(passed?.targetChapterNumber).toBe(2);
+    // First call carries the forced tool_choice; second reverts to default.
+    const firstCallArgs = streamSpy.mock.calls[0]?.[0] as { tool_choice?: unknown } | undefined;
+    expect(firstCallArgs?.tool_choice).toEqual({ type: 'tool', name: 'get_token_info' });
+    const secondCallArgs = streamSpy.mock.calls[1]?.[0] as { tool_choice?: unknown } | undefined;
+    expect(secondCallArgs?.tool_choice).toBeUndefined();
   });
 
   it('emits LogEvents tagged with agent="narrator"', async () => {

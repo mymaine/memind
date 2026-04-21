@@ -73,6 +73,23 @@ export const tokenStatusOutputSchema = z.object({
 });
 export type TokenStatusOutput = z.infer<typeof tokenStatusOutputSchema>;
 
+/**
+ * Pure market-state projection of `TokenStatusOutput`. Excludes the fields
+ * every caller knows without re-reading the chain (`tokenAddr`) and the
+ * tool-layer block anchor (`inspectedAtBlock`) which the `get_token_info`
+ * aggregator surfaces on its own. Exported so the new `get_token_info`
+ * factory can reuse `readMarketState` without importing the legacy tool.
+ */
+export const marketStateSchema = z.object({
+  curveProgress: z.number().min(0).max(100).nullable(),
+  marketCapBnb: z.number().nonnegative().nullable(),
+  holderCount: z.number().int().nonnegative(),
+  volume24hBnb: z.number().nonnegative().nullable(),
+  inspectedAtBlock: z.string(),
+  warnings: z.array(z.string()),
+});
+export type MarketState = z.infer<typeof marketStateSchema>;
+
 export interface CheckTokenStatusToolConfig {
   /** BSC mainnet JSON-RPC URL. Only used when `publicClient` is not provided. */
   rpcUrl: string;
@@ -114,22 +131,19 @@ export function createCheckTokenStatusTool(
     async execute(input: TokenStatusInput): Promise<TokenStatusOutput> {
       const parsed = tokenStatusInputSchema.parse(input);
       const tokenAddr = getAddress(parsed.tokenAddr);
-      const warnings: string[] = [];
 
-      // Capture the reference block upfront so subsequent reads share the
-      // same "as-of" anchor for reasoning purposes. Note: viem's getLogs uses
-      // independent block args; we pass `inspectedAtBlock` as the explicit
-      // `toBlock` to keep the scan consistent with the reported block.
-      const inspectedAtBlock = await client.getBlockNumber();
-
-      // --- deployedOnChain -------------------------------------------------
+      // Capture bytecode up-front so the tool can report `deployedOnChain`
+      // alongside the market state; `readMarketState` itself assumes the
+      // caller has already verified deployment (its own short-circuit would
+      // need a separate RPC round-trip).
       const bytecode = await client.getCode({ address: tokenAddr });
       const deployedOnChain = Boolean(bytecode && bytecode !== '0x');
 
       if (!deployedOnChain) {
         // Short-circuit: no contract means every downstream read is
-        // meaningless. Return a clean sentinel shape.
-        warnings.push('token contract not deployed at the given address');
+        // meaningless. Return a clean sentinel shape with a block anchor
+        // so staleness reasoning still works.
+        const inspectedAtBlock = await client.getBlockNumber();
         return tokenStatusOutputSchema.parse({
           tokenAddr,
           deployedOnChain: false,
@@ -138,124 +152,139 @@ export function createCheckTokenStatusTool(
           volume24hBnb: null,
           marketCapBnb: null,
           inspectedAtBlock: inspectedAtBlock.toString(),
-          warnings,
+          warnings: ['token contract not deployed at the given address'],
         });
       }
 
-      // --- holderCount -----------------------------------------------------
-      // Scan the last `holderScanRange` blocks of Transfer events on the
-      // token. Unique non-zero `to` addresses approximate active holders.
-      // This intentionally over-counts (never excludes addresses that later
-      // burned everything) and under-counts addresses whose only receipt
-      // was before the window — trade-off accepted for a bounded RPC cost.
-      //
-      // Chunking: public BSC RPCs reject single-call scans wider than
-      // MAX_GETLOGS_CHUNK. We split the window into contiguous, non-
-      // overlapping chunks and merge unique recipients across successful
-      // chunks. One chunk failing degrades to a partial count + warning
-      // instead of wiping the whole scan.
-      const holderFromBlock =
-        inspectedAtBlock > holderScanRange ? inspectedAtBlock - holderScanRange : 0n;
-      const chunks = planGetLogsChunks(holderFromBlock, inspectedAtBlock, MAX_GETLOGS_CHUNK);
-      const seenHolders = new Set<string>();
-      let failedChunks = 0;
-      for (const { fromBlock, toBlock } of chunks) {
-        try {
-          const logs = await client.getLogs({
-            address: tokenAddr,
-            event: ERC20_TRANSFER_EVENT,
-            fromBlock,
-            toBlock,
-          });
-          mergeUniqueRecipients(logs, seenHolders);
-        } catch (err) {
-          failedChunks += 1;
-          if (chunks.length === 1) {
-            // Single-chunk scan: preserve original warning shape so callers
-            // relying on the legacy message still match.
-            warnings.push(
-              `holderCount scan failed (${summariseError(err)}); reporting 0. Consider lowering holderScanBlockRange.`,
-            );
-          }
-        }
-      }
-      if (chunks.length > 1 && failedChunks > 0) {
-        // Prefix with "holderCount scan failed" so both all-fail and partial
-        // callers share a stable grep-key while the suffix carries the
-        // specific N/M ratio for operators reading the dashboard.
-        warnings.push(
-          `holderCount scan failed — partial — ${failedChunks.toString()}/${chunks.length.toString()} chunks failed`,
-        );
-      }
-      const holderCount = seenHolders.size;
-
-      // --- bondingCurveProgress + marketCapBnb -----------------------------
-      let bondingCurveProgress: number | null = null;
-      let marketCapBnb: number | null = null;
-      try {
-        const info = await client.readContract({
-          address: TOKEN_MANAGER2_BSC,
-          abi: TOKEN_MANAGER2_READ_ABI,
-          functionName: '_tokenInfos',
-          args: [tokenAddr],
-        });
-        const decodeResult = decodeTokenInfos(info);
-        if (decodeResult.kind === 'wrongLength') {
-          warnings.push(
-            `_tokenInfos tuple length mismatch (expected 13, got ${decodeResult.got.toString()})`,
-          );
-        } else if (decodeResult.kind === 'wrongTypes') {
-          warnings.push('bondingCurveProgress unavailable: could not decode _tokenInfos');
-        } else {
-          const decoded = decodeResult.value;
-          if (decoded.maxRaising > 0n) {
-            // Progress = funds raised / target raise, capped to 100.
-            const raw = Number((decoded.funds * 10_000n) / decoded.maxRaising) / 100;
-            bondingCurveProgress = Math.max(0, Math.min(100, raw));
-          } else {
-            warnings.push('bondingCurveProgress unavailable: maxRaising is zero');
-          }
-          if (decoded.lastPrice > 0n && decoded.totalSupply > 0n) {
-            // Price returned from _tokenInfos is wei-per-token (1e18-scaled).
-            // marketCapBnb = price * totalSupply / 1e18 / 1e18. BigInt
-            // division alone truncates sub-1 results to 0, which defeats the
-            // metric for small-cap tokens. We drop 9 decimals of each factor
-            // into BigInt space before converting to Number, preserving ~9
-            // significant digits across the [0.001, 1e12] BNB range.
-            const mc = computeMarketCapBnb(decoded.lastPrice, decoded.totalSupply);
-            if (mc === null) {
-              warnings.push('marketCapBnb out of safe numeric range');
-            } else {
-              marketCapBnb = mc;
-            }
-          }
-        }
-      } catch (err) {
-        bondingCurveProgress = null;
-        marketCapBnb = null;
-        warnings.push(`bondingCurveProgress unavailable (${summariseError(err)})`);
-      }
-
-      // --- volume24hBnb ----------------------------------------------------
-      // The TokenManager2 implementation is unverified so we cannot bind to
-      // a specific Trade event ABI without risking misdecoding. Return null
-      // + warning; this is the documented best-effort contract.
-      const volume24hBnb: number | null = null;
-      warnings.push(
-        `volume24hBnb unavailable: Trade event ABI not in scope (approximate ${BLOCKS_PER_DAY_BSC.toString()}-block window would otherwise apply)`,
-      );
-
+      const market = await readMarketState(client, tokenAddr, { holderScanRange });
       return tokenStatusOutputSchema.parse({
         tokenAddr,
         deployedOnChain: true,
-        holderCount,
-        bondingCurveProgress,
-        volume24hBnb,
-        marketCapBnb,
-        inspectedAtBlock: inspectedAtBlock.toString(),
-        warnings,
+        holderCount: market.holderCount,
+        bondingCurveProgress: market.curveProgress,
+        volume24hBnb: market.volume24hBnb,
+        marketCapBnb: market.marketCapBnb,
+        inspectedAtBlock: market.inspectedAtBlock,
+        warnings: market.warnings,
       });
     },
+  };
+}
+
+export interface ReadMarketStateOptions {
+  /** Block span to scan for Transfer events when computing holder count. */
+  holderScanRange?: bigint;
+}
+
+/**
+ * Market-state core reader shared by `check_token_status` (legacy tool) and
+ * `get_token_info` (aggregator). Assumes the caller has already confirmed
+ * the contract is deployed — i.e. we never check `getCode` here. This keeps
+ * the aggregator from paying the round trip twice when it also reads the
+ * identity up-front.
+ *
+ * Returns the same metric set `check_token_status` surfaces but WITHOUT the
+ * `tokenAddr` (caller owns it) or `deployedOnChain` (caller confirmed it).
+ * Warning strings are preserved verbatim from the prior implementation so
+ * existing log grep-keys still match.
+ */
+export async function readMarketState(
+  client: PublicClient,
+  tokenAddr: string,
+  options: ReadMarketStateOptions = {},
+): Promise<MarketState> {
+  const normalised = getAddress(tokenAddr);
+  const holderScanRange = options.holderScanRange ?? DEFAULT_HOLDER_SCAN_RANGE;
+  const warnings: string[] = [];
+
+  // Capture the reference block upfront so subsequent reads share the same
+  // "as-of" anchor for staleness reasoning.
+  const inspectedAtBlock = await client.getBlockNumber();
+
+  // --- holderCount ------------------------------------------------------
+  const holderFromBlock =
+    inspectedAtBlock > holderScanRange ? inspectedAtBlock - holderScanRange : 0n;
+  const chunks = planGetLogsChunks(holderFromBlock, inspectedAtBlock, MAX_GETLOGS_CHUNK);
+  const seenHolders = new Set<string>();
+  let failedChunks = 0;
+  for (const { fromBlock, toBlock } of chunks) {
+    try {
+      const logs = await client.getLogs({
+        address: normalised,
+        event: ERC20_TRANSFER_EVENT,
+        fromBlock,
+        toBlock,
+      });
+      mergeUniqueRecipients(logs, seenHolders);
+    } catch (err) {
+      failedChunks += 1;
+      if (chunks.length === 1) {
+        warnings.push(
+          `holderCount scan failed (${summariseError(err)}); reporting 0. Consider lowering holderScanBlockRange.`,
+        );
+      }
+    }
+  }
+  if (chunks.length > 1 && failedChunks > 0) {
+    warnings.push(
+      `holderCount scan failed — partial — ${failedChunks.toString()}/${chunks.length.toString()} chunks failed`,
+    );
+  }
+  const holderCount = seenHolders.size;
+
+  // --- curveProgress + marketCapBnb ------------------------------------
+  let curveProgress: number | null = null;
+  let marketCapBnb: number | null = null;
+  try {
+    const info = await client.readContract({
+      address: TOKEN_MANAGER2_BSC,
+      abi: TOKEN_MANAGER2_READ_ABI,
+      functionName: '_tokenInfos',
+      args: [normalised],
+    });
+    const decodeResult = decodeTokenInfos(info);
+    if (decodeResult.kind === 'wrongLength') {
+      warnings.push(
+        `_tokenInfos tuple length mismatch (expected 13, got ${decodeResult.got.toString()})`,
+      );
+    } else if (decodeResult.kind === 'wrongTypes') {
+      warnings.push('bondingCurveProgress unavailable: could not decode _tokenInfos');
+    } else {
+      const decoded = decodeResult.value;
+      if (decoded.maxRaising > 0n) {
+        const raw = Number((decoded.funds * 10_000n) / decoded.maxRaising) / 100;
+        curveProgress = Math.max(0, Math.min(100, raw));
+      } else {
+        warnings.push('bondingCurveProgress unavailable: maxRaising is zero');
+      }
+      if (decoded.lastPrice > 0n && decoded.totalSupply > 0n) {
+        const mc = computeMarketCapBnb(decoded.lastPrice, decoded.totalSupply);
+        if (mc === null) {
+          warnings.push('marketCapBnb out of safe numeric range');
+        } else {
+          marketCapBnb = mc;
+        }
+      }
+    }
+  } catch (err) {
+    curveProgress = null;
+    marketCapBnb = null;
+    warnings.push(`bondingCurveProgress unavailable (${summariseError(err)})`);
+  }
+
+  // --- volume24hBnb ----------------------------------------------------
+  const volume24hBnb: number | null = null;
+  warnings.push(
+    `volume24hBnb unavailable: Trade event ABI not in scope (approximate ${BLOCKS_PER_DAY_BSC.toString()}-block window would otherwise apply)`,
+  );
+
+  return {
+    curveProgress,
+    marketCapBnb,
+    holderCount,
+    volume24hBnb,
+    inspectedAtBlock: inspectedAtBlock.toString(),
+    warnings,
   };
 }
 

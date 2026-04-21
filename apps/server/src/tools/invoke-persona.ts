@@ -85,9 +85,10 @@ export interface PersonaInvokeEventCallbacks {
  *    `NarratorPersonaInput` with `HeartbeatPersonaInput`). Forcing the Brain
  *    LLM to hand-craft all of those fields would bloat the system prompt and
  *    leak internal plumbing. The factory decides what the LLM sees.
- *  - Orchestrator-side enrichers (`resolveTokenMeta`) are pure lookups
- *    against run-local state. The factory accepts them as callbacks so the
- *    Brain tool layer stays free of LoreStore imports.
+ *  - Orchestrator-side enrichers used to be threaded in as callbacks so
+ *    the Brain tool layer stayed free of LoreStore imports. That pattern
+ *    was retired 2026-04-21 — the narrator LLM now pulls identity and
+ *    narrative through `get_token_info` itself.
  *
  * Most tools end with a single `persona.run(input, ctx)` call. The exception
  * is `invoke_shiller`, which delegates to the full `runShillMarketDemo`
@@ -125,6 +126,15 @@ export type InvokeNarratorInput = z.infer<typeof invokeNarratorInputSchema>;
 
 export const invokeShillerInputSchema = z.object({
   tokenAddr: z.string().regex(evmAddressRegex),
+  /**
+   * Authoritative token symbol — REQUIRED as of 2026-04-21 to close the
+   * ticker-hallucination loophole (a past `/order` produced `$BONIN` on an
+   * `HBNB2026-HKAT` token by inferring the symbol from lore prose). The
+   * Brain system prompt tells the LLM to call `get_token_info` first and
+   * forward `identity.symbol` into this field verbatim. Pre-validates on
+   * length so a blank string never bypasses the guard.
+   */
+  tokenSymbol: z.string().min(1).max(32),
   brief: z.string().optional(),
 });
 export type InvokeShillerInput = z.infer<typeof invokeShillerInputSchema>;
@@ -465,13 +475,6 @@ export function createInvokeCreatorTool(
 
 // ─── invoke_narrator ────────────────────────────────────────────────────────
 
-export interface NarratorTokenMeta {
-  tokenName: string;
-  tokenSymbol: string;
-  previousChapters?: string[];
-  targetChapterNumber?: number;
-}
-
 export interface CreateInvokeNarratorToolDeps extends PersonaInvokeEventCallbacks {
   persona: Persona<NarratorPersonaInput, NarratorPersonaOutput>;
   client: Anthropic;
@@ -482,14 +485,6 @@ export interface CreateInvokeNarratorToolDeps extends PersonaInvokeEventCallback
    * escape-hatch rather than TInput.
    */
   store: LoreStore;
-  /**
-   * Orchestrator-supplied lookup: given a tokenAddr, return the narrative
-   * metadata needed by the narrator persona. The Brain LLM only supplies
-   * the address; everything else (name, symbol, previous chapters, target
-   * chapter number) comes from run-local state. Async so the resolver can
-   * `await loreStore.getAllChapters(...)` on the pg backend.
-   */
-  resolveTokenMeta: (tokenAddr: string) => Promise<NarratorTokenMeta> | NarratorTokenMeta;
   /**
    * Optional AC3 anchor ledger. When wired, every `/lore` slash that lands
    * here appends a keccak256 commitment row (layer 1) and — if
@@ -542,7 +537,6 @@ export function createInvokeNarratorTool(
     client,
     registry,
     store,
-    resolveTokenMeta,
     anchorLedger,
     bscDeployerPrivateKey,
     rpcUrl,
@@ -562,15 +556,14 @@ export function createInvokeNarratorTool(
     outputSchema: z.any() as unknown as z.ZodType<NarratorToolOutput>,
     async execute(input): Promise<NarratorToolOutput> {
       const parsed = invokeNarratorInputSchema.parse(input);
-      const meta = await resolveTokenMeta(parsed.tokenAddr);
+      // As of 2026-04-21 the narrator persona fetches tokenName / symbol /
+      // previousChapters from `get_token_info` during its own LLM loop, so
+      // this factory only needs to forward the tokenAddr. The removed
+      // orchestrator-side token-metadata lookup used to substitute
+      // placeholders for brand-new tokens — producing visibly-wrong
+      // chapter 1 headers.
       const personaInput: NarratorPersonaInput = {
         tokenAddr: parsed.tokenAddr,
-        tokenName: meta.tokenName,
-        tokenSymbol: meta.tokenSymbol,
-        ...(meta.previousChapters !== undefined ? { previousChapters: meta.previousChapters } : {}),
-        ...(meta.targetChapterNumber !== undefined
-          ? { targetChapterNumber: meta.targetChapterNumber }
-          : {}),
       };
       const startedAt = Date.now();
       onLog?.({
@@ -742,7 +735,7 @@ export function createInvokeShillerTool(
   return {
     name: INVOKE_SHILLER_TOOL_NAME,
     description:
-      'Run the full shill-market orchestrator: creator pays 0.01 USDC via x402 on Base Sepolia, then the Shiller persona posts a promotional tweet. Input: { tokenAddr, brief? }. Returns { orderId, tokenAddr, decision, tweetId?, tweetUrl?, tweetText?, postedAt?, toolCalls, errorMessage? }.',
+      'Run the full shill-market orchestrator: creator pays 0.01 USDC via x402 on Base Sepolia, then the Shiller persona posts a promotional tweet. Input: { tokenAddr, tokenSymbol (required — use identity.symbol from get_token_info), brief? }. Returns { orderId, tokenAddr, decision, tweetId?, tweetUrl?, tweetText?, postedAt?, toolCalls, errorMessage? }.',
     inputSchema: invokeShillerInputSchema,
     outputSchema: z.any() as unknown as z.ZodType<ShillerPersonaOutput>,
     async execute(input): Promise<ShillerPersonaOutput> {
@@ -806,6 +799,7 @@ export function createInvokeShillerTool(
           runId,
           args: {
             tokenAddr: parsed.tokenAddr,
+            tokenSymbol: parsed.tokenSymbol,
             ...(parsed.brief !== undefined ? { creatorBrief: parsed.brief } : {}),
           },
           shillOrderStore,

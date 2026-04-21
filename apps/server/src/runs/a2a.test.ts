@@ -5,6 +5,8 @@ import { LoreStore } from '../state/lore-store.js';
 import { AnchorLedger } from '../state/anchor-ledger.js';
 import { RunStore } from './store.js';
 import {
+  buildMarketMakerRegistry,
+  buildNarratorRegistry,
   runA2ADemo,
   type RunCreatorPhaseFn,
   type RunNarratorPhaseFn,
@@ -394,6 +396,36 @@ describe('runA2ADemo (V2-P1)', () => {
 
     const deps = creatorSpy.mock.calls[0]?.[0];
     expect(deps?.anchorLedger).toBeUndefined();
+  });
+
+  // ─── Registry-contract tests ─────────────────────────────────────────────
+  // The narrator + market-maker system prompts force `get_token_info` as the
+  // first tool call via `toolChoice: { type: 'tool', name: 'get_token_info' }`.
+  // Anthropic's API rejects with 400 when a forced tool name is absent from
+  // the registry. pnpm test mocks the narrator / market-maker phases directly,
+  // so a missing tool never surfaces there — a registry-mismatch would only
+  // blow up in prod. These tests lock the forced-tool ↔ registry invariant
+  // without touching Anthropic: they drive only the pure registry builder.
+  it('buildNarratorRegistry exposes get_token_info and extend_lore', () => {
+    const reg = buildNarratorRegistry({
+      config: makeConfigStub(),
+      anthropic,
+      loreStore,
+    });
+    const names = reg.list().map((t) => t.name);
+    expect(names).toContain('get_token_info');
+    expect(names).toContain('extend_lore');
+  });
+
+  it('buildMarketMakerRegistry exposes get_token_info, check_token_status, x402_fetch_lore', () => {
+    const reg = buildMarketMakerRegistry({
+      config: makeConfigStub(),
+      loreStore,
+    });
+    const names = reg.list().map((t) => t.name);
+    expect(names).toContain('get_token_info');
+    expect(names).toContain('check_token_status');
+    expect(names).toContain('x402_fetch_lore');
   });
 
   it('throws when secrets are missing (preserves Phase 4 fail-fast behaviour)', async () => {

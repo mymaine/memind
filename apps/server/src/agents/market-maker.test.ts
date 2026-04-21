@@ -328,6 +328,44 @@ describe('runMarketMakerAgent', () => {
     expect(typeof policyWarn?.meta?.reason).toBe('string');
   });
 
+  it('forces first-turn tool_choice to get_token_info on the Anthropic API call', async () => {
+    // Anti-hallucination rail: the market-maker agent MUST read
+    // authoritative identity before any decision lands in context. The
+    // forced tool_choice is applied only on turn 0 — turn 1+ returns to
+    // auto so the loop can progress through check_token_status /
+    // x402_fetch_lore / the final JSON.
+    const registry = buildRegistry(HIGH_STATUS, LORE_FETCH_OUT);
+    const { client, create } = fakeClient([
+      toolUseResponse('m1', [
+        { id: 'tu_status', name: 'check_token_status', input: { tokenAddr: TOKEN_ADDR } },
+      ]),
+      toolUseResponse('m2', [
+        { id: 'tu_fetch', name: 'x402_fetch_lore', input: { url: LORE_URL } },
+      ]),
+      textResponse(JSON.stringify({ decision: 'buy-lore', reason: 'forced-tc test' })),
+    ]);
+
+    await runMarketMakerAgent({
+      client,
+      registry,
+      tokenAddr: TOKEN_ADDR,
+      loreEndpointUrl: LORE_URL,
+    });
+
+    const firstCallArgs = create.mock.calls[0]?.[0] as { tool_choice?: unknown } | undefined;
+    expect(firstCallArgs?.tool_choice).toEqual({ type: 'tool', name: 'get_token_info' });
+    const secondCallArgs = create.mock.calls[1]?.[0] as { tool_choice?: unknown } | undefined;
+    expect(secondCallArgs?.tool_choice).toBeUndefined();
+  });
+
+  // Heartbeat intentionally does NOT force a first-turn tool_choice on
+  // `get_token_info`. The heartbeat persona runs multiple ticks with
+  // multi-path decisions (post / extend_lore / idle) and forcing the first
+  // call would strip the LLM's ability to skip an expensive read when
+  // nothing changed since the previous tick. We rely on the HEARTBEAT
+  // system prompt + LLM autonomy instead — the rule is documented here so
+  // a future refactor thinking "let's force it everywhere" reconsiders.
+
   it('rejects an invalid decision value in the final JSON', async () => {
     const registry = buildRegistry(HIGH_STATUS, LORE_FETCH_OUT);
     const { client } = fakeClient([
@@ -473,8 +511,9 @@ describe('runShillerAgent', () => {
     expect(calledWith.tokenAddr).toBe(SHILL_TOKEN_ADDR);
     expect(calledWith.loreSnippet).toBe('lore text with a symbol inline');
     // The key itself must not appear when tokenSymbol was not provided — a
-    // present-but-undefined value would leak through to the downstream zod
-    // parse and we want the "infer from lore" branch to trigger.
+    // present-but-undefined value would leak through so the downstream
+    // post-shill-for zod schema rejects cleanly (tokenSymbol is now
+    // mandatory, see post-shill-for.ts).
     expect('tokenSymbol' in calledWith).toBe(false);
   });
 

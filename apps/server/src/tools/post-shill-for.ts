@@ -41,9 +41,13 @@ export const postShillForInputSchema = z.object({
   orderId: z.string().min(1),
   tokenAddr: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   // Symbol **including** the `HBNB2026-` prefix (e.g. `HBNB2026-BAT`).
-  // Optional because some callers only have the lore snippet handy; when
-  // omitted the LLM is instructed to infer the symbol from the lore.
-  tokenSymbol: z.string().min(1).max(32).optional(),
+  // MANDATORY — previously optional with a "LLM infers from lore" fallback
+  // that produced ticker hallucinations (a run once shipped `$BONIN` while
+  // the real symbol was `HBNB2026-HKAT`). The authoritative symbol comes
+  // from `get_token_info`'s identity strand; callers without it must fetch
+  // it before invoking this tool. A missing value now surfaces as a zod
+  // rejection → clear error → the shiller LLM's next turn corrects itself.
+  tokenSymbol: z.string().min(1).max(32),
   // Latest lore chapter — the LLM grounds the tweet in this text.
   loreSnippet: z.string().min(1).max(4000),
   /**
@@ -104,14 +108,10 @@ function buildSystemPrompt(includeFourMemeUrl: boolean): string {
 }
 
 function buildUserPrompt(input: PostShillForInput): string {
-  // When `tokenSymbol` is provided we give it explicitly; otherwise we
-  // instruct the LLM to pull the ticker from the lore itself — callers
-  // sometimes only have the lore snippet in hand.
-  const symbolLine =
-    input.tokenSymbol !== undefined && input.tokenSymbol !== ''
-      ? `TOKEN: ${input.tokenSymbol}`
-      : 'TOKEN: (infer the symbol from lore)';
-  return `${symbolLine}
+  // `tokenSymbol` is now mandatory — the schema rejects a missing value
+  // before we reach here, so the LLM sees the authoritative symbol as a
+  // plain field rather than an "infer from lore" instruction.
+  return `TOKEN: ${input.tokenSymbol}
 ADDRESS: ${input.tokenAddr}
 LORE:
 ${input.loreSnippet}
@@ -176,7 +176,7 @@ export function createPostShillForTool(
     name: 'post_shill_for',
     description:
       'Generate a promotional tweet for a creator-paid shill order and post it from the Shiller ' +
-      'X account. Input: { orderId, tokenAddr, tokenSymbol?, loreSnippet }. Output: { orderId, ' +
+      'X account. Input: { orderId, tokenAddr, tokenSymbol (required — from get_token_info.identity.symbol), loreSnippet }. Output: { orderId, ' +
       'tokenAddr, tweetId, tweetUrl, tweetText, postedAt }. Runs a regex guard to reject drafts ' +
       'that leak "paid/sponsored", embed URLs, or exceed 280 chars; retries via multi-turn trim ' +
       'on violation. Delegates OAuth 1.0a posting to the injected post_to_x tool.',

@@ -566,7 +566,6 @@ describe('createInvokeNarratorTool', () => {
       client: fakeClient(),
       registry: fakeRegistry(),
       store: undefined as unknown as never,
-      resolveTokenMeta: () => ({ tokenName: 'HBNB2026-X', tokenSymbol: 'HBNB2026-X' }),
     });
 
     expect(tool.name).toBe(INVOKE_NARRATOR_TOOL_NAME);
@@ -576,7 +575,7 @@ describe('createInvokeNarratorTool', () => {
     expect(() => tool.inputSchema.parse({})).toThrow();
   });
 
-  it('enriches input from resolveTokenMeta and delegates to narratorPersona.run', async () => {
+  it('forwards tokenAddr to narratorPersona.run without any orchestrator-side metadata enrichment', async () => {
     const run = vi.fn(
       async (
         _input: NarratorPersonaInput,
@@ -593,29 +592,26 @@ describe('createInvokeNarratorTool', () => {
     const client = fakeClient();
     const registry = fakeRegistry();
     const fakeStore = { __brand: 'LoreStore' } as unknown as never;
-    const resolveTokenMeta = vi.fn(() => ({
-      tokenName: 'HBNB2026-Alpha',
-      tokenSymbol: 'HBNB2026-ALP',
-      previousChapters: ['ch1', 'ch2'],
-    }));
 
     const tool = createInvokeNarratorTool({
       persona,
       client,
       registry,
       store: fakeStore,
-      resolveTokenMeta,
     });
 
     const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
 
-    expect(resolveTokenMeta).toHaveBeenCalledWith(FAKE_TOKEN_ADDR);
     expect(run).toHaveBeenCalledTimes(1);
     const [input, ctx] = run.mock.calls[0]!;
+    // After the 2026-04-21 rewire the narrator persona learns tokenName /
+    // tokenSymbol / previousChapters from its own `get_token_info` call, so
+    // the invoke-persona factory no longer enriches the input. Only the
+    // caller-supplied tokenAddr must reach the persona here.
     expect(input.tokenAddr).toBe(FAKE_TOKEN_ADDR);
-    expect(input.tokenName).toBe('HBNB2026-Alpha');
-    expect(input.tokenSymbol).toBe('HBNB2026-ALP');
-    expect(input.previousChapters).toEqual(['ch1', 'ch2']);
+    expect(input.tokenName).toBeUndefined();
+    expect(input.tokenSymbol).toBeUndefined();
+    expect(input.previousChapters).toBeUndefined();
     expect(ctx.client).toBe(client);
     expect(ctx.registry).toBe(registry);
     expect(ctx.store).toBe(fakeStore);
@@ -647,7 +643,6 @@ describe('createInvokeNarratorTool', () => {
       client: fakeClient(),
       registry: fakeRegistry(),
       store: { __brand: 'LoreStore' } as unknown as never,
-      resolveTokenMeta: () => ({ tokenName: 'N', tokenSymbol: 'N' }),
       onLog,
       onArtifact,
       onToolUseStart,
@@ -731,7 +726,7 @@ describe('createInvokeNarratorTool', () => {
       client: fakeClient(),
       registry: fakeRegistry(),
       store: { __brand: 'LoreStore' } as unknown as never,
-      resolveTokenMeta: () => ({ tokenName: 'HBNB2026-A', tokenSymbol: 'HBNB2026-A' }),
+
       anchorLedger: ledger,
       bscDeployerPrivateKey: `0x${'9'.repeat(64)}`,
       env: { ANCHOR_ON_CHAIN: 'false' },
@@ -793,7 +788,7 @@ describe('createInvokeNarratorTool', () => {
       client: fakeClient(),
       registry: fakeRegistry(),
       store: { __brand: 'LoreStore' } as unknown as never,
-      resolveTokenMeta: () => ({ tokenName: 'HBNB2026-B', tokenSymbol: 'HBNB2026-B' }),
+
       anchorLedger: ledger,
       bscDeployerPrivateKey: `0x${'9'.repeat(64)}`,
       env: { ANCHOR_ON_CHAIN: 'true' },
@@ -859,7 +854,7 @@ describe('createInvokeNarratorTool', () => {
       client: fakeClient(),
       registry: fakeRegistry(),
       store: { __brand: 'LoreStore' } as unknown as never,
-      resolveTokenMeta: () => ({ tokenName: 'HBNB2026-OFF', tokenSymbol: 'HBNB2026-OFF' }),
+
       anchorLedger: ledger,
       env: { ANCHOR_ON_CHAIN: 'false' },
     });
@@ -967,11 +962,20 @@ describe('createInvokeShillerTool', () => {
     );
     expect(tool.name).toBe(INVOKE_SHILLER_TOOL_NAME);
     expect(tool.name).toBe('invoke_shiller');
-    expect(() => tool.inputSchema.parse({ tokenAddr: FAKE_TOKEN_ADDR })).not.toThrow();
     expect(() =>
-      tool.inputSchema.parse({ tokenAddr: FAKE_TOKEN_ADDR, brief: 'pls shill' }),
+      tool.inputSchema.parse({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' }),
+    ).not.toThrow();
+    expect(() =>
+      tool.inputSchema.parse({
+        tokenAddr: FAKE_TOKEN_ADDR,
+        tokenSymbol: 'HBNB2026-BAT',
+        brief: 'pls shill',
+      }),
     ).not.toThrow();
     expect(() => tool.inputSchema.parse({ tokenAddr: 'not-an-addr' })).toThrow();
+    // tokenSymbol is mandatory as of 2026-04-21 — the Brain must call
+    // get_token_info first and forward identity.symbol.
+    expect(() => tool.inputSchema.parse({ tokenAddr: FAKE_TOKEN_ADDR })).toThrow();
   });
 
   it('calls runShillMarketDemo with the orchestrator deps bundle and forwards tokenAddr + brief', async () => {
@@ -983,7 +987,11 @@ describe('createInvokeShillerTool', () => {
       buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, postShillForTool }),
     );
 
-    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, brief: 'please hype' });
+    const output = await tool.execute({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      brief: 'please hype',
+    });
 
     // Orchestrator called exactly once with the bundle of deps the factory
     // threads through.
@@ -1004,7 +1012,7 @@ describe('createInvokeShillerTool', () => {
   it('omits creatorBrief from args when brief is undefined', async () => {
     const spy = spyRunShillMarketDemo();
     const tool = createInvokeShillerTool(buildMinimalDeps({ runShillMarketDemoImpl: spy.impl }));
-    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' });
     expect(spy.calls[0]!.args.creatorBrief).toBeUndefined();
   });
 
@@ -1019,7 +1027,7 @@ describe('createInvokeShillerTool', () => {
       buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, creatorPaymentImpl }),
     );
 
-    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' });
 
     expect(spy.calls[0]!.creatorPaymentImpl).toBe(creatorPaymentImpl);
   });
@@ -1027,7 +1035,7 @@ describe('createInvokeShillerTool', () => {
   it('leaves creatorPaymentImpl undefined when the factory dep is omitted (stub path)', async () => {
     const spy = spyRunShillMarketDemo();
     const tool = createInvokeShillerTool(buildMinimalDeps({ runShillMarketDemoImpl: spy.impl }));
-    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' });
     expect(spy.calls[0]!.creatorPaymentImpl).toBeUndefined();
   });
 
@@ -1058,7 +1066,7 @@ describe('createInvokeShillerTool', () => {
       buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, postShillForTool }),
     );
 
-    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    const output = await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' });
 
     expect(executeSpy).toHaveBeenCalledTimes(1);
     expect(output.tweetId).toBe('tid-threaded');
@@ -1071,7 +1079,7 @@ describe('createInvokeShillerTool', () => {
       buildMinimalDeps({ runShillMarketDemoImpl: spy.impl, onLog }),
     );
 
-    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
+    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' });
 
     // The factory's own bookend logs (entry "starting" + exit "finished")
     // must tag agent=shiller so the UI groups them under the shiller
@@ -1095,9 +1103,9 @@ describe('createInvokeShillerTool', () => {
       buildMinimalDeps({ runShillMarketDemoImpl: thrower, onLog }),
     );
 
-    await expect(tool.execute({ tokenAddr: FAKE_TOKEN_ADDR })).rejects.toThrow(
-      'orchestrator exploded',
-    );
+    await expect(
+      tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' }),
+    ).rejects.toThrow('orchestrator exploded');
     const errLogs = onLog.mock.calls.filter((c) => c[0].level === 'error');
     expect(errLogs.length).toBeGreaterThanOrEqual(1);
     expect(errLogs[0]![0].message).toContain('orchestrator exploded');
@@ -1109,9 +1117,9 @@ describe('createInvokeShillerTool', () => {
     // error instead of returning a malformed value.
     const skipShiller: typeof runShillMarketDemo = async () => undefined;
     const tool = createInvokeShillerTool(buildMinimalDeps({ runShillMarketDemoImpl: skipShiller }));
-    await expect(tool.execute({ tokenAddr: FAKE_TOKEN_ADDR })).rejects.toThrow(
-      /without invoking the shiller phase/,
-    );
+    await expect(
+      tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, tokenSymbol: 'HBNB2026-BAT' }),
+    ).rejects.toThrow(/without invoking the shiller phase/);
   });
 });
 
@@ -1730,7 +1738,7 @@ describe('persona input contract', () => {
     expect(capturedInput).toEqual({ theme: 'BNB Chain 2026 growth' });
   });
 
-  it('invoke_narrator: tokenAddr + resolveTokenMeta output reach narratorPersona.run verbatim', async () => {
+  it('invoke_narrator: tokenAddr from Brain reaches narratorPersona.run without orchestrator enrichment', async () => {
     const run = vi.fn(
       async (
         _input: NarratorPersonaInput,
@@ -1750,36 +1758,26 @@ describe('persona input contract', () => {
       outputSchema: z.any() as unknown as z.ZodType<NarratorPersonaOutput>,
       run,
     };
-    // Real-looking resolver output — exercises the LoreStore plumbing that,
-    // if it regresses, gives us a "HBNB2026-Unknown" Narrator run.
-    const resolveTokenMeta = vi.fn(async () => ({
-      tokenName: 'HBNB2026-Alpha',
-      tokenSymbol: 'HBNB2026-ALP',
-      previousChapters: ['chapter one body', 'chapter two body'],
-      targetChapterNumber: 5,
-    }));
     const tool = createInvokeNarratorTool({
       persona,
       client: fakeClient(),
       registry: fakeRegistry(),
       store: { __brand: 'LoreStore' } as unknown as never,
-      resolveTokenMeta,
     });
 
     await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR });
 
-    expect(resolveTokenMeta).toHaveBeenCalledWith(FAKE_TOKEN_ADDR);
     expect(run).toHaveBeenCalledTimes(1);
     const [capturedInput] = run.mock.calls[0]!;
-    // tokenAddr comes straight from Brain; the rest comes from the
-    // resolver. All four must land on TInput verbatim so the narrator
-    // persona's LLM prompt sees real token metadata instead of
-    // "HBNB2026-Unknown".
+    // Brain supplies only the tokenAddr. The narrator persona now fetches
+    // tokenName / tokenSymbol / previousChapters / targetChapterNumber from
+    // its own `get_token_info` call — the invoke-persona factory no longer
+    // enriches the input server-side.
     expect(capturedInput.tokenAddr).toBe(FAKE_TOKEN_ADDR);
-    expect(capturedInput.tokenName).toBe('HBNB2026-Alpha');
-    expect(capturedInput.tokenSymbol).toBe('HBNB2026-ALP');
-    expect(capturedInput.previousChapters).toEqual(['chapter one body', 'chapter two body']);
-    expect(capturedInput.targetChapterNumber).toBe(5);
+    expect(capturedInput.tokenName).toBeUndefined();
+    expect(capturedInput.tokenSymbol).toBeUndefined();
+    expect(capturedInput.previousChapters).toBeUndefined();
+    expect(capturedInput.targetChapterNumber).toBeUndefined();
   });
 
   it('invoke_shiller: tokenAddr + brief from Brain reach runShillMarketDemo args verbatim', async () => {
@@ -1823,14 +1821,20 @@ describe('persona input contract', () => {
       runShillMarketDemoImpl: impl,
     });
 
-    await tool.execute({ tokenAddr: FAKE_TOKEN_ADDR, brief: 'pump the hype' });
+    await tool.execute({
+      tokenAddr: FAKE_TOKEN_ADDR,
+      tokenSymbol: 'HBNB2026-BAT',
+      brief: 'pump the hype',
+    });
 
     expect(capturedCalls).toHaveLength(1);
     const args = capturedCalls[0]!.args;
-    // The only user-facing params — tokenAddr + brief — must land on
-    // orchestrator.args verbatim so the downstream shill-market flow posts
-    // a tweet grounded in the actual creator prompt.
+    // User-facing params — tokenAddr + tokenSymbol (authoritative, required
+    // post-2026-04-21) + brief — must land on orchestrator.args verbatim so
+    // the downstream shill-market flow posts a tweet with the real ticker
+    // rather than one inferred from lore prose.
     expect(args.tokenAddr).toBe(FAKE_TOKEN_ADDR);
+    expect(args.tokenSymbol).toBe('HBNB2026-BAT');
     expect(args.creatorBrief).toBe('pump the hype');
     // The brief is also forwarded into the shiller phase closure so
     // runShillerAgent's `creatorBrief` arg is populated.

@@ -68,11 +68,11 @@ import {
   INVOKE_CREATOR_TOOL_NAME,
   INVOKE_HEARTBEAT_TICK_TOOL_NAME,
   INVOKE_NARRATOR_TOOL_NAME,
-  INVOKE_SHILLER_TOOL_NAME,
   LIST_HEARTBEATS_TOOL_NAME,
   STOP_HEARTBEAT_TOOL_NAME,
-  type NarratorTokenMeta,
 } from '../tools/invoke-persona.js';
+import { TokenIdentityReader } from '../state/token-identity-reader.js';
+import { createGetTokenInfoTool, GET_TOKEN_INFO_TOOL_NAME } from '../tools/get-token-info.js';
 import type { CreatorPaymentPhaseFn, runShillMarketDemo } from './shill-market.js';
 import { HEARTBEAT_SYSTEM_PROMPT } from './heartbeat-runner.js';
 import {
@@ -205,11 +205,17 @@ export function buildCreatorSubRegistry(config: AppConfig, anthropic: Anthropic)
 }
 
 /**
- * Build the narrator persona's sub-tool registry: extend_lore only. The
- * narrator's systemPrompt forces a single `extend_lore` call per invocation;
- * no other tool is needed. Mirrors the wiring in `a2a.ts#defaultRunNarratorPhase`.
+ * Build the narrator persona's sub-tool registry: `get_token_info` +
+ * `extend_lore`. The narrator's systemPrompt now drives a two-step flow —
+ * fetch authoritative identity + narrative, then write the next chapter —
+ * so both tools must be visible to the narrator LLM loop.
  */
-export function buildNarratorSubRegistry(config: AppConfig, anthropic: Anthropic): ToolRegistry {
+export function buildNarratorSubRegistry(
+  config: AppConfig,
+  anthropic: Anthropic,
+  loreStore: LoreStore,
+  tokenIdentityReader: TokenIdentityReader,
+): ToolRegistry {
   if (config.pinata.jwt === undefined) {
     throw new Error(
       'runBrainChat: PINATA_JWT missing (narrator persona requires Pinata to pin lore chapters)',
@@ -217,6 +223,13 @@ export function buildNarratorSubRegistry(config: AppConfig, anthropic: Anthropic
   }
   const reg = new ToolRegistry();
   reg.register(createLoreExtendTool({ anthropic, pinataJwt: config.pinata.jwt, model: MODEL }));
+  reg.register(
+    createGetTokenInfoTool({
+      tokenIdentityReader,
+      loreStore,
+      rpcUrl: config.bsc.rpcUrl,
+    }),
+  );
   return reg;
 }
 
@@ -227,9 +240,21 @@ export function buildNarratorSubRegistry(config: AppConfig, anthropic: Anthropic
  * never need stubs because they ride on the same Anthropic / viem / Pinata
  * stack the real heartbeat runner uses.
  */
-export function buildHeartbeatSubRegistry(config: AppConfig, anthropic: Anthropic): ToolRegistry {
+export function buildHeartbeatSubRegistry(
+  config: AppConfig,
+  anthropic: Anthropic,
+  loreStore: LoreStore,
+  tokenIdentityReader: TokenIdentityReader,
+): ToolRegistry {
   const reg = new ToolRegistry();
   reg.register(createCheckTokenStatusTool({ rpcUrl: config.bsc.rpcUrl }));
+  reg.register(
+    createGetTokenInfoTool({
+      tokenIdentityReader,
+      loreStore,
+      rpcUrl: config.bsc.rpcUrl,
+    }),
+  );
 
   const x = config.x;
   const haveCreds =
@@ -314,8 +339,18 @@ export interface RunBrainChatDeps {
    * the orchestrator falls back to the real `buildXxxSubRegistry` helpers.
    */
   buildCreatorSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
-  buildNarratorSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
-  buildHeartbeatSubRegistryImpl?: (config: AppConfig, anthropic: Anthropic) => ToolRegistry;
+  buildNarratorSubRegistryImpl?: (
+    config: AppConfig,
+    anthropic: Anthropic,
+    loreStore: LoreStore,
+    tokenIdentityReader: TokenIdentityReader,
+  ) => ToolRegistry;
+  buildHeartbeatSubRegistryImpl?: (
+    config: AppConfig,
+    anthropic: Anthropic,
+    loreStore: LoreStore,
+    tokenIdentityReader: TokenIdentityReader,
+  ) => ToolRegistry;
   /**
    * Optional real creator-payment phase — threaded straight into the
    * shill-market orchestrator when `/order` fires via `invoke_shiller`.
@@ -388,10 +423,21 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
   // `ctx.registry` contained them — so `creatorPersona.run(...)` would enter
   // `runAgentLoop` with `invoke_creator` in its toolset and immediately call
   // it on itself, causing infinite recursion that bricked `/launch`.
+  // Shared TokenIdentityReader so all three `get_token_info` registrations
+  // (narrator sub, heartbeat sub, and brain-level) share a single LRU.
+  // Before this the brain-chat run instantiated three separate readers and
+  // the same tokenAddr could miss the cache three times in a single turn.
+  const sharedIdentityReader = new TokenIdentityReader({ rpcUrl: config.bsc.rpcUrl });
+
   const brainRegistry = new ToolRegistry();
   const creatorSubRegistry = buildCreatorReg(config, anthropic);
-  const narratorSubRegistry = buildNarratorReg(config, anthropic);
-  const heartbeatSubRegistry = buildHeartbeatReg(config, anthropic);
+  const narratorSubRegistry = buildNarratorReg(config, anthropic, loreStore, sharedIdentityReader);
+  const heartbeatSubRegistry = buildHeartbeatReg(
+    config,
+    anthropic,
+    loreStore,
+    sharedIdentityReader,
+  );
 
   // Shared event-forwarders — each tool factory takes this bundle so every
   // nested persona-side log / artifact / tool_use / assistant:delta event
@@ -436,36 +482,19 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     ...eventForwarders,
   });
 
-  // Narrator tool needs the LoreStore + a tokenMeta resolver. LoreStore is
-  // the single source of truth for per-token metadata: the creator persona
-  // deposits Chapter 1 with `{tokenName, tokenSymbol}` on `/launch`, and the
-  // narrator persona overwrites/extends the chain on each subsequent call.
-  // When no chapter has been deposited yet (e.g. user calls `/lore` before
-  // `/launch`), fall back to placeholder names — the narrator persona
-  // tolerates them and will produce Chapter 1.
-  const resolveTokenMeta = async (tokenAddr: string): Promise<NarratorTokenMeta> => {
-    const chapters = await loreStore.getAllChapters(tokenAddr);
-    if (chapters.length === 0) {
-      return {
-        tokenName: 'HBNB2026-Unknown',
-        tokenSymbol: 'HBNB2026-UNK',
-      };
-    }
-    const latest = chapters[chapters.length - 1]!;
-    return {
-      tokenName: latest.tokenName,
-      tokenSymbol: latest.tokenSymbol,
-      previousChapters: chapters.map((c) => c.chapterText),
-      targetChapterNumber: chapters.length + 1,
-    };
-  };
-
+  // Narrator tool no longer needs an orchestrator-side token-metadata
+  // resolver: the narrator persona itself calls `get_token_info` (now in
+  // its sub-registry) to pull authoritative tokenName / tokenSymbol /
+  // previousChapters from the chain + LoreStore. Prior behaviour relied on
+  // a server-side LoreStore lookup that substituted placeholder names
+  // ("HBNB2026-Unknown") when the token had no chapters yet — which
+  // produced visibly-wrong chapter 1 headers. The LLM-driven flow grounds
+  // every chapter in real identity data.
   const invokeNarratorTool = createInvokeNarratorTool({
     persona: narratorPersona,
     client: anthropic,
     registry: narratorSubRegistry,
     store: loreStore,
-    resolveTokenMeta,
     // AC3 — `/lore` joins `/launch` on the anchor surface. The factory
     // handles the ANCHOR_ON_CHAIN gate internally so we only need to
     // forward the ledger + deployer key.
@@ -535,7 +564,19 @@ export async function runBrainChat(deps: RunBrainChatDeps): Promise<void> {
     ...eventForwarders,
   });
 
+  // Brain-layer `get_token_info` lets a conversational user query token
+  // facts without triggering a slash-command persona. The Brain LLM also
+  // needs it to satisfy the TOKEN IDENTITY RULE in its system prompt —
+  // especially before dispatching `/order`, which requires an authoritative
+  // tokenSymbol that cannot come from lore prose.
+  const brainGetTokenInfoTool = createGetTokenInfoTool({
+    tokenIdentityReader: sharedIdentityReader,
+    loreStore,
+    rpcUrl: config.bsc.rpcUrl,
+  });
+
   const tools: ReadonlyArray<AgentTool<unknown, unknown>> = [
+    brainGetTokenInfoTool as unknown as AgentTool<unknown, unknown>,
     invokeCreatorTool as unknown as AgentTool<unknown, unknown>,
     invokeNarratorTool as unknown as AgentTool<unknown, unknown>,
     invokeShillerTool as unknown as AgentTool<unknown, unknown>,
@@ -635,10 +676,21 @@ const TOOL_REQUIRED_SLASH_REGEX =
  * section; a drift means the prompt tells the LLM to route `/X` to tool Y
  * while the runtime forces a different tool, which either fails loudly
  * (unknown tool) or silently produces the wrong action.
+ *
+ * `/order` is intentionally the only "force to lookup then free" entry: the
+ * shiller tool's `tokenSymbol` field is mandatory (anti-ticker-hallucination
+ * guard), so turn 1 MUST call `get_token_info` first. Forcing
+ * `invoke_shiller` on turn 1 would leave the LLM with no option but to
+ * fabricate the symbol — reopening the exact bug `tokenSymbol` was added to
+ * close. The Brain system prompt's `/order` section describes the two-step
+ * flow; this forced turn-1 lookup makes step 1 structurally guaranteed
+ * instead of prompt-compliance dependent. Turn 2+ runs with `tool_choice:
+ * auto` per the runtime contract, letting the LLM follow the prompt into
+ * `invoke_shiller` with the real symbol.
  */
 const SLASH_TO_TOOL_NAME = new Map<string, string>([
   ['launch', INVOKE_CREATOR_TOOL_NAME],
-  ['order', INVOKE_SHILLER_TOOL_NAME],
+  ['order', GET_TOKEN_INFO_TOOL_NAME],
   ['lore', INVOKE_NARRATOR_TOOL_NAME],
   ['heartbeat', INVOKE_HEARTBEAT_TICK_TOOL_NAME],
   ['heartbeat-stop', STOP_HEARTBEAT_TOOL_NAME],

@@ -261,10 +261,21 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
 
       // Length caps mirror postShillForInputSchema so oversized payloads are
       // rejected at the HTTP boundary before reaching the LLM context window.
+      // tokenSymbol is now MANDATORY (2026-04-21): post_shill_for rejects a
+      // missing value, and letting the run boot without it would settle x402
+      // and burn a runId before failing mid-shiller. HTTP clients must look
+      // up the authoritative symbol via get_token_info before POSTing here.
       const SHILL_SYMBOL_MAX = 32;
       const SHILL_BRIEF_MAX = 500;
       const rawSymbol =
         typeof paramsRecord.tokenSymbol === 'string' ? paramsRecord.tokenSymbol.trim() : '';
+      if (rawSymbol === '') {
+        res.status(400).json({
+          error:
+            'shill-market mode requires params.tokenSymbol (authoritative ERC-20 symbol from get_token_info.identity.symbol)',
+        });
+        return;
+      }
       if (rawSymbol.length > SHILL_SYMBOL_MAX) {
         res.status(400).json({
           error: `shill-market tokenSymbol must be <= ${String(SHILL_SYMBOL_MAX)} chars`,
@@ -279,7 +290,7 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
           .json({ error: `shill-market creatorBrief must be <= ${String(SHILL_BRIEF_MAX)} chars` });
         return;
       }
-      const tokenSymbol = rawSymbol !== '' ? rawSymbol : undefined;
+      const tokenSymbol = rawSymbol;
       const creatorBrief = rawBrief !== '' ? rawBrief : undefined;
       // Tweet-mode toggle (2026-04-19). Dashboard OrderPanel sends a boolean;
       // absence defaults to safe mode (URL-free tweet) per the 7-day X OAuth
@@ -308,7 +319,7 @@ export function registerRunRoutes(app: Express, deps: RegisterRunRoutesDeps): vo
 
       const args: RunShillMarketDemoArgs = {
         tokenAddr: rawTokenAddr,
-        ...(tokenSymbol !== undefined ? { tokenSymbol } : {}),
+        tokenSymbol,
         ...(creatorBrief !== undefined ? { creatorBrief } : {}),
         includeFourMemeUrl,
       };

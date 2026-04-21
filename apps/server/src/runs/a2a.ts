@@ -36,6 +36,8 @@ import { ToolRegistry } from '../tools/registry.js';
 import { createLoreExtendTool } from '../tools/lore-extend.js';
 import { createCheckTokenStatusTool } from '../tools/token-status.js';
 import { createXFetchLoreTool } from '../tools/x-fetch-lore.js';
+import { createGetTokenInfoTool } from '../tools/get-token-info.js';
+import { TokenIdentityReader } from '../state/token-identity-reader.js';
 import { runNarratorAgent } from '../agents/narrator.js';
 import { runMarketMakerAgent } from '../agents/market-maker.js';
 import { runCreatorPhase as defaultRunCreatorPhase } from './creator-phase.js';
@@ -155,6 +157,13 @@ export type RunMarketMakerPhaseFn = (deps: {
   runId: string;
   loreEndpointBaseUrl: string;
   tokenAddr: string;
+  /**
+   * Shared LoreStore so the market-maker can register `get_token_info`
+   * (which reads chapter history). Added 2026-04-21 alongside the
+   * anti-hallucination rewire — the prior agent had no way to look up a
+   * token's narrative other than through the x402 paid fetch.
+   */
+  loreStore: LoreStore;
 }) => Promise<
   | undefined
   | {
@@ -245,6 +254,72 @@ function emitDryRunFallbackArtifacts(store: RunStore, runId: string, tokenAddr: 
 }
 
 /**
+ * Build the narrator tool registry for the a2a CLI path. Exported so a
+ * contract unit test can assert the registry covers every tool the narrator
+ * LLM loop forces (`toolChoice: { name: 'get_token_info' }`) without booting
+ * the full phase — a registry that forgets a forced tool would fail at
+ * Anthropic's API with a 400 mid-run.
+ */
+export function buildNarratorRegistry(deps: {
+  config: AppConfig;
+  anthropic: Anthropic;
+  loreStore: LoreStore;
+}): ToolRegistry {
+  const { config, anthropic, loreStore } = deps;
+  if (config.pinata.jwt === undefined) {
+    throw new Error('buildNarratorRegistry: PINATA_JWT missing');
+  }
+  const registry = new ToolRegistry();
+  registry.register(
+    createLoreExtendTool({ anthropic, pinataJwt: config.pinata.jwt, model: MODEL }),
+  );
+  // `get_token_info` was missing before 2026-04-21 — the narrator system
+  // prompt unconditionally forces it as the first tool call, so the a2a CLI
+  // would 400 from Anthropic on the very first LLM turn without it. The
+  // Brain path (brain-chat.ts#buildNarratorSubRegistry) already registered
+  // it; this keeps the two paths symmetric.
+  registry.register(
+    createGetTokenInfoTool({
+      tokenIdentityReader: new TokenIdentityReader({ rpcUrl: config.bsc.rpcUrl }),
+      loreStore,
+      rpcUrl: config.bsc.rpcUrl,
+    }),
+  );
+  return registry;
+}
+
+/**
+ * Build the market-maker tool registry for the a2a CLI path. Exported for
+ * the same contract-test reason as `buildNarratorRegistry` — the
+ * market-maker system prompt also forces `get_token_info` on turn 1.
+ */
+export function buildMarketMakerRegistry(deps: {
+  config: AppConfig;
+  loreStore: LoreStore;
+}): ToolRegistry {
+  const { config, loreStore } = deps;
+  if (config.wallets.agent.privateKey === undefined) {
+    throw new Error('buildMarketMakerRegistry: AGENT_WALLET_PRIVATE_KEY missing');
+  }
+  const registry = new ToolRegistry();
+  registry.register(createCheckTokenStatusTool({ rpcUrl: config.bsc.rpcUrl }));
+  registry.register(
+    createXFetchLoreTool({
+      agentPrivateKey: config.wallets.agent.privateKey as `0x${string}`,
+      network: config.x402.network,
+    }),
+  );
+  registry.register(
+    createGetTokenInfoTool({
+      tokenIdentityReader: new TokenIdentityReader({ rpcUrl: config.bsc.rpcUrl }),
+      loreStore,
+      rpcUrl: config.bsc.rpcUrl,
+    }),
+  );
+  return registry;
+}
+
+/**
  * Default Narrator phase implementation — wires the existing
  * `runNarratorAgent` into the phase callback shape. Kept as a top-level
  * function so a2a.test can replace it with a fake while production code
@@ -274,10 +349,7 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
     `x402: ${config.x402.network} via ${config.x402.facilitatorUrl}`,
   );
 
-  const narratorRegistry = new ToolRegistry();
-  narratorRegistry.register(
-    createLoreExtendTool({ anthropic, pinataJwt: config.pinata.jwt, model: MODEL }),
-  );
+  const narratorRegistry = buildNarratorRegistry({ config, anthropic, loreStore });
   orchestratorLog(
     store,
     runId,
@@ -372,18 +444,8 @@ const defaultRunNarratorPhase: RunNarratorPhaseFn = async (deps) => {
  * the original monolithic runA2ADemo.
  */
 const defaultRunMarketMakerPhase: RunMarketMakerPhaseFn = async (deps) => {
-  const { config, anthropic, store, runId, loreEndpointBaseUrl, tokenAddr } = deps;
-  if (config.wallets.agent.privateKey === undefined) {
-    throw new Error('market-maker phase: AGENT_WALLET_PRIVATE_KEY missing');
-  }
-  const mmRegistry = new ToolRegistry();
-  mmRegistry.register(createCheckTokenStatusTool({ rpcUrl: config.bsc.rpcUrl }));
-  mmRegistry.register(
-    createXFetchLoreTool({
-      agentPrivateKey: config.wallets.agent.privateKey as `0x${string}`,
-      network: config.x402.network,
-    }),
-  );
+  const { config, anthropic, store, runId, loreEndpointBaseUrl, tokenAddr, loreStore } = deps;
+  const mmRegistry = buildMarketMakerRegistry({ config, loreStore });
   orchestratorLog(
     store,
     runId,
@@ -563,5 +625,6 @@ export async function runA2ADemo(deps: RunA2ADemoDeps): Promise<void> {
     runId,
     loreEndpointBaseUrl,
     tokenAddr: nextTokenAddr,
+    loreStore: deps.loreStore,
   });
 }

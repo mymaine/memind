@@ -59,14 +59,17 @@ export interface MarketMakerAgentOutput {
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
-const MARKET_MAKER_SYSTEM_PROMPT = `You are Market-maker Agent, a persona in the Memind runtime for Four.Meme. Your role is to decide whether it is worth paying 0.01 USDC for the latest lore chapter of a given token.
+const MARKET_MAKER_SYSTEM_PROMPT = `CRITICAL: Before calling post_shill_for or writing any tweet content, you MUST call \`get_token_info({ tokenAddr, include: { identity: true, narrative: true, market: true } })\` first. The result's \`identity.symbol\` is the only acceptable ticker. Never guess or derive the symbol from lore prose or any other source — non-authoritative tickers have been shown to be wrong in practice.
+
+You are Market-maker Agent, a persona in the Memind runtime for Four.Meme. Your role is to decide whether it is worth paying 0.01 USDC for the latest lore chapter of a given token.
 
 Workflow:
-1. Call check_token_status with the provided token address to read live on-chain state (deployedOnChain, bonding curve progress, holder count, etc.).
-2. Apply this policy (demo-tuned: any real deployed four.meme token has narrative worth inspecting, even pre-trading; production deployment would raise thresholds on holderCount / curve progress):
+1. FIRST call \`get_token_info\` with the provided tokenAddr and \`include: { identity: true, narrative: true, market: true }\`. This is the authoritative read — cached 10 minutes so repeated calls are cheap.
+2. Then call \`check_token_status\` with the same tokenAddr to read live on-chain state (deployedOnChain, bonding curve progress, holder count, etc.). Note: \`get_token_info\`'s \`market\` strand already covers this read, but the legacy \`check_token_status\` call is still required for the \`statusCall\` grounding check.
+3. Apply this policy (demo-tuned: any real deployed four.meme token has narrative worth inspecting, even pre-trading; production deployment would raise thresholds on holderCount / curve progress):
    - If deployedOnChain is true, call x402_fetch_lore with the provided lore URL to purchase the latest chapter. The chapter is alpha for positioning.
    - Otherwise (contract bytecode missing from the chain), skip the purchase — the token does not actually exist.
-3. Do NOT fabricate tool outputs. Only use what tools return.
+4. Do NOT fabricate tool outputs. Only use what tools return.
 
 After you have applied the policy, respond with EXACTLY one JSON object and nothing else (no prose, no code fences, no markdown):
   {"decision": "buy-lore" | "skip", "reason": string}
@@ -117,6 +120,11 @@ export async function runMarketMakerAgent(
     onToolUseEnd,
     onAssistantDelta,
     agentId: 'market-maker',
+    // Anti-hallucination (2026-04-21): force the first LLM turn to call
+    // `get_token_info` so the agent reads authoritative identity BEFORE any
+    // decision text lands in context. Subsequent turns revert to auto so
+    // the loop can progress through check_token_status / x402_fetch_lore.
+    toolChoice: { type: 'tool' as const, name: 'get_token_info' },
   });
 
   const json = extractJsonObject(loop.finalText, 'runMarketMakerAgent');
@@ -282,20 +290,28 @@ export async function runShillerAgent(params: RunShillerAgentParams): Promise<Sh
     onLog,
   } = params;
 
-  // Build the tool input — `tokenSymbol` must be omitted (not set to
-  // undefined) when the caller didn't supply it, so the downstream zod
-  // schema's `.optional()` branch triggers and the LLM prompt falls back to
-  // "infer the symbol from lore". Same rule for `includeFourMemeUrl`: only
-  // forward when the caller explicitly chose a mode, so the tool's
-  // `?? false` safe-mode default still wins when the dashboard / CLI
-  // omits it.
+  // Build the tool input. `tokenSymbol` is MANDATORY on the downstream
+  // `post_shill_for` schema (anti-hallucination — see post-shill-for.ts).
+  // We forward whatever the caller supplied; when omitted the key is left
+  // out so the downstream zod parse surfaces a clear "tokenSymbol required"
+  // error to the shiller persona, which propagates as `decision: 'skip'`
+  // with an errorMessage instead of shipping a fabricated ticker. The
+  // shiller system prompt tells the LLM to call `get_token_info` first, so
+  // this failure mode is self-healing on the LLM's next turn.
+  // `includeFourMemeUrl` is forwarded only when explicitly set so the
+  // tool's `?? false` safe-mode default wins on omission.
   const input: PostShillForInput = {
     orderId,
     tokenAddr,
-    ...(tokenSymbol !== undefined && tokenSymbol !== '' ? { tokenSymbol } : {}),
+    // Type coercion: zod schema now requires tokenSymbol, so we cast to
+    // satisfy TS. The schema will still reject a missing value at parse
+    // time — this is intentional fail-loud behaviour.
+    ...(tokenSymbol !== undefined && tokenSymbol !== ''
+      ? { tokenSymbol }
+      : ({} as { tokenSymbol: string })),
     loreSnippet,
     ...(includeFourMemeUrl !== undefined ? { includeFourMemeUrl } : {}),
-  };
+  } as PostShillForInput;
 
   onLog?.({
     ts: new Date().toISOString(),

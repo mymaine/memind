@@ -39,6 +39,9 @@ import {
   type TokenStatusOutput,
 } from '../tools/token-status.js';
 import { createLoreExtendTool } from '../tools/lore-extend.js';
+import { createGetTokenInfoTool } from '../tools/get-token-info.js';
+import { TokenIdentityReader } from '../state/token-identity-reader.js';
+import type { LoreStore } from '../state/lore-store.js';
 import {
   createPostToXTool,
   xPostInputSchema,
@@ -74,11 +77,13 @@ const MAX_TURNS_PER_TICK = 4;
  */
 export const HEARTBEAT_SYSTEM_PROMPT = [
   'You are an autonomous agent operating a meme token on BSC mainnet.',
-  'Each tick, call check_token_status on the configured token. Based on the status,',
+  'Each tick begins with a `get_token_info` call to confirm current token facts (symbol, lore state, market).',
+  'Use its output to decide whether to extend lore, post a shill, or skip.',
+  'After get_token_info, call check_token_status for the grounded on-chain snapshot, then pick ONE action:',
   'EITHER call post_to_x with a short tweet drafted per the tweet rules below,',
   'OR call extend_lore to add a new chapter to the on-chain story.',
   'When drafting the tweet body, refer to the latest lore chapter for flavour;',
-  'the token is denoted by its $SYMBOL only — never the raw 0x address.',
+  'the token is denoted by its $SYMBOL only (from get_token_info.identity.symbol — never infer from lore text) — never the raw 0x address.',
   '',
   BASE_RULES_NO_URL,
   '',
@@ -116,6 +121,14 @@ export interface RunHeartbeatDemoDeps {
   // ─── production wiring ───────────────────────────────────────────────────
   /** Only required when tokenStatusImpl is absent — viem needs an RPC. */
   config?: AppConfig;
+  /**
+   * Optional LoreStore. When provided, the runner registers `get_token_info`
+   * so the heartbeat system prompt's new "read authoritative facts first"
+   * workflow has the tool available. Omitted in older tests that only
+   * exercise the post_to_x / extend_lore stubs; the registry simply skips
+   * the tool in that case.
+   */
+  loreStore?: LoreStore;
 }
 
 /**
@@ -235,6 +248,22 @@ export async function runHeartbeatDemo(deps: RunHeartbeatDemoDeps): Promise<void
     registry.register(wrapTokenStatusStub(deps.tokenStatusImpl));
   } else if (deps.config !== undefined) {
     registry.register(createCheckTokenStatusTool({ rpcUrl: deps.config.bsc.rpcUrl }));
+  }
+
+  // get_token_info — 2026-04-21 authoritative facts rail. Registered only when
+  // the loreStore is threaded in; tests that already supply a tokenStatusImpl
+  // stub (and thus do not need real viem + lore reads) leave loreStore
+  // undefined and the registry skips the tool, matching the HEARTBEAT prompt's
+  // soft "each tick begins with" phrasing (the prompt degrades gracefully
+  // when the tool is absent).
+  if (deps.loreStore !== undefined && deps.config !== undefined) {
+    registry.register(
+      createGetTokenInfoTool({
+        tokenIdentityReader: new TokenIdentityReader({ rpcUrl: deps.config.bsc.rpcUrl }),
+        loreStore: deps.loreStore,
+        rpcUrl: deps.config.bsc.rpcUrl,
+      }),
+    );
   }
 
   if (deps.postToXImpl !== undefined) {

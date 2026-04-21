@@ -251,7 +251,7 @@ function printSummary(
       '  Target token (BSC mainnet, pre-deployed):',
       `    address:     ${args.tokenAddr}`,
       `    bscscan:     https://bscscan.com/token/${args.tokenAddr}`,
-      `    symbol:      ${args.tokenSymbol ?? '<unset — Shiller will infer from lore>'}`,
+      `    symbol:      ${args.tokenSymbol ?? '<unset — tokenSymbol is now mandatory; run will fail at post_shill_for schema validation>'}`,
       `    brief:       ${args.creatorBrief ?? '<unset>'}`,
       '',
       '  Shill order (final state):',
