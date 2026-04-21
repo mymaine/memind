@@ -19,7 +19,13 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
 
 Four.meme saw [32k spam tokens land in a single day in October 2025](https://coinspot.io/en/cryptocurrencies/four-meme-increased-the-token-launch-fee-to-fight-spam-and-toxic-memes/), and across memecoins [97% eventually die](https://chainplay.gg/blog/state-of-memecoin-2024/) because launchers abandon them after mint. Minting is cheap; **discovery is not**.
 
-Four.meme's [March 2026 AI Agent roadmap](https://phemex.com/news/article/fourmeme-reveals-ai-agent-roadmap-for-bnb-chain-integration-63946) lays out three phases: **Phase 1 — Agent Skill Framework** (live); **Phase 2 — Executable AI Agents with LLM Chat**; **Phase 3 — Agentic Mode** (on-chain AI identities). **Phase 2 has no public reference implementation. This repo is one.** Phase 3 (BAP-578 NFA + TEE wallet + ERC-8004 reputation) is roadmapped, not shipped — see the [wallet custody FAQ](#faq).
+Four.meme's [March 2026 AI Agent roadmap](https://phemex.com/news/article/fourmeme-reveals-ai-agent-roadmap-for-bnb-chain-integration-63946) lays out three phases:
+
+- **Phase 1 — Agent Skill Framework** (live)
+- **Phase 2 — Executable AI Agents with LLM Chat**
+- **Phase 3 — Agentic Mode** (on-chain AI identities)
+
+**Phase 2 has no public reference implementation. This repo is one.** Phase 3 (BAP-578 NFA + TEE wallet + ERC-8004 reputation) is roadmapped, not shipped — see the [wallet custody FAQ](#faq).
 
 ## How it works
 
@@ -88,14 +94,37 @@ Three properties that make this a **primitive** rather than a one-off app:
 
 ## What we built
 
-- **Agent commerce loop, fully wired.** Creator + Narrator supply lore; Market-maker reads it as alpha (a2a) or switches to Shiller mode for creator-commissioned tweets; Heartbeat ticks autonomously. A **Brain meta-agent** dispatches to any of them when a human talks to the Memind through the BrainPanel.
-- **Paid shilling (SKU 1, shipped).** `/order <tokenAddr>` from BrainPanel (or `pnpm demo:shill`) settles 0.01 USDC via x402 on Base Sepolia, enqueues the order, and Shiller posts a real tweet from an aged X account within ~6 seconds.
-- **x402 server on `@x402/express` v2**, four paid endpoints (paths + prices in `apps/server/src/x402/config.ts`): `GET /lore/:addr` ($0.01, `LoreStore`-backed), `GET /alpha/:addr` ($0.01, mock), `GET /metadata/:addr` ($0.005, mock), `POST /shill/:tokenAddr` ($0.01, creator-paid).
-- **Typed tool registry** (`AgentTool<TIn, TOut>`, 15 total): 9 domain tools (`narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for`, `x402_fetch_lore`) + 6 Brain meta-agent factories (`invoke_creator` / `invoke_narrator` / `invoke_shiller` / `invoke_heartbeat_tick` / `stop_heartbeat` / `list_heartbeats`).
-- **Postgres-backed state**: `LoreStore` (per-token chapter chain, not just latest), `AnchorLedger`, `ShillOrderStore`, `HeartbeatSessionStore`, `ArtifactLogStore`. Counters survive restarts; `ensureSchema` resets ghost `running=true` rows at boot.
-- **Live heartbeat loop**: `/heartbeat <addr> <ms> [maxTicks]` drives a real `setInterval` background session (default cap 5). Every tick fans out via SSE into a dedicated chat bubble with the tweet URL or IPFS CID.
-- **Next.js 15 product surface**: 12-chapter sticky-stage scrollytelling + right-side `<BrainPanel>` with 10 slash commands (`/launch /order /lore /heartbeat /heartbeat-stop /heartbeat-list /status /help /reset /clear`). Evidence chapter hydrates from Postgres on page refresh. Engineering panels live in a `D`-to-open `<LogsDrawer>`.
-- **CLI demos** sharing the orchestration path: `demo:creator`, `demo:a2a`, `demo:heartbeat`, `demo:shill`.
+- **Agent commerce loop, fully wired.** Brain meta-agent routes human chat to four personas (Creator / Narrator / Market-maker / Shiller) plus autonomous Heartbeat ticks. SKU 1 (paid shilling) is shipped: `/order <tokenAddr>` settles 0.01 USDC via x402 on Base Sepolia and Shiller posts a real tweet from an aged X account within ~6 seconds.
+- **Live heartbeat loop.** `/heartbeat <addr> <ms> [maxTicks]` drives a real `setInterval` background session (default cap 5). Every tick fans out via SSE into a dedicated chat bubble with the tweet URL or IPFS CID.
+- **Postgres-backed state.** `LoreStore` (per-token chapter chain, not just latest), `AnchorLedger`, `ShillOrderStore`, `HeartbeatSessionStore`, `ArtifactLogStore`. Counters survive restarts; `ensureSchema` resets ghost `running=true` rows at boot.
+- **Next.js 15 product surface.** 12-chapter sticky-stage scrollytelling + right-side `<BrainPanel>`. Evidence chapter hydrates from Postgres on page refresh. Engineering panels live in a `D`-to-open `<LogsDrawer>`.
+- **Typed tool registry + paid endpoints.** 15 `AgentTool<TIn, TOut>` implementations plus 4 `@x402/express` v2 paid routes. See tables below.
+
+### Typed tools (15)
+
+| Category            | Tools                                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain (9)          | `narrative_generator`, `meme_image_creator`, `onchain_deployer`, `lore_writer`, `extend_lore`, `check_token_status`, `post_to_x`, `post_shill_for`, `x402_fetch_lore` |
+| Brain factories (6) | `invoke_creator`, `invoke_narrator`, `invoke_shiller`, `invoke_heartbeat_tick`, `stop_heartbeat`, `list_heartbeats`                                                   |
+
+### Paid x402 endpoints
+
+Paths and prices live in [`apps/server/src/x402/config.ts`](apps/server/src/x402/config.ts).
+
+| Path                     | Price  | Source             |
+| ------------------------ | ------ | ------------------ |
+| `GET /lore/:addr`        | $0.01  | `LoreStore`-backed |
+| `GET /alpha/:addr`       | $0.01  | mock               |
+| `GET /metadata/:addr`    | $0.005 | mock               |
+| `POST /shill/:tokenAddr` | $0.01  | creator-paid       |
+
+### Slash commands (10)
+
+`/launch` · `/order` · `/lore` · `/heartbeat` · `/heartbeat-stop` · `/heartbeat-list` · `/status` · `/help` · `/reset` · `/clear`
+
+### CLI demos
+
+`demo:creator` (BSC deploy, ~$0.05 BNB gas) · `demo:a2a` · `demo:heartbeat` · `demo:shill`
 
 ## Architecture
 
@@ -103,25 +132,32 @@ Full topology, per-flow diagrams, and module boundaries live in [`docs/architect
 
 ## Evidence
 
-Every row links to a real explorer page. Run #3 is a Base Sepolia settlement produced by `pnpm demo:a2a`; the Phase 1 probe is the hello-world settlement re-run against the real facilitator on every `pnpm test`.
+Every row links to a real explorer page — all five hashes come from one coherent demo run against BSC mainnet + Base Sepolia.
 
-| Artifact                                   | Network      | Hash / CID                                                                                                          |
-| ------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| four.meme token                            | BSC mainnet  | [`0x4E39…4444`](https://bscscan.com/token/0x4E39d254c716D88Ae52D9cA136F0a029c5F74444)                               |
-| Token deploy tx (Phase 2, 67s Creator run) | BSC mainnet  | [`0x760f…0c9b`](https://bscscan.com/tx/0x760ff53f84337c0c6b50c5036d9ac727e3d56fa4ad044b05ffed8e531d760c9b)          |
-| Narrator lore CID (Run #3, IPFS v0)        | IPFS         | [`QmWoMk…TVX7`](https://gateway.pinata.cloud/ipfs/QmWoMkPuPekMXp4RwWKenADMi74mqaZRG3fcEuGovATVX7)                   |
-| x402 settlement (Run #3, 0.01 USDC)        | Base Sepolia | [`0x62e4…c3df`](https://sepolia.basescan.org/tx/0x62e442cc9ccc7f57c843ebcfc52f777f3cd9188b9172583ee4cefa60e5a1c3df) |
-| Phase 1 x402 probe settlement              | Base Sepolia | [`0x4331…000a`](https://sepolia.basescan.org/tx/0x4331ff588b541d3a53dcdcdf89f0954e1b974d985a7e79476a04552e9bff000a) |
-
-**Run #3 note**: `from` and `to` both resolve to `0xaE2E51D0…D6d78` because a single agent EOA carries both x402 roles in the demo (Market-maker payer + Narrator `payTo`). EIP-3009, facilitator relay, and USDC movement are all real on-chain; wallet multiplexing is demo-only and splits into `AGENT_WALLET_*` + `NARRATOR_WALLET_*` in production.
+| Artifact                              | Network      | Hash / CID                                                                                                          |
+| ------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| four.meme token                       | BSC mainnet  | [`0x030C…4444`](https://bscscan.com/token/0x030C3529a5A3993B46e0DDBA1094E9BCCb014444)                               |
+| Token deploy tx (67s Creator run)     | BSC mainnet  | [`0x38fb…71b5`](https://bscscan.com/tx/0x38fb85740138b426674078577a7e55a117b4e6c599f37eab059a55bb4db171b5)          |
+| Narrator lore chapter 1 CID           | IPFS         | [`bafkrei…b4a4`](https://gateway.pinata.cloud/ipfs/bafkreig3twkykn74pieplix6j3jgrpakdsxk4x7wq2juxxwd2tses6b4a4)     |
+| x402 settlement (`/order`, 0.01 USDC) | Base Sepolia | [`0x65b3…b5a8`](https://sepolia.basescan.org/tx/0x65b346d019417727031978d5ee582082bc8aa27917722157f2ce5024a837b5a8) |
+| Lore anchor (keccak256 commitment)    | BSC mainnet  | [`0x545c…e9e6`](https://bscscan.com/tx/0x545cb02374b5f93e5e4a682b99715e8f1ec436b4403eebc727a635a552dee9e6)          |
 
 **1168 green tests** (`packages/shared` 88 / `apps/server` 595 / `apps/web` 485) with real Base Sepolia x402 settle on every `pnpm test`. `tsc --noEmit` clean across the workspace.
 
 ## Tech stack
 
-Next.js 15 / React 19 / Tailwind v4 / `motion@12` on the web; Node 22+ / Express / pnpm workspace on the server; TypeScript strict across both. Agent runtime is a shared LLM SDK + typed tool registry; model ids are env-configurable.
-
-Payments: `@x402/*` v2.10 against Base Sepolia USDC via `x402.org/facilitator`. Wallets: `viem` v2 (BSC mainnet for Four.meme, Base Sepolia for x402). Deployment: `@four-meme/four-meme-ai@1.0.8` with TokenManager2 partial-ABI fallback. IPFS: `pinata` v2. X posting: API v2 over hand-written OAuth 1.0a (`node:crypto`). State: single Postgres pool. Quality gates: `zod`, `vitest`, `eslint` v9, `prettier` v3, `tsc --noEmit`, `husky` + `lint-staged`.
+| Layer         | Stack                                                                                |
+| ------------- | ------------------------------------------------------------------------------------ |
+| Web           | Next.js 15, React 19, Tailwind v4, `motion@12`                                       |
+| Server        | Node 22+, Express, pnpm workspace, TypeScript strict                                 |
+| Agent runtime | Shared LLM SDK + typed tool registry; model ids env-configurable                     |
+| Payments      | `@x402/*` v2.10 on Base Sepolia USDC via `x402.org/facilitator`                      |
+| Wallets       | `viem` v2 (BSC mainnet for Four.meme, Base Sepolia for x402)                         |
+| Deployment    | `@four-meme/four-meme-ai@1.0.8` with TokenManager2 partial-ABI fallback              |
+| IPFS          | `pinata` v2                                                                          |
+| X posting     | API v2 over hand-written OAuth 1.0a (`node:crypto`)                                  |
+| State         | Single Postgres pool                                                                 |
+| Quality gates | `zod`, `vitest`, `eslint` v9, `prettier` v3, `tsc --noEmit`, `husky` + `lint-staged` |
 
 ## Reproduce
 
@@ -205,4 +241,4 @@ Published vendor rates only. A Creator run: ~**$0.05 BSC gas** + cents of LLM/im
 
 ## License
 
-AGPL-3.0. See [`LICENSE`](./LICENSE). Any derivative work or networked service built on this code must release its modified source under the same license. For proprietary use, contact the author. Built by [@mymaine](https://github.com/mymaine).
+AGPL-3.0.

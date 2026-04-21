@@ -76,13 +76,15 @@ describe('<Ch12Evidence> tab shell', () => {
     expect(html).toContain('>X<');
   });
 
-  it('each tab panel renders at most 5 rows (total DOM rows = 20 across hidden panels)', () => {
+  it('each tab panel renders at most 5 rows (canonical fallback seeds 9 total DOM rows)', () => {
     // Non-active tab panels stay in the DOM (opacity:0, pointer-events:none)
-    // so the cross-fade is purely CSS. Total row count across all four
-    // panels is 4 × 5 = 20 when every tab is at capacity.
+    // so the cross-fade is purely CSS. Fallback is pre-recorded real
+    // demo-run evidence: 4 BNB + 2 BASE + 2 IPFS + 1 X = 9 rows. No
+    // synthetic padding, so tabs render whatever real seeds exist rather
+    // than forcing every tab to 5.
     const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
     const rows = html.match(/class="ev-pill ev-pill-link"/g) ?? [];
-    expect(rows.length).toBe(20);
+    expect(rows.length).toBe(9);
   });
 
   it('every evidence row is an <a> with target=_blank + rel=noopener (clickable hash)', () => {
@@ -93,17 +95,18 @@ describe('<Ch12Evidence> tab shell', () => {
       html.match(
         /<a class="ev-pill ev-pill-link" href="[^"]+" target="_blank" rel="noopener noreferrer"/g,
       ) ?? [];
-    expect(links.length).toBe(20);
+    expect(links.length).toBe(9);
   });
 });
 
 describe('<Ch12Evidence> real-data binding', () => {
-  it('empty runState still fills every tab with 5 sample rows', () => {
+  it('empty runState seeds tabs with canonical real-demo fallback, no sample chips', () => {
     mockUseRunState.mockReturnValue(makeRunning([]));
     const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
-    // Every row carries the sample mono badge when no real data exists.
+    // Fallback is real demo-run evidence, not synthetic — the `sample`
+    // chip is reserved for the meme cover placeholder case.
     const sampleBadges = html.match(/class="ev-sample mono">sample</g) ?? [];
-    expect(sampleBadges.length).toBe(20);
+    expect(sampleBadges.length).toBe(0);
   });
 
   it('real artifacts route to the matching tab + win the first slot', () => {
@@ -134,13 +137,13 @@ describe('<Ch12Evidence> real-data binding', () => {
     expect(html).toContain('0x11111111..1111');
     expect(html).toContain('0x33333333..3333');
     expect(html).toContain('bafkreirea..7890');
-    // BNB / BASE / IPFS tabs each have 1 real row → sample count drops by 3.
-    // X tab still has all 5 samples. Total sample badges = 20 - 3 = 17.
+    // Canonical fallback carries no `sample` chip (real demo-run seeds),
+    // so a partial live run never introduces one.
     const sampleBadges = html.match(/class="ev-sample mono">sample</g) ?? [];
-    expect(sampleBadges.length).toBe(17);
+    expect(sampleBadges.length).toBe(0);
   });
 
-  it('each tab still fills to 5 rows even when only one real artifact routes to it', () => {
+  it('BNB tab pads to 5 when a real artifact is present; other tabs show fallback count', () => {
     const realArtifacts: Artifact[] = [
       {
         kind: 'bsc-token',
@@ -151,10 +154,11 @@ describe('<Ch12Evidence> real-data binding', () => {
     ];
     mockUseRunState.mockReturnValue(makeRunning(realArtifacts));
     const html = renderToStaticMarkup(<Ch12Evidence p={1} />);
+    // BNB: 1 real + 4 fallback = 5. BASE 2, IPFS 2, X 1 (fallback only).
     const rows = html.match(/class="ev-pill ev-pill-link"/g) ?? [];
-    expect(rows.length).toBe(20);
+    expect(rows.length).toBe(10);
     // The real BNB artifact is present; the remaining 4 BNB rows come
-    // from FALLBACK_ONCHAIN_TABS.bnb.
+    // from FALLBACK_ONCHAIN_TABS.BNB.
     expect(html).toContain('0x11111111..1111');
   });
 });
