@@ -8,9 +8,19 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1168%20green-emerald)](#evidence)
 
+<p align="center">
+  <a href="https://youtu.be/UaOFSktNi50"><img src="https://img.youtube.com/vi/UaOFSktNi50/maxresdefault.jpg" width="48%" alt="Trailer"></a>
+  &nbsp;
+  <a href="https://youtu.be/sFVbfZnrBUE"><img src="https://img.youtube.com/vi/sFVbfZnrBUE/maxresdefault.jpg" width="48%" alt="Demo"></a>
+</p>
+<p align="center">
+  <a href="https://youtu.be/UaOFSktNi50"><strong>▶ Trailer</strong></a>
+  &nbsp;•&nbsp;
+  <a href="https://youtu.be/sFVbfZnrBUE"><strong>▶ Full Demo</strong></a>
+</p>
+
 ## Links
 
-- Demo video: https://youtu.be/sFVbfZnrBUE
 - Four.meme: https://four.meme
 - x402 protocol: https://github.com/coinbase/x402
 - Architecture: [`docs/architecture.md`](./docs/architecture.md)
