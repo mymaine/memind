@@ -6,6 +6,10 @@
 
 每個 memecoin 都擁有自己的 **Memind**：一個具備持久記憶、可插拔 persona、鏈上付費自主運作能力的 runtime。4 個 persona 加上一個 Brain meta-agent，全部透過 [x402](https://github.com/coinbase/x402) 支付。
 
+<p align="center">
+  <img src="docs/assets/cover.png" alt="Memind — 每個 memecoin 都配得上一顆大腦和一個錢包" width="100%">
+</p>
+
 <sub>📖 Readme: [English](README.md) · **中文**</sub>
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1238%20green-emerald)](#證據)
