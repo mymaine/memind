@@ -11,8 +11,11 @@
  *
  * Interior progress `p ∈ [0, 1]` drives:
  *
- *   - 4 persona ports (GLITCHY / CULTIST / DEGEN / SHILLER) at angles
- *     -140 / -40 / 40 / 140, radius 220. Each renders a voice sub-label.
+ *   - 4 persona ports (CREATOR / NARRATOR / SHILLER / HEARTBEAT) at
+ *     angles -140 / -40 / 40 / 140, radius 220. Labels map 1:1 to the
+ *     invoke_* tools registered in `apps/server/src/tools/invoke-persona.ts`
+ *     so the animation and the agent runtime read the same roster. Each
+ *     port renders a voice sub-label.
  *   - 4 channel ports (X live, TELEGRAM / DISCORD / ON-CHAIN MSG soon) in
  *     a cross layout (angles 0 / -90 / 90 / 180) at radius 310-330.
  *   - Central brain core with think-mood mascot + TOKEN BRAIN label +
@@ -22,8 +25,13 @@ import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Ch4Brain } from '../ch4-brain.js';
 
-const PERSONAS = ['GLITCHY', 'CULTIST', 'DEGEN', 'SHILLER'] as const;
-const PERSONA_VOICES = ['glitch voice', 'cult voice', 'degen voice', 'shill voice'] as const;
+const PERSONAS = ['CREATOR', 'NARRATOR', 'SHILLER', 'HEARTBEAT'] as const;
+const PERSONA_VOICES = [
+  'deploys BSC tokens',
+  'writes lore chapters',
+  'shills on X',
+  '60s autonomous tick',
+] as const;
 // UAT round 4 (2026-04-20): channel ports render inline brand SVGs. The
 // aria-label keeps the human name, `data-icon` on the port is the stable
 // brand slug we assert against here (unicode glyph tests were removed).

@@ -30,6 +30,83 @@ This is a naming layer over a shipped runtime — every claim below anchors to c
 
 **Adding a new SKU = adding a new persona**: ~50 lines — a new `systemPrompt`, a subset of existing tools (at most one new `AgentTool`), an adapter in `persona-adapters.ts` that satisfies `Persona<TInput, TOutput>`, and one `invoke_<persona>` factory in `tools/invoke-persona.ts`. No new x402 infrastructure, no new memory layer. The pluggability is the product.
 
+### Class diagram — Brain, personas, shared stores
+
+Brain owns the four `invoke_*` tools; each delegates to one persona adapter that satisfies the shared `Persona<TInput, TOutput>` interface. Personas pull from the shared Postgres-backed stores.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Brain {
+        <<meta-agent>>
+        +invoke_creator()
+        +invoke_narrator()
+        +invoke_shiller()
+        +invoke_heartbeat_tick()
+        +stop_heartbeat()
+        +list_heartbeats()
+    }
+
+    class Persona {
+        <<interface>>
+        +id
+        +inputSchema
+        +outputSchema
+        +run(input, ctx)
+    }
+
+    class CreatorPersona {
+        +deploys BSC token + chapter 1
+    }
+    class NarratorPersona {
+        +writes next lore chapter
+    }
+    class ShillerPersona {
+        +posts creator-paid tweet
+    }
+    class HeartbeatPersona {
+        +one 60s tick
+        +picks post / extend_lore / idle
+    }
+
+    class ToolRegistry {
+        +register(AgentTool)
+        +get(name)
+    }
+    class LoreStore {
+        +getAllChapters(addr)
+        +upsertChapter(addr, chapter)
+    }
+    class HeartbeatSessionStore {
+        +start / stop / list
+        +recordTick(delta)
+        +getRecentTicks(addr)
+    }
+    class ShillOrderStore {
+        +enqueue / markDone / markFailed
+    }
+    class AnchorLedger {
+        +appendAnchor(addr, txHash)
+    }
+
+    Brain ..> CreatorPersona : invoke_creator
+    Brain ..> NarratorPersona : invoke_narrator
+    Brain ..> ShillerPersona : invoke_shiller
+    Brain ..> HeartbeatPersona : invoke_heartbeat_tick
+    CreatorPersona ..|> Persona
+    NarratorPersona ..|> Persona
+    ShillerPersona ..|> Persona
+    HeartbeatPersona ..|> Persona
+    Brain --> ToolRegistry
+    CreatorPersona --> LoreStore
+    NarratorPersona --> LoreStore
+    NarratorPersona --> AnchorLedger
+    ShillerPersona --> ShillOrderStore
+    HeartbeatPersona --> HeartbeatSessionStore
+    HeartbeatPersona --> LoreStore
+```
+
 ## Top-Level Shape
 
 pnpm workspace monorepo with three packages:
@@ -284,6 +361,41 @@ Server (fire-and-forget):
 SSE consumers (Entry C only):
   → EventSource /api/runs/:runId/events
   → Ch12 Evidence hydrates /api/artifacts?limit=20 on next render
+```
+
+#### Sequence — `/order` → x402 → tweet
+
+Zooms in on Entry C (Brain-driven `/order` slash). `runShillMarketDemo` wraps the x402 settlement, the shill-order state machine, and the Shiller persona in a single execution so the `x402-tx`, `shill-order`, and `shill-tweet` artifacts all land on the same SSE run.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User as Creator (BrainPanel)
+    participant Brain as Brain (meta-agent)
+    participant Tool as invoke_shiller tool
+    participant Orch as runShillMarketDemo
+    participant X402 as x402 middleware (Base Sepolia)
+    participant Orders as ShillOrderStore
+    participant Lore as LoreStore
+    participant Shiller as ShillerPersona
+    participant XApi as X API (POST /2/tweets)
+
+    User->>Brain: /order <tokenAddr> [brief]
+    Brain->>Tool: tool_use invoke_shiller(tokenAddr, symbol, brief)
+    Tool->>Orch: runShillMarketDemo({...})
+    Orch->>X402: settle 0.01 USDC (Base Sepolia)
+    X402-->>Orch: tx hash (emit x402-tx artifact)
+    Orch->>Orders: enqueue order (queued)
+    Orch->>Lore: getLatestChapter(tokenAddr)
+    Lore-->>Orch: chapter N text (or fallback snippet)
+    Orch->>Shiller: runShillerAgent(order, lore snippet)
+    Shiller->>XApi: post_to_x(draft tweet)
+    XApi-->>Shiller: { tweetId, url }
+    Shiller-->>Orch: { decision, tweetUrl }
+    Orch->>Orders: markDone (emit shill-order, shill-tweet)
+    Orch-->>Tool: { orderId, tweetUrl }
+    Tool-->>Brain: tool_result
+    Brain-->>User: SSE stream + shill-tweet artifact
 ```
 
 ### Flow 6 — Heartbeat autonomous tick

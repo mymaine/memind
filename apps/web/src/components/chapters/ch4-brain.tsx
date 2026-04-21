@@ -19,8 +19,9 @@
  *     pulse = clamp((p - 0.2) / 0.6)
  *
  * The pulse fades in 4 radial rings (r = 80 / 160 / 240 / 320) and 4
- * persona ports (GLITCHY / CULTIST / DEGEN / SHILLER) around a radius-220
- * circle. Once pulse passes 0.55, 4 channel ports appear at radius 310-330:
+ * persona ports (CREATOR / NARRATOR / SHILLER / HEARTBEAT) around a
+ * radius-220 circle. Labels map 1:1 to the runtime invoke_* tools in
+ * `invoke-persona.ts`. Once pulse passes 0.55, 4 channel ports appear at radius 310-330:
  * X (shipped, solid accent), TELEGRAM / DISCORD / ON-CHAIN MSG (soon,
  * dashed). Channels sit at angles -135 / -45 / 45 / 135 so they interleave
  * with the persona spokes instead of stacking on top.
@@ -99,16 +100,41 @@ interface ChannelPort {
   readonly status: ChannelStatus;
 }
 
+// 2026-04-21 alignment pass: labels now name the four runtime personas
+// registered in `invoke-persona.ts` (invoke_creator / invoke_narrator /
+// invoke_shiller / invoke_heartbeat_tick) so scrollytelling viewers and
+// README / code readers see the exact same roster. Moods are picked to
+// echo each persona's job — Creator is surprised by its own deploy,
+// Narrator types, Shiller shouts, Heartbeat claps in rhythm. Colors are
+// unchanged so the spokes keep their visual diversity.
 const PERSONAS: readonly PersonaPort[] = [
-  { a: -140, label: 'GLITCHY', mood: 'glitch', color: 'var(--accent)', voice: 'glitch voice' },
-  { a: -40, label: 'CULTIST', mood: 'clap', color: 'var(--chain-bnb)', voice: 'cult voice' },
-  { a: 40, label: 'DEGEN', mood: 'surprise', color: 'var(--chain-base)', voice: 'degen voice' },
   {
-    a: 140,
+    a: -140,
+    label: 'CREATOR',
+    mood: 'surprise',
+    color: 'var(--accent)',
+    voice: 'deploys BSC tokens',
+  },
+  {
+    a: -40,
+    label: 'NARRATOR',
+    mood: 'type-keyboard',
+    color: 'var(--chain-bnb)',
+    voice: 'writes lore chapters',
+  },
+  {
+    a: 40,
     label: 'SHILLER',
     mood: 'megaphone',
+    color: 'var(--chain-base)',
+    voice: 'shills on X',
+  },
+  {
+    a: 140,
+    label: 'HEARTBEAT',
+    mood: 'clap',
     color: 'var(--chain-ipfs)',
-    voice: 'shill voice',
+    voice: '60s autonomous tick',
   },
 ];
 
