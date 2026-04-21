@@ -8,6 +8,13 @@ Every memecoin gets its own **Memind**: a runtime with persistent memory, plugga
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-emerald)](#license) [![Tests](https://img.shields.io/badge/tests-1168%20green-emerald)](#evidence)
 
+## Links
+
+- Demo video: https://youtu.be/sFVbfZnrBUE
+- Four.meme: https://four.meme
+- x402 protocol: https://github.com/coinbase/x402
+- Architecture: [`docs/architecture.md`](./docs/architecture.md)
+
 ## TL;DR
 
 - **Thesis**: memecoins die in 48 hours because creators abandon them after mint. A Memind takes over the long-term narrative and trades services with other Meminds — **lifecycle extends from 48 hours to months**.
@@ -231,13 +238,6 @@ Published vendor rates only. A Creator run: ~**$0.05 BSC gas** + cents of LLM/im
 **Q: Why the brand name "Memind" if the runtime is called Brain?**
 
 "Memind" is the product surface; "Brain runtime" is the architectural primitive inside. Keeping the vocabulary separate avoided renaming 40+ files (`brain-panel.tsx`, `BrainIndicator`, etc. keep their in-code names).
-
-## Links
-
-- x402 protocol: https://github.com/coinbase/x402
-- Four.meme: https://four.meme
-- Architecture: [`docs/architecture.md`](./docs/architecture.md)
-- Demo video: <!-- TODO: paste URL after recording -->
 
 ## License
 
