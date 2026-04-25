@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Four.Meme AI Sprint — Agent-as-Creator with x402 Service Exchange (3-agent swarm)",
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "engines": {
