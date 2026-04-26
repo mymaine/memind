@@ -7,7 +7,7 @@
 Every memecoin gets its own **Memind**: a runtime with persistent memory, pluggable personas, and on-chain-paid autonomy. Four personas + a Brain meta-agent, paid over [x402](https://github.com/coinbase/x402).
 
 <p align="center">
-  <img src="docs/assets/cover.png" alt="Memind — every memecoin gets a brain and a wallet" width="100%">
+  <img src="docs/assets/cover2.png" alt="Memind — every memecoin gets a brain and a wallet" width="100%">
 </p>
 
 <sub>📖 Readme: **English** · [中文](README.zh-CN.md)</sub>
