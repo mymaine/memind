@@ -4,6 +4,8 @@
 >
 > _Memind = meme + mind. On Four.meme._
 
+> **Status**: Submitted to Four.meme AI Sprint (April 2026). Archived as a learning artifact — agentic money primitive, x402 settlement loop, and 4-persona Brain runtime. Code remains MIT; no further updates planned.
+
 Every memecoin gets its own **Memind**: a runtime with persistent memory, pluggable personas, and on-chain-paid autonomy. Four personas + a Brain meta-agent, paid over [x402](https://github.com/coinbase/x402).
 
 <p align="center">
